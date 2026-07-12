@@ -13,7 +13,15 @@ export function ActiveBadge({
   inactiveLabel = "Inactivo",
 }: ActiveBadgeProps) {
   return (
-    <Badge variant="outline" className="gap-1.5 font-normal">
+    <Badge
+      variant="outline"
+      className={cn(
+        "gap-1.5 font-medium",
+        active
+          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+          : "bg-muted/50 text-muted-foreground"
+      )}
+    >
       <span
         aria-hidden
         className={cn(

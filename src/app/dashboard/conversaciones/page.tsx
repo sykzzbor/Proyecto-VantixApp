@@ -62,17 +62,17 @@ export default async function ConversacionesPage(
     <div className="flex h-full flex-col space-y-4">
       <PageHeader
         title="Conversaciones"
-        description="La bandeja de entrada de tu negocio: mirá lo que responde la IA y tomá el control cuando haga falta."
+        description="Centralizá consultas, seguí las respuestas de la IA y tomá el control cuando haga falta."
       >
         <InboxAutoRefresh />
       </PageHeader>
 
-      <div className="flex h-[calc(100svh-13.5rem)] min-h-[480px] overflow-hidden rounded-lg border bg-background">
+      <div className="flex h-[calc(100dvh-12.5rem)] min-h-[32rem] overflow-hidden rounded-xl border border-border bg-card shadow-[0_24px_60px_-45px_rgba(0,0,0,0.95)] md:h-[calc(100svh-13.5rem)]">
         {/* Lista de conversaciones */}
         <div
           className={cn(
-            "w-full flex-col md:flex md:w-80 md:shrink-0 md:border-r lg:w-88",
-            detail ? "hidden md:flex" : "flex"
+            "w-full flex-col bg-sidebar/45 lg:flex lg:w-80 lg:shrink-0 lg:border-r lg:border-border xl:w-88",
+            detail ? "hidden lg:flex" : "flex"
           )}
         >
           <ConversationList
@@ -86,7 +86,7 @@ export default async function ConversacionesPage(
         <div
           className={cn(
             "min-w-0 flex-1 flex-col",
-            detail ? "flex" : "hidden md:flex"
+            detail ? "flex" : "hidden lg:flex"
           )}
         >
           {detail ? (
@@ -111,7 +111,7 @@ export default async function ConversacionesPage(
 
         {/* Panel del cliente (escritorio ancho) */}
         {detail && (
-          <aside className="hidden w-80 shrink-0 overflow-y-auto border-l xl:block">
+          <aside className="hidden w-80 shrink-0 overflow-y-auto border-l border-border bg-sidebar/35 xl:block">
             <CustomerPanel detail={detail} canEdit={canEditCustomer} />
           </aside>
         )}

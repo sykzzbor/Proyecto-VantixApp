@@ -6,9 +6,9 @@ export function EmptyThread({
   hasConversations: boolean;
 }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-      <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-        <Inbox className="size-6 text-muted-foreground" aria-hidden />
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center sm:p-8">
+      <div className="flex size-12 items-center justify-center rounded-xl border border-primary/15 bg-primary/10">
+        <Inbox className="size-6 text-[#8eacff]" aria-hidden />
       </div>
       <div>
         <p className="text-sm font-medium">

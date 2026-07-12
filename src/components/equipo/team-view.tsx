@@ -156,7 +156,7 @@ export function TeamView({
           )}
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto rounded-lg border">
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -280,7 +280,7 @@ export function TeamView({
                 No hay invitaciones pendientes.
               </p>
             ) : (
-              <div className="overflow-x-auto rounded-lg border">
+              <div className="overflow-x-auto rounded-xl border border-border bg-card">
                 <Table>
                   <TableHeader>
                     <TableRow>

@@ -120,7 +120,7 @@ export default async function ConfiguracionPage() {
                     Todavía no hay actividad registrada.
                   </p>
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border">
+                  <div className="overflow-x-auto rounded-xl border border-border bg-card">
                     <Table>
                       <TableHeader>
                         <TableRow>

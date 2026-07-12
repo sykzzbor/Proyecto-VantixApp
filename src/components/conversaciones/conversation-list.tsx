@@ -66,7 +66,7 @@ export function ConversationList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Buscador y filtros */}
-      <div className="space-y-2 border-b p-3">
+      <div className="space-y-2.5 border-b border-border bg-sidebar/35 p-3.5">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -125,7 +125,7 @@ export function ConversationList({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {items.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-            <div className="flex size-10 items-center justify-center rounded-full bg-muted">
+            <div className="flex size-10 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
               {hasFilters ? (
                 <SearchX className="size-5 text-muted-foreground" aria-hidden />
               ) : (
@@ -149,12 +149,12 @@ export function ConversationList({
                   href={hrefFor(item.id)}
                   aria-current={item.id === selectedId ? "true" : undefined}
                   className={cn(
-                    "flex gap-3 border-b px-3 py-3 transition-colors hover:bg-muted/60",
-                    item.id === selectedId && "bg-muted"
+                    "relative flex gap-3 border-b border-border/65 px-3.5 py-3.5 transition-colors hover:bg-accent/50",
+                    item.id === selectedId && "bg-accent/75 shadow-[inset_3px_0_0_var(--primary)]"
                   )}
                 >
                   <Avatar className="mt-0.5 size-9 shrink-0">
-                    <AvatarFallback className="text-sm">
+                    <AvatarFallback className="border border-primary/15 bg-primary/10 text-sm font-semibold text-[#9cb7ff]">
                       {initial(item.customerName)}
                     </AvatarFallback>
                   </Avatar>
@@ -187,7 +187,7 @@ export function ConversationList({
                       </p>
                       {item.unreadCount > 0 && (
                         <span
-                          className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground"
+                          className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground shadow-sm shadow-primary/30"
                           aria-label={`${item.unreadCount} mensajes sin leer`}
                         >
                           {item.unreadCount > 9 ? "9+" : item.unreadCount}

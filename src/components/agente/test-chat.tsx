@@ -155,11 +155,11 @@ export function TestChat({
   }
 
   return (
-    <Card className="flex h-[620px] max-h-[75svh] flex-col gap-0 overflow-hidden p-0">
+    <Card className="flex h-[min(680px,calc(100dvh-15rem))] min-h-[34rem] flex-col gap-0 overflow-hidden p-0">
       {/* Encabezado */}
-      <div className="flex items-center gap-3 border-b px-4 py-3">
-        <div className="flex size-9 items-center justify-center rounded-full bg-muted">
-          <Bot className="size-4.5 text-muted-foreground" aria-hidden />
+      <div className="flex min-h-16 items-center gap-3 border-b border-border bg-card/95 px-4 py-3">
+        <div className="flex size-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
+          <Bot className="size-4.5 text-[#8eacff]" aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{assistantName}</p>
@@ -211,11 +211,11 @@ export function TestChat({
       )}
 
       {/* Mensajes */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-background/25 px-3 py-4 sm:px-5">
         {messages.length === 0 && !sending ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-              <Bot className="size-6 text-muted-foreground" aria-hidden />
+            <div className="flex size-12 items-center justify-center rounded-xl border border-primary/15 bg-primary/10">
+              <Bot className="size-6 text-[#8eacff]" aria-hidden />
             </div>
             <div>
               <p className="text-sm font-medium">Probá a {assistantName}</p>
@@ -225,7 +225,7 @@ export function TestChat({
               </p>
             </div>
             {enabled && (
-              <div className="mt-2 max-w-[85%] rounded-lg rounded-bl-sm bg-muted px-3 py-2 text-left text-sm">
+              <div className="mt-2 max-w-[85%] rounded-xl rounded-bl-sm border border-border bg-[#202633] px-3.5 py-2.5 text-left text-sm leading-relaxed">
                 {welcomeMessage}
               </div>
             )}
@@ -241,16 +241,16 @@ export function TestChat({
                 )}
               >
                 {message.role === "assistant" && (
-                  <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted">
-                    <Bot className="size-3.5 text-muted-foreground" aria-hidden />
+                  <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                    <Bot className="size-3.5 text-[#8eacff]" aria-hidden />
                   </div>
                 )}
                 <div
                   className={cn(
-                    "max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words",
+                    "max-w-[84%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words shadow-sm",
                     message.role === "user"
                       ? "rounded-br-sm bg-primary text-primary-foreground"
-                      : "rounded-bl-sm bg-muted"
+                      : "rounded-bl-sm border border-primary/20 bg-primary/10"
                   )}
                 >
                   {message.content}
@@ -266,7 +266,7 @@ export function TestChat({
                   </span>
                 </div>
                 {message.role === "user" && (
-                  <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                  <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                     <UserRound className="size-3.5 text-primary" aria-hidden />
                   </div>
                 )}
@@ -296,7 +296,7 @@ export function TestChat({
 
       {/* Entrada */}
       <form
-        className="flex items-end gap-2 border-t p-3"
+        className="flex items-end gap-2 border-t border-border bg-card p-3"
         onSubmit={(event) => {
           event.preventDefault();
           send();
@@ -313,7 +313,7 @@ export function TestChat({
               ? "Escribí un mensaje como cliente…"
               : "Activá el agente para escribir"
           }
-          className="max-h-[140px] min-h-9 flex-1 resize-none"
+          className="max-h-[140px] min-h-10 flex-1 resize-none"
           onChange={(event) => {
             setInput(event.target.value);
             autoresize();

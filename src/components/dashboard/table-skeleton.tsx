@@ -18,7 +18,7 @@ export function TableSkeleton({
           <Skeleton className="ml-auto h-9 w-32" />
         </div>
       )}
-      <div className="rounded-lg border bg-background">
+      <div className="rounded-xl border border-border bg-card">
         <div className="border-b px-4 py-3">
           <Skeleton className="h-4 w-2/3 max-w-md" />
         </div>

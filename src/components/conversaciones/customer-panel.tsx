@@ -69,10 +69,10 @@ export function CustomerPanel({
   }
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-5 p-4.5">
       {/* Datos de la conversación */}
       <div className="space-y-2.5">
-        <h3 className="text-sm font-semibold">Conversación</h3>
+        <h3 className="text-sm font-semibold tracking-tight">Conversación</h3>
         <dl className="space-y-1.5 text-sm">
           <div className="flex items-center justify-between gap-2">
             <dt className="text-muted-foreground">Canal</dt>
@@ -118,7 +118,7 @@ export function CustomerPanel({
       {/* Datos del cliente */}
       <div className="space-y-3">
         <div>
-          <h3 className="text-sm font-semibold">Cliente</h3>
+          <h3 className="text-sm font-semibold tracking-tight">Cliente</h3>
           {!detail.customer && (
             <p className="mt-1 text-xs text-muted-foreground">
               {canEdit

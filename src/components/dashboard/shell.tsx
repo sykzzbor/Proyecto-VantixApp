@@ -34,7 +34,7 @@ function NavLinks({
   onNavigate?: () => void;
 }) {
   return (
-    <nav className="flex flex-col gap-1" aria-label="Navegación principal">
+    <nav className="flex flex-col gap-1.5" aria-label="Navegación principal">
       {NAV_ITEMS.map((item) => {
         const active = isNavItemActive(item, pathname);
         const Icon = item.icon;
@@ -45,9 +45,9 @@ function NavLinks({
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              "relative flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-[color,background-color,box-shadow] focus-visible:ring-2 focus-visible:ring-sidebar-ring/40",
               active
-                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_3px_0_0_var(--sidebar-primary)]"
                 : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
             )}
           >
@@ -74,52 +74,52 @@ export function DashboardShell({
     .find((item) => isNavItemActive(item, pathname));
 
   return (
-    <div className="flex min-h-svh w-full">
+    <div className="flex min-h-svh w-full bg-background">
       {/* Sidebar de escritorio */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r bg-sidebar md:flex">
-        <div className="flex h-14 items-center border-b px-5">
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
+        <div className="flex h-16 items-center border-b border-sidebar-border px-5">
           <Link
             href="/dashboard"
-            className="text-base font-semibold tracking-tight"
+            className="text-[1.05rem] font-semibold tracking-[-0.03em] text-sidebar-foreground transition-colors hover:text-white"
           >
-            Vantix
+            Vantix<span className="text-primary">App</span>
           </Link>
         </div>
-        <div className="flex-1 overflow-y-auto p-3">
+        <div className="flex-1 overflow-y-auto p-3.5">
           <NavLinks pathname={pathname} />
         </div>
-        <div className="border-t p-4">
-          <p className="truncate text-sm font-medium">{orgName}</p>
-          <Badge variant="outline" className="mt-1.5">
+        <div className="border-t border-sidebar-border bg-black/10 p-4">
+          <p className="truncate text-sm font-semibold text-sidebar-foreground">{orgName}</p>
+          <Badge variant="outline" className="mt-2 border-primary/20 bg-primary/10 text-[#9cb7ff]">
             {ROLE_LABELS[role]}
           </Badge>
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background px-4 md:px-6">
+        <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-border/80 bg-background/92 px-4 backdrop-blur-md md:px-6">
           {/* Menú móvil */}
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                className="md:hidden"
+                className="lg:hidden"
                 aria-label="Abrir menú de navegación"
               >
                 <Menu className="size-5" />
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-72 p-0">
-              <SheetHeader className="border-b px-5 py-4 text-left">
+              <SheetHeader className="border-b border-sidebar-border px-5 py-4 text-left">
                 <SheetTitle className="text-base font-semibold tracking-tight">
-                  Vantix
+                  Vantix<span className="text-primary">App</span>
                 </SheetTitle>
                 <p className="truncate text-sm text-muted-foreground">
                   {orgName}
                 </p>
               </SheetHeader>
-              <div className="p-3">
+              <div className="p-3.5">
                 <NavLinks
                   pathname={pathname}
                   onNavigate={() => setMobileOpen(false)}
@@ -128,7 +128,7 @@ export function DashboardShell({
             </SheetContent>
           </Sheet>
 
-          <h1 className="truncate text-sm font-semibold md:text-base">
+          <h1 className="truncate text-sm font-semibold tracking-tight text-foreground md:text-base">
             {currentItem?.label ?? "Panel"}
           </h1>
 
@@ -137,8 +137,8 @@ export function DashboardShell({
           </div>
         </header>
 
-        <main className="flex-1 bg-muted/30 p-4 md:p-6 lg:p-8">
-          <div className="mx-auto w-full max-w-6xl">{children}</div>
+        <main className="flex-1 bg-background p-4 sm:p-5 md:p-6 lg:p-8">
+          <div className="mx-auto w-full max-w-[1440px]">{children}</div>
         </main>
       </div>
     </div>

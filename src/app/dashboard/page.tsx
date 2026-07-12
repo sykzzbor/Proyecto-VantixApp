@@ -76,7 +76,7 @@ export default async function DashboardPage() {
   const summary = await getDashboardSummary(org.id);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <PageHeader
         title={`Hola, ${user.name.split(" ")[0]}`}
         description={`Este es el estado actual de ${org.name}.`}
@@ -109,15 +109,15 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-5 lg:grid-cols-3">
         <Card className="lg:col-span-1">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Bot className="size-4 text-muted-foreground" />
+              <Bot className="size-4 text-[#8eacff]" />
               Agente IA
             </CardTitle>
             <CardDescription>
-              Configuración del futuro asistente del negocio.
+              Configuración del asistente de tu negocio.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -175,7 +175,7 @@ export default async function DashboardPage() {
                 {summary.recentActivity.map((entry) => (
                   <li
                     key={entry.id}
-                    className="flex items-baseline justify-between gap-3 border-b pb-3 text-sm last:border-b-0 last:pb-0"
+                    className="flex flex-col gap-1 border-b border-border/70 pb-3 text-sm last:border-b-0 last:pb-0 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3"
                   >
                     <span className="min-w-0">
                       <span className="font-medium">
@@ -203,11 +203,11 @@ export default async function DashboardPage() {
       </div>
 
       {!summary.businessComplete && (
-        <Card>
+        <Card className="border-primary/25 bg-primary/[0.045]">
           <CardContent className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
             <div className="flex items-start gap-3">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
-                <Store className="size-4.5 text-muted-foreground" />
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
+                <Store className="size-4.5 text-[#8eacff]" />
               </div>
               <div>
                 <p className="text-sm font-medium">

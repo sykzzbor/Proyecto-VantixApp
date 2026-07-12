@@ -93,8 +93,8 @@ export function ServicesView({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-full max-w-64">
+      <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
+        <div className="relative w-full sm:max-w-64">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"
@@ -111,7 +111,7 @@ export function ServicesView({
             setParam("estado", value === "todos" ? null : value)
           }
         >
-          <SelectTrigger className="w-36" aria-label="Filtrar por estado">
+          <SelectTrigger className="w-full sm:w-36" aria-label="Filtrar por estado">
             <SelectValue placeholder="Estado" />
           </SelectTrigger>
           <SelectContent>
@@ -121,13 +121,13 @@ export function ServicesView({
           </SelectContent>
         </Select>
         {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={clearAll}>
+          <Button variant="ghost" size="sm" onClick={clearAll} className="w-full sm:w-auto">
             <X className="size-4" />
             Limpiar
           </Button>
         )}
         {canWrite && (
-          <Button onClick={openCreate} className="ml-auto">
+          <Button onClick={openCreate} className="w-full sm:ml-auto sm:w-auto">
             <Plus className="size-4" />
             Nuevo servicio
           </Button>
@@ -160,7 +160,7 @@ export function ServicesView({
           </EmptyState>
         )
       ) : (
-        <div className="overflow-x-auto rounded-lg border bg-background">
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
           <Table>
             <TableHeader>
               <TableRow>

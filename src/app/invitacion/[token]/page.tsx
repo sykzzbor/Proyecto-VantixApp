@@ -21,7 +21,7 @@ function InvitationShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-svh flex-1 flex-col bg-muted/40">
       <header className="px-6 py-5">
         <Link href="/" className="text-lg font-semibold tracking-tight">
-          Vantix
+          Vantix<span className="text-primary">App</span>
         </Link>
       </header>
       <main className="flex flex-1 items-start justify-center px-4 pt-8 pb-16 sm:items-center sm:pt-4">

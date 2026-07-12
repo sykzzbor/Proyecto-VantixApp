@@ -63,8 +63,8 @@ export function AgentForm({ defaults, canEdit }: AgentFormProps) {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
-      <div className="flex items-start gap-2 rounded-md border bg-background px-3 py-2.5 text-sm text-muted-foreground">
-        <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/[0.055] px-3.5 py-3 text-sm leading-relaxed text-muted-foreground">
+        <Info className="mt-0.5 size-4 shrink-0 text-[#8eacff]" aria-hidden />
         <p>
           En esta etapa la inteligencia artificial todavía no está conectada.
           Lo que configures acá queda guardado y listo para cuando se integre
