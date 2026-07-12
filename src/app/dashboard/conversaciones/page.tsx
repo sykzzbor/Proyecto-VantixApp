@@ -4,7 +4,7 @@ import { ConversationThread } from "@/components/conversaciones/conversation-thr
 import { EmptyThread } from "@/components/conversaciones/empty-thread";
 import { can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
-import { isAgentConfigured } from "@/server/agent/openai";
+import { isAgentConfigured } from "@/server/agent/config";
 import { requireOrgContext } from "@/server/context";
 import {
   getConversationDetail,

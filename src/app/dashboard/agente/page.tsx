@@ -4,7 +4,7 @@ import { AgentForm } from "@/components/agente/agent-form";
 import { TestChat } from "@/components/agente/test-chat";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { can } from "@/lib/permissions";
-import { isAgentConfigured } from "@/server/agent/openai";
+import { isAgentConfigured } from "@/server/agent/config";
 import { requireOrgContext } from "@/server/context";
 import { getTestChatState } from "@/server/conversations";
 import { getAgentSettings } from "@/server/queries";

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { FunctionTool } from "openai/resources/responses/responses";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { formatCurrency, formatDuration } from "@/lib/format";
@@ -23,17 +22,26 @@ const MAX_SERVICE_RESULTS = 5;
 const MAX_FAQ_RESULTS = 3;
 
 // ============================================================
-// Definiciones para la Responses API
+// Definiciones neutrales de herramientas
 // ============================================================
 
-export const AGENT_TOOLS: FunctionTool[] = [
+export type AgentToolDefinition = {
+  name: string;
+  description: string;
+  inputSchema: {
+    type: "object";
+    properties: Record<string, unknown>;
+    additionalProperties: false;
+    required: string[];
+  };
+};
+
+export const AGENT_TOOLS: AgentToolDefinition[] = [
   {
-    type: "function",
     name: "get_business_information",
     description:
       "Devuelve la información general del negocio: nombre, rubro, descripción, dirección, teléfono, horarios, métodos de pago e información de envíos.",
-    strict: true,
-    parameters: {
+    inputSchema: {
       type: "object",
       properties: {},
       additionalProperties: false,
@@ -41,12 +49,10 @@ export const AGENT_TOOLS: FunctionTool[] = [
     },
   },
   {
-    type: "function",
     name: "search_products",
     description:
       "Busca productos activos del negocio por texto y, opcionalmente, por categoría. Usala para consultas de precios, stock o disponibilidad de productos.",
-    strict: true,
-    parameters: {
+    inputSchema: {
       type: "object",
       properties: {
         query: {
@@ -64,12 +70,10 @@ export const AGENT_TOOLS: FunctionTool[] = [
     },
   },
   {
-    type: "function",
     name: "search_services",
     description:
       "Busca servicios activos del negocio por texto. Usala para consultas de precios o duración de servicios.",
-    strict: true,
-    parameters: {
+    inputSchema: {
       type: "object",
       properties: {
         query: {
@@ -82,12 +86,10 @@ export const AGENT_TOOLS: FunctionTool[] = [
     },
   },
   {
-    type: "function",
     name: "search_faqs",
     description:
       "Busca preguntas frecuentes activas relacionadas con la consulta del cliente.",
-    strict: true,
-    parameters: {
+    inputSchema: {
       type: "object",
       properties: {
         query: {
@@ -100,12 +102,10 @@ export const AGENT_TOOLS: FunctionTool[] = [
     },
   },
   {
-    type: "function",
     name: "request_human_support",
     description:
       "Marca la conversación para que la continúe una persona del equipo. Usala cuando el cliente pida hablar con alguien, haya un reclamo o lo indiquen las reglas de derivación.",
-    strict: true,
-    parameters: {
+    inputSchema: {
       type: "object",
       properties: {
         reason: {
@@ -328,10 +328,15 @@ async function requestHumanSupport(ctx: AgentToolContext, rawArgs: unknown) {
 export async function executeAgentTool(
   ctx: AgentToolContext,
   name: string,
-  rawArguments: string
+  rawArguments: unknown
 ): Promise<string> {
   try {
-    const args: unknown = rawArguments ? JSON.parse(rawArguments) : {};
+    const args: unknown =
+      typeof rawArguments === "string"
+        ? rawArguments
+          ? JSON.parse(rawArguments)
+          : {}
+        : (rawArguments ?? {});
     switch (name) {
       case "get_business_information":
         return JSON.stringify(await getBusinessInformation(ctx));
@@ -348,8 +353,8 @@ export async function executeAgentTool(
     }
   } catch (error) {
     console.error(
-      `[VantixApp] Error al ejecutar la herramienta ${name}:`,
-      error instanceof Error ? error.message : "desconocido"
+      "[VantixApp] Error al ejecutar una herramienta del agente:",
+      error instanceof Error ? error.name : "unknown_error"
     );
     return JSON.stringify({
       error: "La consulta no se pudo completar. Informale al cliente que hubo un inconveniente técnico.",

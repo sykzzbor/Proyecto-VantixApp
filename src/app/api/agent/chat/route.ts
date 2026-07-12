@@ -2,7 +2,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chatRequestSchema } from "@/lib/validations/chat";
-import { isAgentConfigured } from "@/server/agent/openai";
+import {
+  getAIProviderMode,
+  isAgentConfigured,
+} from "@/server/agent/config";
 import { buildAgentInstructions } from "@/server/agent/prompt";
 import { AgentRunError, runAgent } from "@/server/agent/run";
 import type { AgentToolContext } from "@/server/agent/tools";
@@ -124,6 +127,17 @@ export async function POST(request: NextRequest) {
       );
     }
     if (!isAgentConfigured()) {
+      await recordAudit({
+        organizationId,
+        userId: session.user.id,
+        action: "agente.error",
+        entityType: "conversation",
+        entityId: conversation.id,
+        details: {
+          proveedor: getAIProviderMode(),
+          codigo: "not_configured",
+        },
+      });
       return jsonError(
         503,
         "agent_not_configured",
@@ -187,6 +201,10 @@ export async function POST(request: NextRequest) {
           action: "agente.error",
           entityType: "conversation",
           entityId: conversation.id,
+          details: {
+            proveedor: getAIProviderMode(),
+            codigo: error.code,
+          },
         });
         return jsonError(
           502,

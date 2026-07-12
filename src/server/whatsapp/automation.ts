@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { isAgentConfigured } from "@/server/agent/openai";
+import {
+  getAIProviderMode,
+  isAgentConfigured,
+} from "@/server/agent/config";
 import { buildAgentInstructions } from "@/server/agent/prompt";
 import { runAgent } from "@/server/agent/run";
 import type { AgentToolContext } from "@/server/agent/tools";
@@ -17,6 +20,14 @@ import {
   WhatsappOutboundValidationError,
 } from "@/server/whatsapp/outbound";
 import type { WhatsappAutomationJob } from "@/server/whatsapp/processing";
+
+export function getWhatsappAgentFallbackReason(
+  provider = getAIProviderMode(),
+  configured = isAgentConfigured()
+): "demo" | "agent_error" | null {
+  if (configured) return null;
+  return provider === "demo" ? "demo" : "agent_error";
+}
 
 async function saveUnsentAutomaticReply(
   job: WhatsappAutomationJob,
@@ -49,11 +60,23 @@ export async function handleWhatsappAutomaticResponse(
   const organizationId = job.integration.organizationId;
   const conversationId = job.persisted.conversationId;
 
-  if (!isAgentConfigured()) {
+  const unavailableReason = getWhatsappAgentFallbackReason();
+  if (unavailableReason) {
+    const provider = getAIProviderMode();
+    if (provider !== "demo") {
+      await recordAudit({
+        organizationId,
+        userId: null,
+        action: "agente.error",
+        entityType: "conversation",
+        entityId: conversationId,
+        details: { proveedor: provider, codigo: "not_configured" },
+      });
+    }
     await markConversationNeedsHumanAttention({
       organizationId,
       conversationId,
-      reason: "demo",
+      reason: unavailableReason,
     });
     return;
   }
@@ -126,6 +149,7 @@ export async function handleWhatsappAutomaticResponse(
       action: "agente.error",
       entityType: "conversation",
       entityId: conversationId,
+      details: { proveedor: getAIProviderMode(), codigo: "provider_error" },
     });
     await markConversationNeedsHumanAttention({
       organizationId,

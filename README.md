@@ -29,7 +29,7 @@ Plataforma de gestión comercial con agente de inteligencia artificial, bandeja 
 - Chat de prueba persistido con `channel = "test"`.
 - OpenAI Responses API con function calling para consultar negocio, productos, servicios y preguntas frecuentes.
 - Reglas de derivación a atención humana, historial acotado, límites de herramientas y rate limiting.
-- Modo `AI_PROVIDER=demo` para trabajar sin una clave paga y sin llamar a OpenAI.
+- Modo `AI_PROVIDER=demo` para trabajar sin una clave paga y sin llamar a proveedores externos.
 
 ### Etapa 3 — Bandeja profesional
 
@@ -119,9 +119,11 @@ El archivo de ejemplo no contiene URLs locales ni secretos. Completá:
 - `DATABASE_URL`: URL administrada con pooling y TLS en Vercel; local solo durante desarrollo.
 - `BETTER_AUTH_SECRET`: un secreto aleatorio (`openssl rand -base64 32`).
 - `BETTER_AUTH_URL`: origen público HTTPS en Vercel; local solo durante desarrollo.
-- `AI_PROVIDER`: usá `demo` para no llamar a OpenAI o `openai` para habilitar el proveedor real.
+- `AI_PROVIDER`: usá `demo`, `openai` o `anthropic`.
 - `OPENAI_API_KEY`: clave de <https://platform.openai.com/api-keys>; solo es necesaria con `AI_PROVIDER=openai`.
 - `OPENAI_MODEL`: opcional, por defecto `gpt-5-mini`.
+- `ANTHROPIC_API_KEY`: clave de Anthropic; solo es necesaria con `AI_PROVIDER=anthropic`.
+- `ANTHROPIC_MODEL`: modelo habilitado en Anthropic, por ejemplo `claude-haiku-4-5-20251001`.
 - `WHATSAPP_VERIFY_TOKEN`: secreto compartido para la verificación `GET` del webhook.
 - `META_APP_SECRET`: App Secret de la aplicación de Meta, usado para validar la firma del `POST`.
 - `META_GRAPH_API_VERSION`: versión habilitada para la aplicación, con formato `vN.N`.
@@ -217,13 +219,15 @@ Configurá las variables desde **Project → Settings → Environment Variables*
 | `AI_PROVIDER` | `demo` hasta habilitar un proveedor real. |
 | `OPENAI_API_KEY` | Omitir mientras `AI_PROVIDER=demo`; agregar solo una clave real. |
 | `OPENAI_MODEL` | Modelo habilitado para la cuenta; se usa únicamente con `AI_PROVIDER=openai`. |
+| `ANTHROPIC_API_KEY` | Omitir salvo que `AI_PROVIDER=anthropic`; agregar solo una clave real. |
+| `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` o el modelo habilitado en la cuenta. |
 | `WHATSAPP_VERIFY_TOKEN` | Secreto aleatorio compartido con la configuración del webhook de Meta. |
 | `META_APP_SECRET` | App Secret real de Meta. |
 | `META_GRAPH_API_VERSION` | Versión de Graph API habilitada para la aplicación de Meta. |
 | `CREDENTIALS_ENCRYPTION_KEY` | 32 bytes en 64 caracteres hexadecimales o base64. No cambiar después de cifrar tokens sin un plan de rotación. |
 | `WHATSAPP_DEV_MODE` | `false`. |
 
-Si OpenAI o Meta todavía no están configurados, no cargues valores falsos. El modo demo sigue permitiendo bandeja y respuestas humanas sin enviar automatizaciones a WhatsApp.
+Si el proveedor de IA o Meta todavía no están configurados, no cargues valores falsos. El modo demo sigue permitiendo bandeja y respuestas humanas sin enviar automatizaciones a WhatsApp.
 
 ### Migraciones y build
 
@@ -250,7 +254,7 @@ No se usa `vercel-build`: `postinstall` ya genera Prisma Client y mantener las m
 
 El chat de prueba está en **Dashboard → Agente IA → Chat de prueba**. Para probarlo:
 
-1. Para usar OpenAI, configurá `AI_PROVIDER=openai`, completá `OPENAI_API_KEY` y reiniciá `npm run dev`. Para trabajar sin consumo pago, dejá `AI_PROVIDER=demo`.
+1. Elegí `AI_PROVIDER=openai` con `OPENAI_API_KEY`, `AI_PROVIDER=anthropic` con `ANTHROPIC_API_KEY` y `ANTHROPIC_MODEL`, o `AI_PROVIDER=demo` para trabajar sin llamadas pagas. Reiniciá `npm run dev` después de cambiarlo.
 2. Activá el agente en **Agente IA → Configuración**.
 3. Cargá datos reales en Negocio, Productos, Servicios y Preguntas: el agente responde **solo** con esa información.
 
@@ -261,7 +265,7 @@ Cómo funciona:
 - El modelo consulta datos mediante herramientas (`src/server/agent/tools.ts`), todas filtradas por la organización de la sesión: `get_business_information`, `search_products`, `search_services`, `search_faqs` y `request_human_support` (cambia la conversación a modo `HUMAN`).
 - Control de costos: historial acotado a 12 mensajes, resultados de herramientas limitados (5 productos/servicios, 3 FAQs), máximo 4 rondas de herramientas y `max_output_tokens` fijo.
 - Cada conversación de prueba usa `channel = "test"`; "Reiniciar" cierra la conversación y el historial queda en la base.
-- `AI_PROVIDER=demo` impide crear el cliente de OpenAI. No se fabrica una respuesta para hacerla pasar por real.
+- `AI_PROVIDER=demo` impide crear clientes de OpenAI o Anthropic. No se fabrica una respuesta para hacerla pasar por real.
 
 ## Bandeja de conversaciones (etapa 3)
 
@@ -304,7 +308,7 @@ Cada intento saliente comienza en `pending`; los recibos de Meta lo actualizan a
 
 La respuesta humana valida nuevamente sesión, rol, organización, conversación, modo `HUMAN` e integración activa. El token se descifra solo durante la llamada server-side a Graph API, que tiene timeout y no simula éxitos.
 
-### Comportamiento sin OpenAI
+### Comportamiento sin un proveedor de IA real
 
 Cuando `AI_PROVIDER=demo`, falta una clave válida o el agente no puede responder:
 
@@ -312,7 +316,7 @@ Cuando `AI_PROVIDER=demo`, falta una clave válida o el agente no puede responde
 2. se conserva o crea cliente y conversación;
 3. la conversación queda pendiente;
 4. se agrega un aviso interno para el equipo;
-5. no se llama a OpenAI ni se envía una respuesta automática a WhatsApp.
+5. no se llama a OpenAI ni Anthropic, y no se envía una respuesta automática a WhatsApp.
 
 Si la conversación ya está en modo `HUMAN`, el agente tampoco se ejecuta. Una respuesta automática solo sale cuando el modo es `AI`, hay proveedor real, el agente genera correctamente el texto y Meta acepta el envío.
 

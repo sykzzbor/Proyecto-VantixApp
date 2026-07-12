@@ -9,7 +9,7 @@ import {
   type WhatsappSimulatorStatusInput,
 } from "@/lib/validations/whatsapp";
 import { prisma } from "@/lib/prisma";
-import { isAgentConfigured } from "@/server/agent/openai";
+import { isAgentConfigured } from "@/server/agent/config";
 import { recordAudit } from "@/server/audit";
 import { getOrgContext, requirePermission } from "@/server/context";
 import { saveMessage } from "@/server/conversations";
@@ -92,7 +92,7 @@ export async function simulateWhatsappIncoming(
         details: { tipo: "text", simulado: true },
       });
       if (persisted.handlingMode === "AI") {
-        // El simulador nunca dispara un envío real, aun si OpenAI está activo.
+        // El simulador nunca dispara un envío real, aunque exista un proveedor activo.
         await markConversationNeedsHumanAttention({
           organizationId: org.id,
           conversationId: persisted.conversationId,
