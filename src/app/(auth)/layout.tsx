@@ -1,13 +1,14 @@
 import Link from "next/link";
+import { VantixLogo } from "@/components/brand/vantix-logo";
 
 export default function AuthLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <div className="flex min-h-svh flex-1 bg-background">
-      <aside className="relative hidden w-[34%] max-w-[31rem] shrink-0 flex-col justify-between overflow-hidden border-r border-sidebar-border bg-sidebar p-10 lg:flex xl:p-14">
-        <Link href="/" className="w-fit text-xl font-semibold tracking-[-0.04em] text-white">
-          Vantix<span className="text-primary">App</span>
+      <aside className="relative hidden w-[34%] max-w-[31rem] shrink-0 flex-col justify-between overflow-hidden border-r border-sidebar-border bg-[#05060c] p-10 lg:flex xl:p-14">
+        <Link href="/" className="w-fit" aria-label="Ir al inicio de Vantix">
+          <VantixLogo priority className="w-36" />
         </Link>
         <div className="max-w-sm space-y-5">
           <div className="h-1 w-12 rounded-full bg-primary" aria-hidden />
@@ -21,9 +22,9 @@ export default function AuthLayout({
         <p className="text-xs text-muted-foreground">Diseñado para equipos que necesitan avanzar.</p>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 items-center border-b border-border/60 px-5 sm:px-8 lg:hidden">
-          <Link href="/" className="text-lg font-semibold tracking-[-0.04em] text-white">
-            Vantix<span className="text-primary">App</span>
+        <header className="flex h-16 items-center border-b border-border/60 bg-[#05060c] px-5 sm:px-8 lg:hidden">
+          <Link href="/" aria-label="Ir al inicio de Vantix">
+            <VantixLogo priority className="w-28" />
           </Link>
         </header>
         <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:px-6 sm:py-10">

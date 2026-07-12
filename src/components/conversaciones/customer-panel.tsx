@@ -97,6 +97,10 @@ export function CustomerPanel({
             <dd>{STATUS_LABEL[detail.status]}</dd>
           </div>
           <div className="flex items-center justify-between gap-2">
+            <dt className="text-muted-foreground">Atención</dt>
+            <dd>{detail.handlingMode === "ai" ? "IA activa" : "Humana"}</dd>
+          </div>
+          <div className="flex items-center justify-between gap-2">
             <dt className="text-muted-foreground">Primera conversación</dt>
             <dd>{detail.createdAtLabel}</dd>
           </div>
@@ -104,12 +108,12 @@ export function CustomerPanel({
             <dt className="text-muted-foreground">Última actividad</dt>
             <dd className="text-right">{detail.lastActivityLabel ?? "—"}</dd>
           </div>
-          {detail.assigned && (
-            <div className="flex items-center justify-between gap-2">
-              <dt className="text-muted-foreground">Responsable</dt>
-              <dd>{detail.assigned.name}</dd>
-            </div>
-          )}
+          <div className="flex items-center justify-between gap-2">
+            <dt className="text-muted-foreground">Responsable</dt>
+            <dd className="text-right">
+              {detail.assigned?.name ?? "Sin asignar"}
+            </dd>
+          </div>
         </dl>
       </div>
 

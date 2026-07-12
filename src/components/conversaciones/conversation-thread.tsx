@@ -163,6 +163,9 @@ export function ConversationThread({
   const isHuman = detail.handlingMode === "human";
   const isWhatsapp = detail.channel === "whatsapp";
   const canWrite = canRespond && isHuman && !isClosed;
+  const messageCountLabel = `${messages.length}${messages.length === 200 ? "+" : ""} ${
+    messages.length === 1 ? "mensaje" : "mensajes"
+  }`;
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -253,7 +256,7 @@ export function ConversationThread({
   const groups = groupByDay(messages);
 
   return (
-    <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-card">
+    <div className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-card">
       {/* Encabezado del hilo */}
       <div className="flex min-h-16 items-center gap-2 border-b border-border bg-card/95 px-3 py-2.5 md:px-4">
         <Button
@@ -274,7 +277,12 @@ export function ConversationThread({
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{customerName}</p>
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="truncate text-sm font-semibold">{customerName}</p>
+            <span className="hidden shrink-0 text-[10px] text-muted-foreground sm:inline">
+              {messageCountLabel}
+            </span>
+          </div>
           <div className="flex items-center gap-1.5">
             <Badge
               variant="outline"
@@ -315,6 +323,24 @@ export function ConversationThread({
                 </span>
               )}
             </span>
+            <span
+              className="inline-flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground"
+              title={isHuman ? "Atención humana" : "IA activa"}
+            >
+              {isHuman ? (
+                <UserRound className="size-3" aria-hidden />
+              ) : (
+                <Bot className="size-3" aria-hidden />
+              )}
+              <span className="hidden md:inline">
+                {isHuman ? "Humano" : "IA activa"}
+              </span>
+            </span>
+            {detail.assigned && (
+              <span className="hidden truncate text-[10px] text-muted-foreground xl:inline">
+                · {detail.assigned.name}
+              </span>
+            )}
           </div>
         </div>
 
@@ -324,6 +350,8 @@ export function ConversationThread({
               <Button
                 variant="outline"
                 size="sm"
+                aria-label="Devolver conversación a la IA"
+                title="Devolver conversación a la IA"
                 disabled={isPending}
                 onClick={() =>
                   runAction(
@@ -338,6 +366,8 @@ export function ConversationThread({
             ) : (
               <Button
                 size="sm"
+                aria-label="Tomar conversación"
+                title="Tomar conversación"
                 disabled={isPending}
                 onClick={() =>
                   runAction(
@@ -358,7 +388,7 @@ export function ConversationThread({
               <Button
                 variant="ghost"
                 size="icon"
-                className="xl:hidden"
+                title="Ver información del cliente"
                 aria-label="Ver información del cliente"
               >
                 <Info className="size-4" />
@@ -378,6 +408,7 @@ export function ConversationThread({
                 <Button
                   variant="ghost"
                   size="icon"
+                  title="Más acciones"
                   aria-label="Más acciones"
                   disabled={isPending}
                 >
@@ -500,7 +531,7 @@ export function ConversationThread({
       )}
 
       {/* Mensajes */}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto bg-background/25 px-3 py-4 sm:px-5">
+      <div ref={scrollRef} className="conversation-canvas min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5">
         {messages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-sm text-muted-foreground">
@@ -552,7 +583,7 @@ export function ConversationThread({
                       </span>
                       <div
                         className={cn(
-                          "max-w-[88%] whitespace-pre-wrap break-words rounded-xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm sm:max-w-[72%]",
+                          "max-w-[88%] whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm sm:max-w-[72%]",
                           fromCustomer && "rounded-bl-sm border border-border bg-[#202633]",
                           !fromCustomer &&
                             failed &&
@@ -664,12 +695,20 @@ export function ConversationThread({
         </div>
       ) : (
         <form
-          className="flex items-end gap-2 border-t border-border bg-card p-3"
+          className="flex flex-col gap-2 border-t border-border bg-card p-3"
           onSubmit={(event) => {
             event.preventDefault();
             send();
           }}
         >
+          <div className="flex items-center gap-2 px-1 text-[10px] text-muted-foreground">
+            <span className="size-1.5 rounded-full bg-primary" aria-hidden />
+            <span>Atención humana</span>
+            <span className="ml-auto hidden sm:inline">
+              Enter para enviar · Shift + Enter para nueva línea
+            </span>
+          </div>
+          <div className="flex items-end gap-2">
           <Textarea
             ref={textareaRef}
             value={input}
@@ -706,6 +745,7 @@ export function ConversationThread({
               <SendHorizonal className="size-4" />
             )}
           </Button>
+          </div>
         </form>
       )}
     </div>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Bot, Inbox, Search, SearchX, UserRound } from "lucide-react";
 import type { ConversationListItem } from "@/server/inbox";
+import { InboxAutoRefresh } from "@/components/conversaciones/inbox-auto-refresh";
 import { useTableFilters } from "@/components/dashboard/use-table-filters";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -65,8 +66,20 @@ export function ConversationList({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-16 items-center justify-between gap-3 border-b border-border bg-sidebar/65 px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold tracking-tight text-foreground">
+            Conversaciones
+          </h2>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            {items.length} {items.length === 1 ? "conversación" : "conversaciones"}
+          </p>
+        </div>
+        <InboxAutoRefresh />
+      </div>
+
       {/* Buscador y filtros */}
-      <div className="space-y-2.5 border-b border-border bg-sidebar/35 p-3.5">
+      <div className="space-y-2.5 border-b border-border bg-sidebar/35 p-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -147,10 +160,12 @@ export function ConversationList({
               <li key={item.id}>
                 <Link
                   href={hrefFor(item.id)}
+                  aria-label={`Abrir conversación con ${item.customerName}`}
                   aria-current={item.id === selectedId ? "true" : undefined}
                   className={cn(
-                    "relative flex gap-3 border-b border-border/65 px-3.5 py-3.5 transition-colors hover:bg-accent/50",
-                    item.id === selectedId && "bg-accent/75 shadow-[inset_3px_0_0_var(--primary)]"
+                    "relative flex gap-3 border-b border-border/65 px-3.5 py-3 transition-colors hover:bg-accent/50 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50",
+                    item.id === selectedId &&
+                      "bg-primary/[0.11] shadow-[inset_3px_0_0_var(--primary)]"
                   )}
                 >
                   <Avatar className="mt-0.5 size-9 shrink-0">

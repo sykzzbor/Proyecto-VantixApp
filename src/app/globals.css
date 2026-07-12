@@ -125,6 +125,18 @@
   }
 }
 
+@layer components {
+  .conversation-canvas {
+    background-color: #10141c;
+    background-image: radial-gradient(
+      circle at center,
+      rgba(107, 145, 255, 0.075) 0.75px,
+      transparent 0.9px
+    );
+    background-size: 22px 22px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
