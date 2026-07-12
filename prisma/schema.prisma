@@ -1,0 +1,411 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// Autenticación (tablas gestionadas por Better Auth)
+// ============================================================
+
+model User {
+  id            String   @id
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions              Session[]
+  accounts              Account[]
+  memberships           OrganizationMember[]
+  auditLogs             AuditLog[]
+  invitations           Invitation[]         @relation("InvitedBy")
+  assignedConversations Conversation[]       @relation("AssignedConversations")
+  sentMessages          Message[]            @relation("SentMessages")
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+// ============================================================
+// Organizaciones y membresías
+// ============================================================
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  AGENT
+  VIEWER
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members              OrganizationMember[]
+  invitations          Invitation[]
+  businessProfile      BusinessProfile?
+  agentSettings        AgentSettings?
+  products             Product[]
+  services             Service[]
+  faqs                 Faq[]
+  auditLogs            AuditLog[]
+  conversations        Conversation[]
+  messages             Message[]
+  customers            Customer[]
+  whatsappIntegrations WhatsappIntegration[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String     @id @default(cuid())
+  organizationId String
+  userId         String
+  role           MemberRole @default(VIEWER)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("organization_members")
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
+model Invitation {
+  id             String           @id @default(cuid())
+  organizationId String
+  email          String
+  role           MemberRole       @default(VIEWER)
+  token          String           @unique @default(cuid())
+  status         InvitationStatus @default(PENDING)
+  expiresAt      DateTime
+  invitedById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User?        @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@map("invitations")
+}
+
+// ============================================================
+// Datos del negocio
+// ============================================================
+
+model BusinessProfile {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  name           String
+  description    String?
+  industry       String?
+  phone          String?
+  email          String?
+  website        String?
+  address        String?
+  city           String?
+  country        String?
+  openingHours   String?
+  paymentMethods String?
+  shippingInfo   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("business_profiles")
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  price          Decimal  @db.Decimal(12, 2)
+  stock          Int      @default(0)
+  category       String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, active])
+  @@map("products")
+}
+
+model Service {
+  id              String   @id @default(cuid())
+  organizationId  String
+  name            String
+  description     String?
+  price           Decimal  @db.Decimal(12, 2)
+  durationMinutes Int      @default(30)
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("services")
+}
+
+model Faq {
+  id             String   @id @default(cuid())
+  organizationId String
+  question       String
+  answer         String
+  category       String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("faqs")
+}
+
+// ============================================================
+// Configuración del futuro agente de IA (solo datos, sin IA)
+// ============================================================
+
+enum AgentTone {
+  PROFESSIONAL
+  FRIENDLY
+  FORMAL
+  CASUAL
+}
+
+model AgentSettings {
+  id              String    @id @default(cuid())
+  organizationId  String    @unique
+  assistantName   String    @default("Asistente")
+  tone            AgentTone @default(PROFESSIONAL)
+  welcomeMessage  String    @default("¡Hola! ¿En qué puedo ayudarte?")
+  fallbackMessage String    @default("No tengo esa información. Un miembro del equipo te va a responder a la brevedad.")
+  handoffRules    String?
+  enabled         Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("agent_settings")
+}
+
+// ============================================================
+// Conversaciones del agente
+// ============================================================
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  CLOSED
+}
+
+enum HandlingMode {
+  AI
+  HUMAN
+}
+
+enum SenderType {
+  CUSTOMER
+  AI
+  HUMAN
+  SYSTEM
+}
+
+enum WhatsappIntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+enum MessageDeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model WhatsappIntegration {
+  id                   String                    @id @default(cuid())
+  organizationId       String
+  wabaId               String
+  phoneNumberId        String                    @unique
+  displayPhoneNumber   String
+  verifiedName         String
+  encryptedAccessToken String
+  status               WhatsappIntegrationStatus @default(DISCONNECTED)
+  lastError            String?
+  connectedAt          DateTime?
+  lastWebhookAt        DateTime?
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+
+  @@index([organizationId])
+  @@map("whatsapp_integrations")
+}
+
+model Customer {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  phone          String?
+  email          String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+
+  @@index([organizationId])
+  @@index([organizationId, phone])
+  @@map("customers")
+}
+
+model Conversation {
+  id                    String             @id @default(cuid())
+  organizationId        String
+  customerId            String?
+  whatsappIntegrationId String?
+  channel               String             @default("test")
+  status                ConversationStatus @default(OPEN)
+  handlingMode          HandlingMode       @default(AI)
+  assignedUserId        String?
+  humanTakeoverAt       DateTime?
+  lastMessageAt         DateTime?
+  unreadCount           Int                @default(0)
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer            Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  whatsappIntegration WhatsappIntegration? @relation(fields: [whatsappIntegrationId], references: [id], onDelete: SetNull)
+  assignedUser        User?                @relation("AssignedConversations", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  messages            Message[]
+
+  @@index([organizationId, channel, status])
+  @@index([organizationId, lastMessageAt(sort: Desc)])
+  @@index([whatsappIntegrationId])
+  @@index([organizationId, customerId, channel, status])
+  @@map("conversations")
+}
+
+model Message {
+  id                String                 @id @default(cuid())
+  organizationId    String
+  conversationId    String
+  senderType        SenderType
+  senderUserId      String?
+  content           String
+  externalMessageId String?                @unique
+  deliveryStatus    MessageDeliveryStatus?
+  errorCode         String?
+  errorMessage      String?
+  metadata          Json?
+  createdAt         DateTime               @default(now())
+  readAt            DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderUser   User?        @relation("SentMessages", fields: [senderUserId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+// ============================================================
+// Auditoría
+// ============================================================
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?
+  action         String
+  entityType     String?
+  entityId       String?
+  details        Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("audit_logs")
+}

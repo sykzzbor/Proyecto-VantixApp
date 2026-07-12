@@ -1,0 +1,222 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { chatRequestSchema } from "@/lib/validations/chat";
+import { isAgentConfigured } from "@/server/agent/openai";
+import { buildAgentInstructions } from "@/server/agent/prompt";
+import { AgentRunError, runAgent } from "@/server/agent/run";
+import type { AgentToolContext } from "@/server/agent/tools";
+import { recordAudit } from "@/server/audit";
+import {
+  HISTORY_LIMIT,
+  getOrCreateTestConversation,
+  getRecentMessages,
+  saveMessage,
+} from "@/server/conversations";
+import { checkRateLimit } from "@/server/rate-limit";
+import { formatTime } from "@/lib/format";
+
+const RATE_LIMIT_MESSAGES = 20;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+
+function jsonError(status: number, error: string, message: string) {
+  return NextResponse.json({ error, message }, { status });
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    // 1. Sesión autenticada.
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session) {
+      return jsonError(401, "unauthorized", "Tenés que iniciar sesión.");
+    }
+
+    // 2. La organización sale SIEMPRE de la membresía del usuario,
+    //    nunca del cuerpo de la petición.
+    const membership = await prisma.organizationMember.findFirst({
+      where: { userId: session.user.id },
+      orderBy: { createdAt: "asc" },
+      select: { organizationId: true },
+    });
+    if (!membership) {
+      return jsonError(
+        403,
+        "no_organization",
+        "Tu usuario no pertenece a ninguna organización."
+      );
+    }
+    const organizationId = membership.organizationId;
+
+    // 3. Rate limiting por organización y usuario.
+    const rate = checkRateLimit(
+      `agent-chat:${organizationId}:${session.user.id}`,
+      RATE_LIMIT_MESSAGES,
+      RATE_LIMIT_WINDOW_MS
+    );
+    if (!rate.allowed) {
+      return NextResponse.json(
+        {
+          error: "rate_limited",
+          message: "Enviaste demasiados mensajes seguidos. Esperá un momento.",
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rate.retryAfterSeconds) },
+        }
+      );
+    }
+
+    // 4. Validación del mensaje.
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonError(400, "invalid_body", "El cuerpo de la petición no es válido.");
+    }
+    const parsed = chatRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return jsonError(
+        400,
+        "invalid_message",
+        parsed.error.issues[0]?.message ?? "El mensaje no es válido."
+      );
+    }
+
+    // 5. Conversación de prueba (se crea o reutiliza).
+    const conversation = await getOrCreateTestConversation(organizationId);
+
+    // 6. Si la conversación está en atención humana, la IA no responde:
+    //    el mensaje queda guardado y aparece en la bandeja del equipo.
+    if (conversation.handlingMode === "HUMAN") {
+      const customerMessage = await saveMessage({
+        organizationId,
+        conversationId: conversation.id,
+        senderType: "CUSTOMER",
+        content: parsed.data.message,
+      });
+      await recordAudit({
+        organizationId,
+        userId: session.user.id,
+        action: "agente.mensaje_recibido",
+        entityType: "conversation",
+        entityId: conversation.id,
+        details: { canal: conversation.channel, modo: "humano" },
+      });
+      return NextResponse.json({
+        reply: null,
+        humanMode: true,
+        humanTakeover: true,
+        messageId: customerMessage.id,
+        timeLabel: formatTime(customerMessage.createdAt),
+      });
+    }
+
+    // 7. Configuración del agente.
+    const [settings, business] = await Promise.all([
+      prisma.agentSettings.findUnique({ where: { organizationId } }),
+      prisma.businessProfile.findUnique({ where: { organizationId } }),
+    ]);
+    if (!settings || !settings.enabled) {
+      return jsonError(
+        409,
+        "agent_disabled",
+        "El agente está desactivado. Activalo desde la configuración del agente."
+      );
+    }
+    if (!isAgentConfigured()) {
+      return jsonError(
+        503,
+        "agent_not_configured",
+        "Las respuestas automáticas están en modo demo o no hay un proveedor de IA real configurado."
+      );
+    }
+
+    // 8. Historial acotado (antes de guardar el mensaje nuevo, para no
+    //    duplicarlo en el contexto) y persistencia del mensaje del cliente.
+    const historyRows = await getRecentMessages(
+      conversation.id,
+      organizationId,
+      HISTORY_LIMIT
+    );
+
+    await saveMessage({
+      organizationId,
+      conversationId: conversation.id,
+      senderType: "CUSTOMER",
+      content: parsed.data.message,
+    });
+
+    await recordAudit({
+      organizationId,
+      userId: session.user.id,
+      action: "agente.mensaje_recibido",
+      entityType: "conversation",
+      entityId: conversation.id,
+      details: { canal: conversation.channel },
+    });
+
+    // 9. Ejecución del agente con herramientas.
+    const ctx: AgentToolContext = {
+      organizationId,
+      conversationId: conversation.id,
+      userId: session.user.id,
+      flags: { humanTakeover: false },
+    };
+
+    let result;
+    try {
+      result = await runAgent({
+        ctx,
+        instructions: buildAgentInstructions(settings, business),
+        history: historyRows
+          .filter((message) => message.senderType !== "SYSTEM")
+          .map((message) => ({
+            role:
+              message.senderType === "CUSTOMER"
+                ? ("user" as const)
+                : ("assistant" as const),
+            content: message.content,
+          })),
+        userMessage: parsed.data.message,
+      });
+    } catch (error) {
+      if (error instanceof AgentRunError) {
+        await recordAudit({
+          organizationId,
+          userId: session.user.id,
+          action: "agente.error",
+          entityType: "conversation",
+          entityId: conversation.id,
+        });
+        return jsonError(
+          502,
+          "agent_error",
+          "No se pudo generar la respuesta. Probá de nuevo en unos segundos."
+        );
+      }
+      throw error;
+    }
+
+    // 10. Persistencia de la respuesta y salida al frontend.
+    const reply = result.reply || settings.fallbackMessage;
+    const assistantMessage = await saveMessage({
+      organizationId,
+      conversationId: conversation.id,
+      senderType: "AI",
+      content: reply,
+    });
+
+    return NextResponse.json({
+      reply,
+      humanTakeover: result.humanTakeover,
+      messageId: assistantMessage.id,
+      timeLabel: formatTime(assistantMessage.createdAt),
+    });
+  } catch (error) {
+    console.error(
+      "[VantixApp] Error inesperado en /api/agent/chat:",
+      error instanceof Error ? error.message : "desconocido"
+    );
+    return jsonError(500, "internal_error", "Ocurrió un error inesperado.");
+  }
+}
