@@ -3,9 +3,43 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { prisma } from "@/lib/prisma";
 
+function getConfiguredOrigin(value: string | undefined) {
+  const url = value?.trim();
+  return url ? new URL(url).origin : undefined;
+}
+
+function getVercelOrigin(host: string | undefined) {
+  const value = host?.trim();
+  return value ? new URL(`https://${value}`).origin : undefined;
+}
+
+const canonicalOrigin = getConfiguredOrigin(process.env.BETTER_AUTH_URL);
+const trustedOrigins = Array.from(
+  new Set(
+    [
+      canonicalOrigin,
+      getVercelOrigin(process.env.VERCEL_URL),
+      getVercelOrigin(process.env.VERCEL_PROJECT_PRODUCTION_URL),
+      process.env.NODE_ENV === "development"
+        ? "http://localhost:3000"
+        : undefined,
+    ].filter((origin): origin is string => Boolean(origin))
+  )
+);
+
+const allowedHosts = trustedOrigins.map((origin) => new URL(origin).host);
+
 export const auth = betterAuth({
   appName: "VantixApp",
-  baseURL: process.env.BETTER_AUTH_URL,
+  baseURL:
+    allowedHosts.length > 0
+      ? {
+          allowedHosts,
+          protocol: "auto",
+          fallback: canonicalOrigin,
+        }
+      : canonicalOrigin,
+  trustedOrigins,
   secret: process.env.BETTER_AUTH_SECRET,
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   emailAndPassword: {
