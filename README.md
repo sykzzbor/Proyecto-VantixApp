@@ -86,7 +86,13 @@ npm install
 
 Elegí **una** de estas opciones:
 
-**a) PostgreSQL local (Windows/Mac/Linux)**
+**a) PostgreSQL administrado (recomendado para Vercel)**
+
+- Prisma Postgres desde Vercel Marketplace es la opción más directa: crea la base, agrega pooling y configura `DATABASE_URL` en el proyecto.
+- Neon y Supabase también son compatibles. Para el runtime serverless usá la URL con pooler y TLS que entregue el proveedor.
+- La URL administrada reemplaza cualquier dirección local y funciona aunque tu computadora esté apagada.
+
+**b) PostgreSQL local (desarrollo opcional)**
 
 1. Descargá el instalador desde <https://www.postgresql.org/download/> e instalalo (recordá la contraseña del usuario `postgres`).
 2. Creá la base:
@@ -96,24 +102,11 @@ Elegí **una** de estas opciones:
    (o desde pgAdmin: click derecho en *Databases* → *Create*).
 3. `DATABASE_URL` queda: `postgresql://postgres:TU_CONTRASEÑA@localhost:5432/vantixapp?schema=public`
 
-**b) Docker**
+**c) Docker (desarrollo opcional)**
 
 ```bash
 docker run --name vantix-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=vantixapp -p 5432:5432 -d postgres:17
 ```
-
-**c) Prisma Postgres local (lo más rápido, sin instalar nada)**
-
-```bash
-npx prisma dev
-```
-
-Deja un PostgreSQL local corriendo en la terminal y muestra la `DATABASE_URL` para pegar en `.env`. Mantené esa terminal abierta mientras uses la app.
-
-**d) Base administrada**
-
-- [Neon](https://neon.tech) o [Supabase](https://supabase.com): creá un proyecto gratuito y copiá la cadena de conexión de PostgreSQL.
-- También podés usar `npx create-db` (Prisma Postgres en la nube) y pegar la URL resultante.
 
 ### 4. Variables de entorno
 
@@ -121,11 +114,11 @@ Deja un PostgreSQL local corriendo en la terminal y muestra la `DATABASE_URL` pa
 cp .env.example .env
 ```
 
-Completá:
+El archivo de ejemplo no contiene URLs locales ni secretos. Completá:
 
-- `DATABASE_URL`: la cadena de conexión del paso anterior.
+- `DATABASE_URL`: URL administrada con pooling y TLS en Vercel; local solo durante desarrollo.
 - `BETTER_AUTH_SECRET`: un secreto aleatorio (`openssl rand -base64 32`).
-- `BETTER_AUTH_URL`: `http://localhost:3000` en desarrollo.
+- `BETTER_AUTH_URL`: origen público HTTPS en Vercel; local solo durante desarrollo.
 - `AI_PROVIDER`: usá `demo` para no llamar a OpenAI o `openai` para habilitar el proveedor real.
 - `OPENAI_API_KEY`: clave de <https://platform.openai.com/api-keys>; solo es necesaria con `AI_PROVIDER=openai`.
 - `OPENAI_MODEL`: opcional, por defecto `gpt-5-mini`.
@@ -133,7 +126,7 @@ Completá:
 - `META_APP_SECRET`: App Secret de la aplicación de Meta, usado para validar la firma del `POST`.
 - `META_GRAPH_API_VERSION`: versión habilitada para la aplicación, con formato `vN.N`.
 - `CREDENTIALS_ENCRYPTION_KEY`: clave de 32 bytes en 64 caracteres hexadecimales o base64. Podés generarla con `openssl rand -hex 32`.
-- `WHATSAPP_DEV_MODE`: `true` habilita el simulador únicamente cuando `NODE_ENV` no es `production`.
+- `WHATSAPP_DEV_MODE`: `false` en Vercel; `true` habilita el simulador únicamente fuera de producción.
 
 Todas las variables anteriores son server-side. No les agregues el prefijo `NEXT_PUBLIC_`, no las incluyas en commits y reiniciá el servidor después de modificarlas.
 
@@ -154,6 +147,8 @@ Para un despliegue, generá el cliente y aplicá únicamente las migraciones ver
 npx prisma generate
 npm run db:deploy
 ```
+
+`postinstall` ejecuta `prisma generate` automáticamente durante la instalación de Vercel. Las migraciones no forman parte de `next build`: aplicalas como paso controlado antes del despliegue mediante `npm run db:deploy`. Si el proveedor entrega una URL directa y otra con pooling, usá temporalmente la directa para ese comando y conservá la URL con pooling como `DATABASE_URL` del runtime.
 
 No uses `prisma migrate reset`: elimina datos y no forma parte del flujo de este proyecto. Tampoco modifiques migraciones anteriores.
 
@@ -200,6 +195,56 @@ npm run build
 ```
 
 La migración se ejecuta aparte con `npm run db:migrate` en desarrollo o `npm run db:deploy` en el entorno de despliegue; nunca con un reset.
+
+## Despliegue en Vercel
+
+### Crear y conectar PostgreSQL
+
+1. Importá el repositorio en Vercel y elegí `vantix-app` como **Root Directory** si el repositorio contiene la carpeta contenedora.
+2. En **Storage → Create Database**, elegí Prisma Postgres, Neon u otro PostgreSQL administrado compatible.
+3. Vinculá la base con el proyecto. La integración debe crear `DATABASE_URL`; para funciones serverless usá la URL con pooling y TLS.
+4. Si el proveedor ofrece además una URL directa, usala solo al ejecutar migraciones y tareas administrativas. No reemplaces con ella la URL pooled del runtime.
+
+### Variables de Vercel
+
+Configurá las variables desde **Project → Settings → Environment Variables**. Los secretos no deben llevar `NEXT_PUBLIC_`.
+
+| Variable | Valor en Production |
+| --- | --- |
+| `DATABASE_URL` | URL PostgreSQL administrada con pooling y TLS. |
+| `BETTER_AUTH_SECRET` | Secreto aleatorio de al menos 32 bytes. |
+| `BETTER_AUTH_URL` | `https://tu-dominio` o la URL estable `https://tu-proyecto.vercel.app`, sin barra final. |
+| `AI_PROVIDER` | `demo` hasta habilitar un proveedor real. |
+| `OPENAI_API_KEY` | Omitir mientras `AI_PROVIDER=demo`; agregar solo una clave real. |
+| `OPENAI_MODEL` | Modelo habilitado para la cuenta; se usa únicamente con `AI_PROVIDER=openai`. |
+| `WHATSAPP_VERIFY_TOKEN` | Secreto aleatorio compartido con la configuración del webhook de Meta. |
+| `META_APP_SECRET` | App Secret real de Meta. |
+| `META_GRAPH_API_VERSION` | Versión de Graph API habilitada para la aplicación de Meta. |
+| `CREDENTIALS_ENCRYPTION_KEY` | 32 bytes en 64 caracteres hexadecimales o base64. No cambiar después de cifrar tokens sin un plan de rotación. |
+| `WHATSAPP_DEV_MODE` | `false`. |
+
+Si OpenAI o Meta todavía no están configurados, no cargues valores falsos. El modo demo sigue permitiendo bandeja y respuestas humanas sin enviar automatizaciones a WhatsApp.
+
+### Migraciones y build
+
+Aplicá las cuatro migraciones versionadas contra la base nueva antes del primer despliegue:
+
+```bash
+npm ci
+npm run db:deploy
+```
+
+Para proveedores que separan conexiones, ejecutá ese comando en un entorno confiable donde `DATABASE_URL` apunte temporalmente a la URL **directa**. En Vercel dejá configurada la URL **pooled** para el runtime. `migrate deploy` aplica únicamente migraciones pendientes y no crea migraciones nuevas.
+
+Configuración del proyecto en Vercel:
+
+- Framework Preset: **Next.js**.
+- Install Command: `npm install` o el valor automático de Vercel.
+- Build Command: `npm run build`.
+- Output Directory: automático de Next.js; no configurar manualmente.
+- Node.js: 20.9 o superior, según `package.json`.
+
+No se usa `vercel-build`: `postinstall` ya genera Prisma Client y mantener las migraciones fuera del build evita que un Preview modifique accidentalmente una base compartida. Después de configurar variables o rotar secretos, generá un nuevo deployment.
 
 ## Agente de IA (etapa 2)
 

@@ -2,15 +2,20 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
 function createPrismaClient() {
+  const connectionString = process.env.DATABASE_URL?.trim() ?? "";
+
+  if (!connectionString && process.env.NODE_ENV === "production") {
+    throw new Error("DATABASE_URL no está configurada.");
+  }
+
   return new PrismaClient({
     adapter: new PrismaPg({
-      connectionString: process.env.DATABASE_URL ?? "",
-      // Evita usar conexiones inactivas que el servidor ya cerró
-      // (recomendado por Prisma para la base local de `prisma dev`;
-      // inocuo con PostgreSQL administrado).
-      max: 10,
-      idleTimeoutMillis: 1_000,
-      connectionTimeoutMillis: 0,
+      connectionString,
+      // Cada instancia serverless mantiene su propio pool. Un máximo bajo evita
+      // agotar conexiones; el proveedor administrado debe aportar el pooler.
+      max: process.env.NODE_ENV === "production" ? 1 : 10,
+      idleTimeoutMillis: 10_000,
+      connectionTimeoutMillis: 10_000,
     }),
   });
 }
