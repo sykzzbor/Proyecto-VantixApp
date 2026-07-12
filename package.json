@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "vercel-build": "prisma generate && prisma migrate deploy && next build",
     "start": "next start",
     "test": "tsx --test src/server/whatsapp/whatsapp.test.ts",
     "lint": "eslint .",

@@ -3,21 +3,31 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { prisma } from "@/lib/prisma";
 
+/** Dominio oficial de producción: fallback estable si falta BETTER_AUTH_URL. */
+const OFFICIAL_ORIGIN = "https://proyecto-vantix-app.vercel.app";
+
 function getConfiguredOrigin(value: string | undefined) {
   const url = value?.trim();
-  return url ? new URL(url).origin : undefined;
+  if (!url) return undefined;
+  try {
+    return new URL(url).origin;
+  } catch {
+    return undefined;
+  }
 }
 
 function getVercelOrigin(host: string | undefined) {
   const value = host?.trim();
-  return value ? new URL(`https://${value}`).origin : undefined;
+  return value ? getConfiguredOrigin(`https://${value}`) : undefined;
 }
 
-const canonicalOrigin = getConfiguredOrigin(process.env.BETTER_AUTH_URL);
+const canonicalOrigin =
+  getConfiguredOrigin(process.env.BETTER_AUTH_URL) ?? OFFICIAL_ORIGIN;
 const trustedOrigins = Array.from(
   new Set(
     [
       canonicalOrigin,
+      OFFICIAL_ORIGIN,
       getVercelOrigin(process.env.VERCEL_URL),
       getVercelOrigin(process.env.VERCEL_PROJECT_PRODUCTION_URL),
       process.env.NODE_ENV === "development"
