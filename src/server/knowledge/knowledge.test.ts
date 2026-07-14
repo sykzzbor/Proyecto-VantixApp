@@ -13,6 +13,10 @@ import {
   sanitizeFilename,
   validateUpload,
 } from "@/server/knowledge/files";
+import {
+  __setStorageForTests,
+  getStorage,
+} from "@/server/knowledge/storage";
 
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -131,4 +135,31 @@ test("extractDocumentText de TXT devuelve el texto y falla si está vacío", asy
     () => extractDocumentText("txt", Buffer.from("   ", "utf8")),
     (error: unknown) => error instanceof ExtractionError && error.code === "empty"
   );
+});
+
+test("getStorage usa Blob en Vercel y conserva el token como fallback local", () => {
+  const previousVercel = process.env.VERCEL;
+  const previousToken = process.env.BLOB_READ_WRITE_TOKEN;
+
+  try {
+    delete process.env.VERCEL;
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+    __setStorageForTests(null);
+    assert.equal(getStorage().driver, "local");
+
+    process.env.BLOB_READ_WRITE_TOKEN = "token-local-opcional";
+    __setStorageForTests(null);
+    assert.equal(getStorage().driver, "vercel-blob");
+
+    process.env.VERCEL = "1";
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+    __setStorageForTests(null);
+    assert.equal(getStorage().driver, "vercel-blob");
+  } finally {
+    if (previousVercel === undefined) delete process.env.VERCEL;
+    else process.env.VERCEL = previousVercel;
+    if (previousToken === undefined) delete process.env.BLOB_READ_WRITE_TOKEN;
+    else process.env.BLOB_READ_WRITE_TOKEN = previousToken;
+    __setStorageForTests(null);
+  }
 });

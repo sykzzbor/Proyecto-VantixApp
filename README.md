@@ -233,7 +233,10 @@ Configurá las variables desde **Project → Settings → Environment Variables*
 | `META_GRAPH_API_VERSION` | Versión de Graph API habilitada para la aplicación de Meta. |
 | `CREDENTIALS_ENCRYPTION_KEY` | 32 bytes en 64 caracteres hexadecimales o base64. No cambiar después de cifrar tokens sin un plan de rotación. |
 | `WHATSAPP_DEV_MODE` | `false`. |
-| `BLOB_READ_WRITE_TOKEN` | Token de Vercel Blob (Storage → Blob) para el Centro de conocimiento. Sin él, en desarrollo se usa almacenamiento local en `./.storage`. No lleva `NEXT_PUBLIC_`. |
+| `BLOB_STORE_ID` | Identificador del Blob privado conectado. Vercel lo inyecta junto con credenciales OIDC temporales y rotativas; no hace falta configurar un token manual. |
+| `BLOB_READ_WRITE_TOKEN` | Fallback opcional para usar Vercel Blob fuera de Vercel. Si se omite fuera de Vercel, se usa almacenamiento local en `./.storage`. No lleva `NEXT_PUBLIC_`. |
+
+En Vercel, `@vercel/blob` autentica `put()`, `get()` y `del()` automáticamente mediante OIDC y `BLOB_STORE_ID`. `BLOB_WEBHOOK_PUBLIC_KEY` sirve para validar webhooks y no debe utilizarse como credencial de almacenamiento.
 
 Si el proveedor de IA o Meta todavía no están configurados, no cargues valores falsos. El modo demo sigue permitiendo bandeja y respuestas humanas sin enviar automatizaciones a WhatsApp.
 

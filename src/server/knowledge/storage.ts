@@ -42,13 +42,10 @@ export interface StorageAdapter {
 class VercelBlobStorage implements StorageAdapter {
   readonly driver = "vercel-blob" as const;
 
-  constructor(private readonly token: string) {}
-
   async put(input: { key: string; data: Buffer; contentType: string }) {
     const { put } = await import("@vercel/blob");
     const blob = await put(input.key, input.data, {
-      access: "public",
-      token: this.token,
+      access: "private",
       contentType: input.contentType,
       // Sufijo aleatorio: la ruta no es adivinable aunque se conozca la clave lógica.
       addRandomSuffix: true,
@@ -58,15 +55,16 @@ class VercelBlobStorage implements StorageAdapter {
   }
 
   async download(key: string): Promise<Buffer> {
-    const response = await fetch(key);
-    if (!response.ok) throw new StorageError("not_found");
-    return Buffer.from(await response.arrayBuffer());
+    const { get } = await import("@vercel/blob");
+    const blob = await get(key, { access: "private" });
+    if (!blob || blob.statusCode !== 200) throw new StorageError("not_found");
+    return Buffer.from(await new Response(blob.stream).arrayBuffer());
   }
 
   async delete(key: string): Promise<void> {
     const { del } = await import("@vercel/blob");
     try {
-      await del(key, { token: this.token });
+      await del(key);
     } catch {
       // Idempotente: si ya no existe, seguimos.
     }
@@ -125,8 +123,9 @@ let cached: StorageAdapter | null = null;
 
 export function getStorage(): StorageAdapter {
   if (cached) return cached;
-  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
-  cached = token ? new VercelBlobStorage(token) : new LocalStorage();
+  const isVercel = process.env.VERCEL === "1";
+  const hasReadWriteToken = Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());
+  cached = isVercel || hasReadWriteToken ? new VercelBlobStorage() : new LocalStorage();
   return cached;
 }
 
