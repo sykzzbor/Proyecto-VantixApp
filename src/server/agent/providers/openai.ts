@@ -3,6 +3,7 @@ import type {
   ResponseInput,
   ResponseInputItem,
   FunctionTool,
+  Response,
 } from "openai/resources/responses/responses";
 import { getAgentModel, getOpenAIClient } from "@/server/agent/openai";
 import {
@@ -44,13 +45,25 @@ export async function runOpenAIProvider(
     { role: "user" as const, content: params.userMessage },
   ];
 
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let toolCallsCount = 0;
+  const accumulate = (response: Response) => {
+    inputTokens += response.usage?.input_tokens ?? 0;
+    outputTokens += response.usage?.output_tokens ?? 0;
+    cacheReadTokens += response.usage?.input_tokens_details?.cached_tokens ?? 0;
+  };
+
   let response = await client.responses.create({ ...baseRequest, input });
+  accumulate(response);
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const toolCalls = response.output.filter(
       (item): item is ResponseFunctionToolCall => item.type === "function_call"
     );
     if (toolCalls.length === 0) break;
+    toolCallsCount += toolCalls.length;
 
     const outputs: ResponseInputItem.FunctionCallOutput[] = [];
     for (const call of toolCalls) {
@@ -66,14 +79,23 @@ export async function runOpenAIProvider(
       previous_response_id: response.id,
       input: outputs,
     });
+    accumulate(response);
   }
 
   console.info(
-    `[VantixApp] agente ok provider=openai org=${params.ctx.organizationId} tokens_in=${response.usage?.input_tokens ?? "?"} tokens_out=${response.usage?.output_tokens ?? "?"}`
+    `[VantixApp] agente ok provider=openai org=${params.ctx.organizationId} tokens_in=${inputTokens} tokens_out=${outputTokens}`
   );
 
   return {
     reply: response.output_text.trim(),
     humanTakeover: params.ctx.flags.humanTakeover,
+    usage: {
+      provider: "openai",
+      model,
+      inputTokens,
+      outputTokens,
+      cacheReadTokens: cacheReadTokens || undefined,
+      toolCallsCount,
+    },
   };
 }

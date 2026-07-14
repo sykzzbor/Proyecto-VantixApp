@@ -8,7 +8,8 @@ import { AGENT_TONE_LABELS } from "@/lib/validations/agent";
  */
 export function buildAgentInstructions(
   settings: AgentSettings,
-  business: BusinessProfile | null
+  business: BusinessProfile | null,
+  options: { hasKnowledge?: boolean } = {}
 ): string {
   const businessName = business?.name ?? "el negocio";
   const tone = AGENT_TONE_LABELS[settings.tone];
@@ -37,6 +38,12 @@ export function buildAgentInstructions(
     `- Si no podés ayudar con algo, podés usar este mensaje como guía: "${settings.fallbackMessage}"`,
     "- Si la consulta requiere atención humana (reclamos, pedidos explícitos de hablar con una persona, temas sensibles), utilizá request_human_support y avisale al cliente que una persona del equipo va a continuar la conversación.",
   ];
+
+  if (options.hasKnowledge) {
+    lines.push(
+      "- Cuando la consulta pueda responderse con documentos cargados por el negocio (manuales, políticas, catálogos, instructivos), utilizá search_knowledge y respondé únicamente con lo que devuelva. No afirmes que un documento dice algo si no fue recuperado."
+    );
+  }
 
   if (settings.handoffRules) {
     lines.push(

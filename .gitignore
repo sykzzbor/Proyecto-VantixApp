@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# almacenamiento local de desarrollo (Centro de conocimiento)
+/.storage/
+
 # production
 /build
 

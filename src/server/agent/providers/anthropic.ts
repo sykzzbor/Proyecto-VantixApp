@@ -121,6 +121,11 @@ export async function runAnthropicProvider(
   ];
 
   let toolRounds = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let cacheWriteTokens = 0;
+  let toolCallsCount = 0;
   while (true) {
     const response = await createMessage({
       model,
@@ -129,6 +134,10 @@ export async function runAnthropicProvider(
       messages,
       tools: ANTHROPIC_AGENT_TOOLS,
     });
+    inputTokens += response.usage.input_tokens ?? 0;
+    outputTokens += response.usage.output_tokens ?? 0;
+    cacheReadTokens += response.usage.cache_read_input_tokens ?? 0;
+    cacheWriteTokens += response.usage.cache_creation_input_tokens ?? 0;
     const toolUses = response.content.filter(
       (block): block is ToolUseBlock => block.type === "tool_use"
     );
@@ -147,6 +156,15 @@ export async function runAnthropicProvider(
       return {
         reply,
         humanTakeover: params.ctx.flags.humanTakeover,
+        usage: {
+          provider: "anthropic",
+          model,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens: cacheReadTokens || undefined,
+          cacheWriteTokens: cacheWriteTokens || undefined,
+          toolCallsCount,
+        },
       };
     }
 
@@ -154,6 +172,7 @@ export async function runAnthropicProvider(
       throw new AgentProviderError("tool_round_limit");
     }
     toolRounds += 1;
+    toolCallsCount += toolUses.length;
     messages.push({ role: "assistant", content: assistantContent(response) });
 
     const toolResults: ToolResultBlockParam[] = [];

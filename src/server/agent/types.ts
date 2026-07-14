@@ -12,9 +12,20 @@ export type AgentRunParams = {
   userMessage: string;
 };
 
+export type AgentUsage = {
+  provider: "anthropic" | "openai";
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  toolCallsCount: number;
+};
+
 export type AgentRunResult = {
   reply: string;
   humanTakeover: boolean;
+  usage?: AgentUsage;
 };
 
 export type AgentProviderRunner = (

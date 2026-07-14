@@ -6,6 +6,7 @@ import {
 import { buildAgentInstructions } from "@/server/agent/prompt";
 import { runAgent } from "@/server/agent/run";
 import type { AgentToolContext } from "@/server/agent/tools";
+import { recordAiUsage } from "@/server/agent/usage";
 import { recordAudit } from "@/server/audit";
 import {
   HISTORY_LIMIT,
@@ -81,13 +82,16 @@ export async function handleWhatsappAutomaticResponse(
     return;
   }
 
-  const [conversation, settings, business] = await Promise.all([
+  const [conversation, settings, business, knowledgeCount] = await Promise.all([
     prisma.conversation.findFirst({
       where: { id: conversationId, organizationId },
       select: { id: true, handlingMode: true, status: true },
     }),
     prisma.agentSettings.findUnique({ where: { organizationId } }),
     prisma.businessProfile.findUnique({ where: { organizationId } }),
+    prisma.knowledgeDocument.count({
+      where: { organizationId, status: "READY", enabled: true },
+    }),
   ]);
 
   if (!conversation || conversation.status === "CLOSED") return;
@@ -121,11 +125,14 @@ export async function handleWhatsappAutomaticResponse(
     flags: { humanTakeover: false },
   };
 
+  const startedAt = Date.now();
   let result;
   try {
     result = await runAgent({
       ctx,
-      instructions: buildAgentInstructions(settings, business),
+      instructions: buildAgentInstructions(settings, business, {
+        hasKnowledge: knowledgeCount > 0,
+      }),
       history: historyRows
         .filter(
           (message) =>
@@ -151,6 +158,14 @@ export async function handleWhatsappAutomaticResponse(
       entityId: conversationId,
       details: { proveedor: getAIProviderMode(), codigo: "provider_error" },
     });
+    await recordAiUsage({
+      organizationId,
+      conversationId,
+      provider: getAIProviderMode(),
+      latencyMs: Date.now() - startedAt,
+      success: false,
+      errorType: "provider_error",
+    });
     await markConversationNeedsHumanAttention({
       organizationId,
       conversationId,
@@ -158,6 +173,15 @@ export async function handleWhatsappAutomaticResponse(
     });
     return;
   }
+
+  await recordAiUsage({
+    organizationId,
+    conversationId,
+    provider: getAIProviderMode(),
+    usage: result.usage,
+    latencyMs: Date.now() - startedAt,
+    success: true,
+  });
 
   const current = await prisma.conversation.findFirst({
     where: { id: conversationId, organizationId },

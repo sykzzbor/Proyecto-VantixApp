@@ -27,6 +27,7 @@ model User {
   invitations           Invitation[]         @relation("InvitedBy")
   assignedConversations Conversation[]       @relation("AssignedConversations")
   sentMessages          Message[]            @relation("SentMessages")
+  knowledgeUploads      KnowledgeDocument[]  @relation("KnowledgeUploads")
 
   @@map("users")
 }
@@ -110,6 +111,10 @@ model Organization {
   messages             Message[]
   customers            Customer[]
   whatsappIntegrations WhatsappIntegration[]
+  knowledgeDocuments   KnowledgeDocument[]
+  knowledgeChunks      KnowledgeChunk[]
+  aiUsageEvents        AiUsageEvent[]
+  agentToolUsages      AgentToolUsage[]
 
   @@map("organizations")
 }
@@ -348,6 +353,7 @@ model Conversation {
   handlingMode          HandlingMode       @default(AI)
   assignedUserId        String?
   humanTakeoverAt       DateTime?
+  closedAt              DateTime?
   lastMessageAt         DateTime?
   unreadCount           Int                @default(0)
   createdAt             DateTime           @default(now())
@@ -408,4 +414,108 @@ model AuditLog {
 
   @@index([organizationId, createdAt(sort: Desc)])
   @@map("audit_logs")
+}
+
+// ============================================================
+// Centro de conocimiento (Etapa 5)
+// ============================================================
+
+enum KnowledgeDocumentStatus {
+  UPLOADED
+  PROCESSING
+  READY
+  FAILED
+  DISABLED
+}
+
+model KnowledgeDocument {
+  id               String                  @id @default(cuid())
+  organizationId   String
+  uploadedByUserId String?
+  name             String
+  originalFilename String
+  mimeType         String
+  fileSize         Int
+  storageKey       String
+  category         String?
+  status           KnowledgeDocumentStatus @default(UPLOADED)
+  enabled          Boolean                 @default(true)
+  extractedText    String?
+  processingError  String?
+  chunkCount       Int                     @default(0)
+  processedAt      DateTime?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedBy   User?            @relation("KnowledgeUploads", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  chunks       KnowledgeChunk[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, category])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("knowledge_documents")
+}
+
+model KnowledgeChunk {
+  id             String   @id @default(cuid())
+  organizationId String
+  documentId     String
+  chunkIndex     Int
+  content        String
+  tokenCount     Int?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document     KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@index([organizationId])
+  @@index([documentId])
+  @@map("knowledge_chunks")
+}
+
+// ============================================================
+// Métricas: uso de IA y de herramientas del agente (Etapa 5)
+// ============================================================
+
+model AiUsageEvent {
+  id               String   @id @default(cuid())
+  organizationId   String
+  conversationId   String?
+  messageId        String?
+  provider         String
+  model            String
+  inputTokens      Int      @default(0)
+  outputTokens     Int      @default(0)
+  cacheReadTokens  Int?
+  cacheWriteTokens Int?
+  latencyMs        Int      @default(0)
+  success          Boolean  @default(true)
+  errorType        String?
+  toolCallsCount   Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([organizationId, provider, createdAt(sort: Desc)])
+  @@map("ai_usage_events")
+}
+
+model AgentToolUsage {
+  id             String   @id @default(cuid())
+  organizationId String
+  conversationId String?
+  tool           String
+  resultCount    Int?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, tool, createdAt(sort: Desc)])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("agent_tool_usage")
 }

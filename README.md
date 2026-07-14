@@ -15,7 +15,7 @@ Plataforma de gestión comercial con agente de inteligencia artificial, bandeja 
 | Validación | Zod + react-hook-form |
 | Agente IA | OpenAI Responses API + function calling |
 
-## Estado del proyecto: etapas 1 a 4
+## Estado del proyecto: etapas 1 a 5
 
 ### Etapa 1 — Base de gestión
 
@@ -45,6 +45,13 @@ Plataforma de gestión comercial con agente de inteligencia artificial, bandeja 
 - Creación o actualización de clientes, reutilización de conversaciones y respuestas humanas desde la bandeja.
 - Idempotencia mediante el ID externo de Meta, errores seguros y reintentos como nuevos intentos de envío.
 - Simulador local para probar mensajes y estados sin credenciales ni envíos reales.
+
+### Etapa 5 — Conocimiento y rendimiento
+
+- **Centro de conocimiento** (`/dashboard/conocimiento`): documentos PDF con texto, DOCX y TXT; extracción en el servidor, división en fragmentos y búsqueda full-text por organización. Estados `UPLOADED`, `PROCESSING`, `READY`, `FAILED` y `DISABLED`; subir, procesar, reintentar, renombrar, recategorizar, activar/desactivar, reemplazar, eliminar y ver el texto extraído.
+- Nueva herramienta del agente `search_knowledge`, que recupera fragmentos solo de la organización validada y solo de documentos disponibles (nunca acepta `organizationId` de la IA).
+- Binarios fuera de PostgreSQL mediante una abstracción de almacenamiento con adaptador de Vercel Blob (producción) y filesystem local (desarrollo); acceso validado por sesión, organización y permisos.
+- **Centro de rendimiento** (`/dashboard/metricas`): métricas reales de conversaciones, mensajes, clientes y uso del agente, con períodos, filtro por canal, gráficos y definiciones. Registro de uso real de Anthropic (`AiUsageEvent`) y de herramientas (`AgentToolUsage`), sin costos monetarios inventados.
 
 ## Roles
 
@@ -226,6 +233,7 @@ Configurá las variables desde **Project → Settings → Environment Variables*
 | `META_GRAPH_API_VERSION` | Versión de Graph API habilitada para la aplicación de Meta. |
 | `CREDENTIALS_ENCRYPTION_KEY` | 32 bytes en 64 caracteres hexadecimales o base64. No cambiar después de cifrar tokens sin un plan de rotación. |
 | `WHATSAPP_DEV_MODE` | `false`. |
+| `BLOB_READ_WRITE_TOKEN` | Token de Vercel Blob (Storage → Blob) para el Centro de conocimiento. Sin él, en desarrollo se usa almacenamiento local en `./.storage`. No lleva `NEXT_PUBLIC_`. |
 
 Si el proveedor de IA o Meta todavía no están configurados, no cargues valores falsos. El modo demo sigue permitiendo bandeja y respuestas humanas sin enviar automatizaciones a WhatsApp.
 
@@ -244,11 +252,11 @@ Configuración del proyecto en Vercel:
 
 - Framework Preset: **Next.js**.
 - Install Command: `npm install` o el valor automático de Vercel.
-- Build Command: `npm run build`.
+- Build Command: automático de Vercel (ejecuta `vercel-build`) o `npm run build`; ninguno aplica migraciones.
 - Output Directory: automático de Next.js; no configurar manualmente.
 - Node.js: 20.9 o superior, según `package.json`.
 
-No se usa `vercel-build`: `postinstall` ya genera Prisma Client y mantener las migraciones fuera del build evita que un Preview modifique accidentalmente una base compartida. Después de configurar variables o rotar secretos, generá un nuevo deployment.
+El script `vercel-build` ejecuta únicamente `prisma generate && next build`: genera Prisma Client y compila Next.js, **sin aplicar migraciones**. Así ningún deployment —incluidos los Previews— modifica la base de datos. Las migraciones se aplican aparte, de forma manual o desde un job protegido de producción, con `npm run db:deploy` (ver arriba). `postinstall` también genera Prisma Client tras `npm install`. Después de configurar variables o rotar secretos, generá un nuevo deployment.
 
 ## Agente de IA (etapa 2)
 

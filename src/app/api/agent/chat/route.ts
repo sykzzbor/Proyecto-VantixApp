@@ -9,6 +9,7 @@ import {
 import { buildAgentInstructions } from "@/server/agent/prompt";
 import { AgentRunError, runAgent } from "@/server/agent/run";
 import type { AgentToolContext } from "@/server/agent/tools";
+import { recordAiUsage } from "@/server/agent/usage";
 import { recordAudit } from "@/server/audit";
 import {
   HISTORY_LIMIT,
@@ -115,9 +116,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 7. Configuración del agente.
-    const [settings, business] = await Promise.all([
+    const [settings, business, knowledgeCount] = await Promise.all([
       prisma.agentSettings.findUnique({ where: { organizationId } }),
       prisma.businessProfile.findUnique({ where: { organizationId } }),
+      prisma.knowledgeDocument.count({
+        where: { organizationId, status: "READY", enabled: true },
+      }),
     ]);
     if (!settings || !settings.enabled) {
       return jsonError(
@@ -177,11 +181,14 @@ export async function POST(request: NextRequest) {
       flags: { humanTakeover: false },
     };
 
+    const startedAt = Date.now();
     let result;
     try {
       result = await runAgent({
         ctx,
-        instructions: buildAgentInstructions(settings, business),
+        instructions: buildAgentInstructions(settings, business, {
+          hasKnowledge: knowledgeCount > 0,
+        }),
         history: historyRows
           .filter((message) => message.senderType !== "SYSTEM")
           .map((message) => ({
@@ -206,6 +213,14 @@ export async function POST(request: NextRequest) {
             codigo: error.code,
           },
         });
+        await recordAiUsage({
+          organizationId,
+          conversationId: conversation.id,
+          provider: getAIProviderMode(),
+          latencyMs: Date.now() - startedAt,
+          success: false,
+          errorType: error.code,
+        });
         return jsonError(
           502,
           "agent_error",
@@ -222,6 +237,16 @@ export async function POST(request: NextRequest) {
       conversationId: conversation.id,
       senderType: "AI",
       content: reply,
+    });
+
+    await recordAiUsage({
+      organizationId,
+      conversationId: conversation.id,
+      messageId: assistantMessage.id,
+      provider: getAIProviderMode(),
+      usage: result.usage,
+      latencyMs: Date.now() - startedAt,
+      success: true,
     });
 
     return NextResponse.json({

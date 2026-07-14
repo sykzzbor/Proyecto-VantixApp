@@ -4,6 +4,11 @@ import { Prisma } from "@/generated/prisma/client";
 import { formatCurrency, formatDuration } from "@/lib/format";
 import { recordAudit } from "@/server/audit";
 import { saveMessage } from "@/server/conversations";
+import {
+  KNOWLEDGE_SEARCH_DEFAULT_LIMIT,
+  KNOWLEDGE_SEARCH_MAX_LIMIT,
+  searchKnowledgeChunks,
+} from "@/server/knowledge/search";
 
 /**
  * Contexto interno de ejecución de herramientas. El organizationId
@@ -15,6 +20,13 @@ export type AgentToolContext = {
   conversationId: string;
   userId: string | null;
   flags: { humanTakeover: boolean };
+};
+
+/** Resultado interno de una herramienta: lo que ve el modelo + metadata de uso. */
+type ToolOutcome = {
+  payload: unknown;
+  resultCount: number;
+  items?: string[];
 };
 
 const MAX_PRODUCT_RESULTS = 5;
@@ -102,6 +114,30 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
     },
   },
   {
+    name: "search_knowledge",
+    description:
+      "Busca información dentro de los documentos cargados por el negocio (manuales, políticas, catálogos, instructivos). Usala cuando la consulta pueda depender de esos documentos. Devuelve fragmentos relevantes con el nombre del documento; respondé solo con lo que devuelva.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Texto de la consulta del cliente.",
+        },
+        category: {
+          type: ["string", "null"],
+          description: "Categoría exacta para acotar la búsqueda, o null.",
+        },
+        limit: {
+          type: ["integer", "null"],
+          description: "Cantidad máxima de fragmentos (1 a 6), o null para el valor por defecto.",
+        },
+      },
+      additionalProperties: false,
+      required: ["query", "category", "limit"],
+    },
+  },
+  {
     name: "request_human_support",
     description:
       "Marca la conversación para que la continúe una persona del equipo. Usala cuando el cliente pida hablar con alguien, haya un reclamo o lo indiquen las reglas de derivación.",
@@ -137,6 +173,12 @@ const textSearchArgs = z.object({
   query: z.string().trim().min(1).max(200),
 });
 
+const knowledgeSearchArgs = z.object({
+  query: z.string().trim().min(1).max(200),
+  category: z.string().trim().max(60).nullish(),
+  limit: z.number().int().min(1).max(KNOWLEDGE_SEARCH_MAX_LIMIT).nullish(),
+});
+
 const humanSupportArgs = z.object({
   reason: z.string().trim().min(1).max(300),
   summary: z.string().trim().min(1).max(600),
@@ -162,12 +204,17 @@ function buildTextFilter(query: string, fields: string[]) {
   );
 }
 
-async function getBusinessInformation(ctx: AgentToolContext) {
+async function getBusinessInformation(
+  ctx: AgentToolContext
+): Promise<ToolOutcome> {
   const profile = await prisma.businessProfile.findUnique({
     where: { organizationId: ctx.organizationId },
   });
   if (!profile) {
-    return { error: "El negocio todavía no cargó su información general." };
+    return {
+      payload: { error: "El negocio todavía no cargó su información general." },
+      resultCount: 0,
+    };
   }
 
   const direccion = [profile.address, profile.city, profile.country]
@@ -175,21 +222,27 @@ async function getBusinessInformation(ctx: AgentToolContext) {
     .join(", ");
 
   return {
-    nombre: profile.name,
-    rubro: profile.industry,
-    descripcion: profile.description,
-    direccion: direccion || null,
-    telefono: profile.phone,
-    email: profile.email,
-    sitio_web: profile.website,
-    horarios: profile.openingHours,
-    metodos_de_pago: profile.paymentMethods,
-    envios: profile.shippingInfo,
-    nota: "Los campos en null no fueron cargados por el negocio: no inventes esa información.",
+    payload: {
+      nombre: profile.name,
+      rubro: profile.industry,
+      descripcion: profile.description,
+      direccion: direccion || null,
+      telefono: profile.phone,
+      email: profile.email,
+      sitio_web: profile.website,
+      horarios: profile.openingHours,
+      metodos_de_pago: profile.paymentMethods,
+      envios: profile.shippingInfo,
+      nota: "Los campos en null no fueron cargados por el negocio: no inventes esa información.",
+    },
+    resultCount: 1,
   };
 }
 
-async function searchProducts(ctx: AgentToolContext, rawArgs: unknown) {
+async function searchProducts(
+  ctx: AgentToolContext,
+  rawArgs: unknown
+): Promise<ToolOutcome> {
   const args = productSearchArgs.parse(rawArgs);
   const where: Prisma.ProductWhereInput = {
     organizationId: ctx.organizationId,
@@ -208,25 +261,35 @@ async function searchProducts(ctx: AgentToolContext, rawArgs: unknown) {
 
   if (products.length === 0) {
     return {
-      resultados: [],
-      nota: "No se encontraron productos activos que coincidan. No inventes productos.",
+      payload: {
+        resultados: [],
+        nota: "No se encontraron productos activos que coincidan. No inventes productos.",
+      },
+      resultCount: 0,
     };
   }
 
   return {
-    resultados: products.map((product) => ({
-      nombre: product.name,
-      descripcion: product.description,
-      precio: formatCurrency(product.price.toNumber()),
-      stock: product.stock,
-      sin_stock: product.stock === 0,
-      categoria: product.category,
-      estado: "activo",
-    })),
+    payload: {
+      resultados: products.map((product) => ({
+        nombre: product.name,
+        descripcion: product.description,
+        precio: formatCurrency(product.price.toNumber()),
+        stock: product.stock,
+        sin_stock: product.stock === 0,
+        categoria: product.category,
+        estado: "activo",
+      })),
+    },
+    resultCount: products.length,
+    items: products.map((product) => product.name),
   };
 }
 
-async function searchServices(ctx: AgentToolContext, rawArgs: unknown) {
+async function searchServices(
+  ctx: AgentToolContext,
+  rawArgs: unknown
+): Promise<ToolOutcome> {
   const args = textSearchArgs.parse(rawArgs);
   const services = await prisma.service.findMany({
     where: {
@@ -240,22 +303,32 @@ async function searchServices(ctx: AgentToolContext, rawArgs: unknown) {
 
   if (services.length === 0) {
     return {
-      resultados: [],
-      nota: "No se encontraron servicios activos que coincidan. No inventes servicios.",
+      payload: {
+        resultados: [],
+        nota: "No se encontraron servicios activos que coincidan. No inventes servicios.",
+      },
+      resultCount: 0,
     };
   }
 
   return {
-    resultados: services.map((service) => ({
-      nombre: service.name,
-      descripcion: service.description,
-      precio: formatCurrency(service.price.toNumber()),
-      duracion: formatDuration(service.durationMinutes),
-    })),
+    payload: {
+      resultados: services.map((service) => ({
+        nombre: service.name,
+        descripcion: service.description,
+        precio: formatCurrency(service.price.toNumber()),
+        duracion: formatDuration(service.durationMinutes),
+      })),
+    },
+    resultCount: services.length,
+    items: services.map((service) => service.name),
   };
 }
 
-async function searchFaqs(ctx: AgentToolContext, rawArgs: unknown) {
+async function searchFaqs(
+  ctx: AgentToolContext,
+  rawArgs: unknown
+): Promise<ToolOutcome> {
   const args = textSearchArgs.parse(rawArgs);
   const faqs = await prisma.faq.findMany({
     where: {
@@ -269,21 +342,65 @@ async function searchFaqs(ctx: AgentToolContext, rawArgs: unknown) {
 
   if (faqs.length === 0) {
     return {
-      resultados: [],
-      nota: "No hay preguntas frecuentes que coincidan con la consulta.",
+      payload: {
+        resultados: [],
+        nota: "No hay preguntas frecuentes que coincidan con la consulta.",
+      },
+      resultCount: 0,
     };
   }
 
   return {
-    resultados: faqs.map((faq) => ({
-      pregunta: faq.question,
-      respuesta: faq.answer,
-      categoria: faq.category,
-    })),
+    payload: {
+      resultados: faqs.map((faq) => ({
+        pregunta: faq.question,
+        respuesta: faq.answer,
+        categoria: faq.category,
+      })),
+    },
+    resultCount: faqs.length,
   };
 }
 
-async function requestHumanSupport(ctx: AgentToolContext, rawArgs: unknown) {
+async function searchKnowledge(
+  ctx: AgentToolContext,
+  rawArgs: unknown
+): Promise<ToolOutcome> {
+  const args = knowledgeSearchArgs.parse(rawArgs);
+  const hits = await searchKnowledgeChunks({
+    organizationId: ctx.organizationId,
+    query: args.query,
+    category: args.category ?? null,
+    limit: args.limit ?? KNOWLEDGE_SEARCH_DEFAULT_LIMIT,
+  });
+
+  if (hits.length === 0) {
+    return {
+      payload: {
+        resultados: [],
+        nota: "No se encontró información en los documentos del negocio para esta consulta. No inventes el contenido de un documento.",
+      },
+      resultCount: 0,
+    };
+  }
+
+  return {
+    payload: {
+      resultados: hits.map((hit) => ({
+        documento: hit.documentName,
+        fragmento: hit.content,
+      })),
+      nota: "Respondé solo con esta información. No cites un documento que no aparezca acá.",
+    },
+    resultCount: hits.length,
+    items: Array.from(new Set(hits.map((hit) => hit.documentName))),
+  };
+}
+
+async function requestHumanSupport(
+  ctx: AgentToolContext,
+  rawArgs: unknown
+): Promise<ToolOutcome> {
   const args = humanSupportArgs.parse(rawArgs);
 
   const updated = await prisma.conversation.updateMany({
@@ -314,10 +431,62 @@ async function requestHumanSupport(ctx: AgentToolContext, rawArgs: unknown) {
   });
 
   return {
-    ok: true,
-    mensaje:
-      "La conversación quedó marcada para que la continúe una persona del equipo. Avisale al cliente con amabilidad.",
+    payload: {
+      ok: true,
+      mensaje:
+        "La conversación quedó marcada para que la continúe una persona del equipo. Avisale al cliente con amabilidad.",
+    },
+    resultCount: 1,
   };
+}
+
+/** Registro liviano del uso de herramientas (para métricas). No rompe el flujo. */
+async function recordToolUsage(
+  ctx: AgentToolContext,
+  tool: string,
+  resultCount: number,
+  items?: string[]
+) {
+  try {
+    await prisma.agentToolUsage.create({
+      data: {
+        organizationId: ctx.organizationId,
+        conversationId: ctx.conversationId,
+        tool,
+        resultCount,
+        metadata:
+          items && items.length > 0 ? { items: items.slice(0, 5) } : undefined,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "[VantixApp] No se pudo registrar el uso de una herramienta:",
+      error instanceof Error ? error.name : "unknown_error"
+    );
+  }
+}
+
+async function dispatchTool(
+  ctx: AgentToolContext,
+  name: string,
+  args: unknown
+): Promise<ToolOutcome> {
+  switch (name) {
+    case "get_business_information":
+      return getBusinessInformation(ctx);
+    case "search_products":
+      return searchProducts(ctx, args);
+    case "search_services":
+      return searchServices(ctx, args);
+    case "search_faqs":
+      return searchFaqs(ctx, args);
+    case "search_knowledge":
+      return searchKnowledge(ctx, args);
+    case "request_human_support":
+      return requestHumanSupport(ctx, args);
+    default:
+      return { payload: { error: "Herramienta desconocida." }, resultCount: 0 };
+  }
 }
 
 /**
@@ -337,27 +506,18 @@ export async function executeAgentTool(
           ? JSON.parse(rawArguments)
           : {}
         : (rawArguments ?? {});
-    switch (name) {
-      case "get_business_information":
-        return JSON.stringify(await getBusinessInformation(ctx));
-      case "search_products":
-        return JSON.stringify(await searchProducts(ctx, args));
-      case "search_services":
-        return JSON.stringify(await searchServices(ctx, args));
-      case "search_faqs":
-        return JSON.stringify(await searchFaqs(ctx, args));
-      case "request_human_support":
-        return JSON.stringify(await requestHumanSupport(ctx, args));
-      default:
-        return JSON.stringify({ error: "Herramienta desconocida." });
-    }
+
+    const outcome = await dispatchTool(ctx, name, args);
+    await recordToolUsage(ctx, name, outcome.resultCount, outcome.items);
+    return JSON.stringify(outcome.payload);
   } catch (error) {
     console.error(
       "[VantixApp] Error al ejecutar una herramienta del agente:",
       error instanceof Error ? error.name : "unknown_error"
     );
     return JSON.stringify({
-      error: "La consulta no se pudo completar. Informale al cliente que hubo un inconveniente técnico.",
+      error:
+        "La consulta no se pudo completar. Informale al cliente que hubo un inconveniente técnico.",
     });
   }
 }

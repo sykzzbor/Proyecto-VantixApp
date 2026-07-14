@@ -28,6 +28,11 @@ const PERMISSIONS = {
   "org.update": ["OWNER", "ADMIN"],
   "org.delete": ["OWNER"],
   "audit.read": ["OWNER", "ADMIN"],
+  "knowledge.read": ["OWNER", "ADMIN", "AGENT", "VIEWER"],
+  "knowledge.manage": ["OWNER", "ADMIN"],
+  "knowledge.delete": ["OWNER", "ADMIN"],
+  "metrics.read": ["OWNER", "ADMIN", "AGENT", "VIEWER"],
+  "metrics.advanced": ["OWNER", "ADMIN"],
 } as const satisfies Record<string, readonly MemberRole[]>;
 
 export type Permission = keyof typeof PERMISSIONS;

@@ -100,6 +100,7 @@ test("OpenAI existente conserva su selección y herramientas", async () => {
       "search_products",
       "search_services",
       "search_faqs",
+      "search_knowledge",
       "request_human_support",
     ]
   );
@@ -313,18 +314,20 @@ test("error de Anthropic no activa fallback automático", async () => {
 });
 
 test("Anthropic mantiene aislamiento por organización", async () => {
-  const schema = ANTHROPIC_AGENT_TOOLS.find(
-    (tool) => tool.name === "search_products"
-  )?.input_schema;
-  const properties = schema?.properties;
-  assert.equal(
-    Boolean(
-      properties &&
-        typeof properties === "object" &&
-        "organizationId" in properties
-    ),
-    false
-  );
+  for (const toolName of ["search_products", "search_knowledge"]) {
+    const properties = ANTHROPIC_AGENT_TOOLS.find(
+      (tool) => tool.name === toolName
+    )?.input_schema.properties;
+    assert.equal(
+      Boolean(
+        properties &&
+          typeof properties === "object" &&
+          "organizationId" in properties
+      ),
+      false,
+      `${toolName} no debe exponer organizationId`
+    );
+  }
 
   const responses = [
     message(

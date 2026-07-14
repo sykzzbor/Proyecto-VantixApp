@@ -330,7 +330,10 @@ export async function setConversationStatus(
 
     await prisma.conversation.update({
       where: { id: conversation.id },
-      data: { status: newStatus },
+      data: {
+        status: newStatus,
+        closedAt: newStatus === "CLOSED" ? new Date() : null,
+      },
     });
 
     await recordAudit({

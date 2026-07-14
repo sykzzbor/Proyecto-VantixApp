@@ -106,7 +106,7 @@ export function closeTestConversation(organizationId: string) {
       channel: TEST_CHANNEL,
       status: { not: "CLOSED" },
     },
-    data: { status: "CLOSED" },
+    data: { status: "CLOSED", closedAt: new Date() },
   });
 }
 

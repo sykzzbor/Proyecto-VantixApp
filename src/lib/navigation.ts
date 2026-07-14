@@ -1,4 +1,6 @@
 import {
+  BarChart3,
+  BookOpen,
   Bot,
   Briefcase,
   Inbox,
@@ -25,6 +27,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Conversaciones",
     icon: Inbox,
   },
+  { href: "/dashboard/metricas", label: "Métricas", icon: BarChart3 },
   {
     href: "/dashboard/integraciones/whatsapp",
     label: "WhatsApp",
@@ -37,6 +40,11 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/dashboard/preguntas",
     label: "Preguntas frecuentes",
     icon: MessageCircleQuestion,
+  },
+  {
+    href: "/dashboard/conocimiento",
+    label: "Conocimiento",
+    icon: BookOpen,
   },
   { href: "/dashboard/agente", label: "Agente IA", icon: Bot },
   { href: "/dashboard/equipo", label: "Equipo", icon: Users },
