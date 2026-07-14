@@ -115,6 +115,9 @@ model Organization {
   knowledgeChunks      KnowledgeChunk[]
   aiUsageEvents        AiUsageEvent[]
   agentToolUsages      AgentToolUsage[]
+  automationEvents     AutomationEvent[]
+  automationRuns       AutomationRun[]
+  integrationConnections IntegrationConnection[]
 
   @@map("organizations")
 }
@@ -518,4 +521,99 @@ model AgentToolUsage {
   @@index([organizationId, tool, createdAt(sort: Desc)])
   @@index([organizationId, createdAt(sort: Desc)])
   @@map("agent_tool_usage")
+}
+
+// ============================================================
+// Etapa 6A: Infraestructura de automatización (VantixApp <-> n8n)
+// ============================================================
+
+enum AutomationEventStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  DEAD_LETTER
+  CANCELLED
+}
+
+enum AutomationRunStatus {
+  STARTED
+  SUCCEEDED
+  FAILED
+}
+
+enum IntegrationConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+model AutomationEvent {
+  id             String                @id @default(cuid())
+  organizationId String
+  type           String
+  payload        Json
+  schemaVersion  Int                   @default(1)
+  status         AutomationEventStatus @default(PENDING)
+  idempotencyKey String
+  attempts       Int                   @default(0)
+  maxAttempts    Int                   @default(5)
+  nextAttemptAt  DateTime?
+  lockedAt       DateTime?
+  processedAt    DateTime?
+  lastError      String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  runs         AutomationRun[]
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([status, nextAttemptAt])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("automation_events")
+}
+
+model AutomationRun {
+  id                  String              @id @default(cuid())
+  organizationId      String
+  automationEventId   String
+  provider            String
+  status              AutomationRunStatus @default(STARTED)
+  attempt             Int
+  externalExecutionId String?
+  startedAt           DateTime            @default(now())
+  finishedAt          DateTime?
+  durationMs          Int?
+  errorCode           String?
+  errorMessage        String?
+  responseMeta        Json?
+  createdAt           DateTime            @default(now())
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  automationEvent AutomationEvent @relation(fields: [automationEventId], references: [id], onDelete: Cascade)
+
+  @@index([automationEventId])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("automation_runs")
+}
+
+model IntegrationConnection {
+  id              String                      @id @default(cuid())
+  organizationId  String
+  provider        String                      @default("n8n")
+  status          IntegrationConnectionStatus @default(DISCONNECTED)
+  enabled         Boolean                     @default(false)
+  externalId      String?
+  encryptedSecret String?
+  lastEventAt     DateTime?
+  lastError       String?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider])
+  @@index([organizationId])
+  @@map("integration_connections")
 }
