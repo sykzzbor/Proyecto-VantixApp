@@ -11,7 +11,7 @@
     "build:next": "next build",
     "vercel-build": "node scripts/vercel-build.mjs",
     "start": "next start",
-    "test": "tsx --test src/server/agent/agent.test.ts src/server/whatsapp/whatsapp.test.ts src/server/knowledge/knowledge.test.ts src/server/automation/automation.test.ts src/server/automation/dashboard.test.ts scripts/vercel-build.test.mjs",
+    "test": "tsx --test src/server/agent/agent.test.ts src/server/whatsapp/whatsapp.test.ts src/server/knowledge/knowledge.test.ts src/server/automation/automation.test.ts src/server/automation/dashboard.test.ts src/server/automation/stage6c.test.ts src/server/automation/stage6c-db.test.ts scripts/vercel-build.test.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate",

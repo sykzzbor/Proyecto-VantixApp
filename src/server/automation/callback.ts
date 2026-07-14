@@ -2,6 +2,10 @@ import { Prisma } from "@/generated/prisma/client";
 import type { AutomationEventStatus } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import type { CallbackInput, CallbackStatus } from "@/server/automation/types";
+import {
+  sanitizeAutomationMessage,
+  sanitizeAutomationValue,
+} from "@/server/automation/sanitization";
 
 const TERMINAL_STATUSES: AutomationEventStatus[] = [
   "SUCCEEDED",
@@ -28,14 +32,78 @@ export function resolveCallbackTransition(
   };
 }
 
-function sanitizeMessage(value: string | null | undefined): string | null {
-  if (!value) return null;
-  return value.slice(0, 500);
+export function isCurrentAutomationCallback(input: {
+  runStatus: AutomationRunStatusLike;
+  eventStatus: AutomationEventStatus;
+  runAttempt: number;
+  eventAttempts: number;
+}) {
+  return (
+    input.runStatus === "STARTED" &&
+    input.eventStatus === "PROCESSING" &&
+    input.runAttempt === input.eventAttempts
+  );
+}
+
+type AutomationRunStatusLike = "STARTED" | "SUCCEEDED" | "FAILED";
+
+export function canAcceptSuccessfulAutomationCallback(input: {
+  eventType: string;
+  actionDeliveryStatus: string | null;
+}) {
+  return (
+    input.eventType !== "conversation.followup_due" ||
+    ["SENT", "DELIVERED", "READ"].includes(
+      input.actionDeliveryStatus ?? ""
+    )
+  );
 }
 
 export type ApplyCallbackResult =
   | { ok: true; applied: boolean; status: AutomationEventStatus }
-  | { ok: false; code: "not_found" };
+  | {
+      ok: false;
+      code: "not_found" | "stale_attempt" | "action_incomplete";
+    };
+
+async function recordCallbackTelemetry(input: {
+  organizationId: string;
+  now: Date;
+  errorCode?: string | null;
+  recordOutcome: boolean;
+}) {
+  try {
+    await prisma.integrationConnection.upsert({
+      where: {
+        organizationId_provider: {
+          organizationId: input.organizationId,
+          provider: "n8n",
+        },
+      },
+      create: {
+        organizationId: input.organizationId,
+        provider: "n8n",
+        status: input.recordOutcome ? "CONNECTED" : "DISCONNECTED",
+        enabled: false,
+        lastCallbackAt: input.now,
+        lastError: input.recordOutcome
+          ? sanitizeAutomationMessage(input.errorCode, 120)
+          : null,
+      },
+      update: {
+        lastCallbackAt: input.now,
+        ...(input.recordOutcome
+          ? {
+              status: "CONNECTED" as const,
+              lastError: sanitizeAutomationMessage(input.errorCode, 120),
+            }
+          : {}),
+      },
+    });
+  } catch {
+    // La telemetría no puede cambiar el resultado de un callback ya validado.
+  }
+}
 
 /**
  * Aplica el resultado del callback de n8n. Idempotente y aislado por
@@ -44,61 +112,186 @@ export type ApplyCallbackResult =
 export async function applyAutomationCallback(
   input: CallbackInput
 ): Promise<ApplyCallbackResult> {
-  const event = await prisma.automationEvent.findFirst({
-    where: { id: input.eventId, organizationId: input.organizationId },
-    select: { id: true, status: true },
+  const run = await prisma.automationRun.findFirst({
+    where: {
+      id: input.runId,
+      organizationId: input.organizationId,
+      automationEventId: input.eventId,
+    },
+    select: {
+      id: true,
+      status: true,
+      attempt: true,
+      startedAt: true,
+      externalExecutionId: true,
+      automationEvent: {
+        select: {
+          id: true,
+          status: true,
+          attempts: true,
+          type: true,
+          conversationId: true,
+          actionMessage: {
+            select: {
+              organizationId: true,
+              conversationId: true,
+              deliveryStatus: true,
+            },
+          },
+        },
+      },
+    },
   });
-  if (!event) return { ok: false, code: "not_found" };
+  if (!run) return { ok: false, code: "not_found" };
 
+  const now = new Date();
+  const event = run.automationEvent;
   const transition = resolveCallbackTransition(event.status, input.status);
-  if (!transition.apply) {
+
+  // Un callback duplicado del mismo run es idempotente. Nunca busca "el run
+  // más reciente", porque eso permitiría que un intento viejo cierre uno nuevo.
+  if (run.status !== "STARTED") {
+    await recordCallbackTelemetry({
+      organizationId: input.organizationId,
+      now,
+      errorCode: input.status === "failed" ? input.errorCode : null,
+      recordOutcome: false,
+    });
     return { ok: true, applied: false, status: event.status };
   }
 
-  const now = new Date();
+  if (
+    !isCurrentAutomationCallback({
+      runStatus: run.status,
+      eventStatus: event.status,
+      runAttempt: run.attempt,
+      eventAttempts: event.attempts,
+    }) ||
+    !transition.apply
+  ) {
+    await prisma.automationRun.updateMany({
+      where: {
+        id: run.id,
+        organizationId: input.organizationId,
+        automationEventId: event.id,
+        status: "STARTED",
+      },
+      data: {
+        status: "FAILED",
+        finishedAt: now,
+        durationMs: Math.max(0, now.getTime() - run.startedAt.getTime()),
+        errorCode: "stale_callback",
+        errorMessage: "El callback pertenece a un intento que ya no está activo.",
+      },
+    });
+    await recordCallbackTelemetry({
+      organizationId: input.organizationId,
+      now,
+      errorCode: "stale_callback",
+      recordOutcome: false,
+    });
+    return { ok: false, code: "stale_attempt" };
+  }
+
+  if (
+    input.status === "succeeded" &&
+    !canAcceptSuccessfulAutomationCallback({
+      eventType: event.type,
+      actionDeliveryStatus:
+        event.actionMessage?.organizationId === input.organizationId &&
+        event.actionMessage.conversationId === event.conversationId
+          ? event.actionMessage.deliveryStatus
+          : null,
+    })
+  ) {
+    await recordCallbackTelemetry({
+      organizationId: input.organizationId,
+      now,
+      errorCode: "followup_action_incomplete",
+      recordOutcome: true,
+    });
+    return { ok: false, code: "action_incomplete" };
+  }
+
   const applied = await prisma.$transaction(async (tx) => {
-    // Guarda de concurrencia: solo finaliza desde estados no terminales.
+    // Guardas de concurrencia: evento, organización, intento y run exactos.
     const updated = await tx.automationEvent.updateMany({
       where: {
         id: event.id,
         organizationId: input.organizationId,
-        status: { in: ["PENDING", "PROCESSING"] },
+        status: "PROCESSING",
+        attempts: run.attempt,
       },
       data: {
         status: transition.newStatus,
         processedAt: now,
         lockedAt: null,
         lastError:
-          input.status === "failed" ? input.errorCode ?? "callback_failed" : null,
+          input.status === "failed"
+            ? sanitizeAutomationMessage(
+                input.errorCode ?? "callback_failed",
+                120
+              )
+            : null,
       },
     });
     if (updated.count !== 1) return false;
 
-    const lastRun = await tx.automationRun.findFirst({
-      where: { automationEventId: event.id },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, startedAt: true, externalExecutionId: true },
+    const updatedRun = await tx.automationRun.updateMany({
+      where: {
+        id: run.id,
+        organizationId: input.organizationId,
+        automationEventId: event.id,
+        attempt: run.attempt,
+        status: "STARTED",
+      },
+      data: {
+        status: transition.newStatus === "SUCCEEDED" ? "SUCCEEDED" : "FAILED",
+        finishedAt: now,
+        durationMs: Math.max(0, now.getTime() - run.startedAt.getTime()),
+        externalExecutionId:
+          input.externalExecutionId ?? run.externalExecutionId,
+        errorCode:
+          input.status === "failed"
+            ? sanitizeAutomationMessage(
+                input.errorCode ?? "callback_failed",
+                120
+              )
+            : null,
+        errorMessage:
+          input.status === "failed"
+            ? sanitizeAutomationMessage(input.errorMessage)
+            : null,
+        responseMeta: input.responseMeta
+          ? (sanitizeAutomationValue(input.responseMeta) as Prisma.InputJsonValue)
+          : undefined,
+      },
     });
-    if (lastRun) {
-      await tx.automationRun.update({
-        where: { id: lastRun.id },
-        data: {
-          status: transition.newStatus === "SUCCEEDED" ? "SUCCEEDED" : "FAILED",
-          finishedAt: now,
-          durationMs: now.getTime() - lastRun.startedAt.getTime(),
-          externalExecutionId:
-            input.externalExecutionId ?? lastRun.externalExecutionId,
-          errorCode: input.status === "failed" ? input.errorCode ?? "callback_failed" : null,
-          errorMessage:
-            input.status === "failed" ? sanitizeMessage(input.errorMessage) : null,
-          responseMeta: input.responseMeta
-            ? (input.responseMeta as Prisma.InputJsonValue)
-            : undefined,
-        },
-      });
+    if (updatedRun.count !== 1) {
+      throw new Error("callback_run_conflict");
     }
     return true;
   });
 
-  return { ok: true, applied, status: transition.newStatus };
+  await recordCallbackTelemetry({
+    organizationId: input.organizationId,
+    now,
+    errorCode: input.status === "failed" ? input.errorCode : null,
+    recordOutcome: applied,
+  });
+
+  const currentStatus = applied
+    ? transition.newStatus
+    : (
+        await prisma.automationEvent.findFirst({
+          where: { id: event.id, organizationId: input.organizationId },
+          select: { status: true },
+        })
+      )?.status ?? event.status;
+
+  return {
+    ok: true,
+    applied,
+    status: currentStatus,
+  };
 }

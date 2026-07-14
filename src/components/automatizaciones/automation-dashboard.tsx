@@ -2,25 +2,32 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import {
   Activity,
+  Ban,
+  BellRing,
   CheckCircle2,
   Clock3,
   Gauge,
   Inbox,
   ListChecks,
   PlayCircle,
+  PlugZap,
   RefreshCcw,
   RotateCcw,
   Search,
+  Send,
   ServerCog,
   ShieldCheck,
   Timer,
   TriangleAlert,
   Workflow,
+  SlidersHorizontal,
   XCircle,
 } from "lucide-react";
 import { AutomationStatusBadge } from "@/components/automatizaciones/automation-status-badge";
+import { AutomationRulesPanel } from "@/components/automatizaciones/automation-rules-panel";
 import { EventDetailSheet } from "@/components/automatizaciones/event-detail-sheet";
 import { TestEventDialog } from "@/components/automatizaciones/test-event-dialog";
 import { EmptyState } from "@/components/dashboard/empty-state";
@@ -51,6 +58,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatNumber } from "@/lib/format";
+import { automationEventTypeLabel } from "@/lib/automation-labels";
 import type {
   AutomationEventRow,
   AutomationInfrastructureStatus,
@@ -58,10 +66,11 @@ import type {
   AutomationRunRow,
   Paginated,
 } from "@/server/automation/dashboard";
+import type { AutomationRuleView } from "@/server/automation/rules";
 
 type DashboardFilters = {
   period: "24h" | "7d" | "30d";
-  tab: "events" | "runs";
+  tab: "events" | "runs" | "rules";
   eventStatus: string;
   eventType: string;
   eventSearch: string;
@@ -153,6 +162,7 @@ export function AutomationDashboard({
   runs,
   eventTypes,
   providers,
+  rules,
   filters,
   canManage,
   organizationName,
@@ -163,6 +173,7 @@ export function AutomationDashboard({
   runs: Paginated<AutomationRunRow>;
   eventTypes: string[];
   providers: string[];
+  rules: AutomationRuleView[];
   filters: DashboardFilters;
   canManage: boolean;
   organizationName: string;
@@ -172,6 +183,7 @@ export function AutomationDashboard({
   const searchParams = useSearchParams();
   const [refreshing, startRefresh] = useTransition();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [testingConnection, setTestingConnection] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function updateParams(changes: Record<string, string | null>) {
@@ -207,9 +219,34 @@ export function AutomationDashboard({
     updateParams({ estado: null, tipo: null, q: null, orden: null, pagina: null });
   }
 
+  async function testConnection() {
+    setTestingConnection(true);
+    try {
+      const response = await fetch("/api/automation/test-connection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const body = (await response.json()) as {
+        eventId?: string;
+        message?: string;
+      };
+      if (!response.ok || !body.eventId) {
+        throw new Error(body.message ?? "No se pudo probar la conexión.");
+      }
+      toast.success("Prueba enviada. El éxito se confirma cuando llega el callback.");
+      setSelectedEventId(body.eventId);
+      refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo probar la conexión.");
+    } finally {
+      setTestingConnection(false);
+    }
+  }
+
   const stateMeta =
     infrastructure.state === "operational"
-      ? { label: "Operativa", className: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300", icon: ShieldCheck }
+      ? { label: infrastructure.mockMode ? "Operativa" : "Configurado", className: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300", icon: ShieldCheck }
       : infrastructure.state === "error"
         ? { label: "Con error", className: "border-red-400/20 bg-red-400/10 text-red-300", icon: XCircle }
         : { label: "Configuración incompleta", className: "border-amber-400/20 bg-amber-400/10 text-amber-300", icon: TriangleAlert };
@@ -228,12 +265,32 @@ export function AutomationDashboard({
             <SelectItem value="30d">Últimos 30 días</SelectItem>
           </SelectContent>
         </Select>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={refresh} disabled={refreshing}>
             <RefreshCcw className={refreshing ? "animate-spin" : undefined} />
             Actualizar
           </Button>
-          {canManage && <TestEventDialog onCreated={(id) => { setSelectedEventId(id); refresh(); }} />}
+          {canManage && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={testConnection}
+              disabled={
+                testingConnection ||
+                infrastructure.mockMode ||
+                !infrastructure.providerConfigured
+              }
+              title={
+                infrastructure.mockMode
+                  ? "Disponible cuando el proveedor n8n esté activo"
+                  : undefined
+              }
+            >
+              <PlugZap className={testingConnection ? "animate-pulse" : undefined} />
+              Probar conexión
+            </Button>
+          )}
+          {canManage && infrastructure.mockMode && <TestEventDialog onCreated={(id) => { setSelectedEventId(id); refresh(); }} />}
         </div>
       </div>
 
@@ -252,19 +309,26 @@ export function AutomationDashboard({
           </div>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <ConfigIndicator configured={infrastructure.providerConfigured} label="Proveedor" />
-          <ConfigIndicator configured={infrastructure.dispatcherConfigured} label="Dispatcher" />
-          <ConfigIndicator configured={infrastructure.callbackConfigured} label="Callback" />
-          <ConfigIndicator
-            configured={
-              infrastructure.mockMode ||
-              (infrastructure.connectionEnabled &&
-                infrastructure.connectionStatus === "CONNECTED")
-            }
-            label={infrastructure.mockMode ? "Modo de prueba" : "Conexión"}
-            configuredLabel={infrastructure.mockMode ? "Listo" : "Configurado"}
-          />
-          <div className="text-xs text-muted-foreground md:col-span-2">Último evento procesado: <span className="text-foreground">{formatDateTime(infrastructure.lastProcessedAt)}</span></div>
+          {infrastructure.mockMode ? (
+            <>
+              <ConfigIndicator configured label="Proveedor" configuredLabel="mock" />
+              <ConfigIndicator configured label="Modo de prueba" configuredLabel="Listo" />
+            </>
+          ) : (
+            <>
+              <ConfigIndicator configured={infrastructure.endpointConfigured} label="Endpoint" />
+              <ConfigIndicator configured={infrastructure.outboundSignatureConfigured} label="Firma de salida" />
+              <ConfigIndicator configured={infrastructure.callbackConfigured} label="Firma de callback" />
+              <ConfigIndicator configured={infrastructure.dispatcherConfigured} label="Dispatcher" />
+            </>
+          )}
+          {!infrastructure.mockMode && infrastructure.missingCategories.length > 0 && (
+            <p className="rounded-lg border border-amber-400/20 bg-amber-400/10 p-3 text-xs text-amber-200 md:col-span-2 lg:col-span-4">
+              Falta completar: {infrastructure.missingCategories.map((category) => ({ endpoint: "endpoint", outbound_signature: "firma de salida", callback_signature: "firma de callback", dispatcher: "dispatcher" })[category]).join(", ")}.
+            </p>
+          )}
+          <div className="text-xs text-muted-foreground md:col-span-2">{infrastructure.mockMode ? "Último evento procesado" : "Último evento enviado"}: <span className="text-foreground">{formatDateTime(infrastructure.mockMode ? infrastructure.lastProcessedAt : infrastructure.lastEventSentAt)}</span></div>
+          <div className="text-xs text-muted-foreground md:col-span-2">Último callback recibido: <span className="text-foreground">{formatDateTime(infrastructure.lastCallbackAt)}</span></div>
           <div className="text-xs text-muted-foreground md:col-span-2">Última ejecución exitosa: <span className="text-foreground">{formatDateTime(infrastructure.lastSuccessfulRunAt)}</span></div>
           {infrastructure.lastError && <p className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs text-red-200 md:col-span-2 lg:col-span-4">Último error: {infrastructure.lastError}</p>}
         </CardContent>
@@ -287,10 +351,25 @@ export function AutomationDashboard({
         </div>
       </section>
 
+      <section className="space-y-3" aria-labelledby="automation-rule-metrics">
+        <div className="flex items-center justify-between gap-3">
+          <h3 id="automation-rule-metrics" className="text-sm font-semibold text-muted-foreground">Reglas operativas del período</h3>
+          <span className="text-xs text-muted-foreground">Sin estimaciones históricas</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <StatCard icon={BellRing} label="Derivaciones solicitadas" value={formatNumber(overview.handoffRequested)} />
+          <StatCard icon={Clock3} label="Seguimientos programados" value={formatNumber(overview.followUpsScheduled)} />
+          <StatCard icon={Send} label="Seguimientos enviados" value={formatNumber(overview.followUpsSent)} />
+          <StatCard icon={Ban} label="Seguimientos cancelados" value={formatNumber(overview.followUpsCancelled)} />
+          <StatCard icon={XCircle} label="Seguimientos fallidos" value={formatNumber(overview.followUpsFailed)} />
+        </div>
+      </section>
+
       <Tabs value={filters.tab} onValueChange={(value) => updateParams({ tab: value === "events" ? null : value })}>
-        <TabsList>
+        <TabsList className="h-auto w-full flex-wrap justify-start sm:w-auto">
           <TabsTrigger value="events"><ListChecks />Eventos <Badge variant="secondary">{events.total}</Badge></TabsTrigger>
           <TabsTrigger value="runs"><PlayCircle />Ejecuciones <Badge variant="secondary">{runs.total}</Badge></TabsTrigger>
+          <TabsTrigger value="rules"><SlidersHorizontal />Reglas</TabsTrigger>
         </TabsList>
 
         <TabsContent value="events" className="space-y-3">
@@ -305,7 +384,7 @@ export function AutomationDashboard({
             </Select>
             <Select value={filters.eventType || "all"} onValueChange={(value) => updateParams({ tipo: value === "all" ? null : value, pagina: null })}>
               <SelectTrigger className="w-full" aria-label="Tipo del evento"><SelectValue placeholder="Todos los tipos" /></SelectTrigger>
-              <SelectContent><SelectItem value="all">Todos los tipos</SelectItem>{eventTypes.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent>
+              <SelectContent><SelectItem value="all">Todos los tipos</SelectItem>{eventTypes.map((type) => <SelectItem key={type} value={type}>{automationEventTypeLabel(type)}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={filters.eventOrder} onValueChange={(value) => updateParams({ orden: value === "desc" ? null : value, pagina: null })}>
               <SelectTrigger className="w-full" aria-label="Orden de eventos"><SelectValue /></SelectTrigger>
@@ -316,7 +395,7 @@ export function AutomationDashboard({
 
           {events.items.length === 0 ? (
             <EmptyState icon={Inbox} title="No hay eventos para mostrar" description="Ajustá los filtros o generá un evento de prueba con el proveedor mock.">
-              {canManage && <TestEventDialog onCreated={(id) => { setSelectedEventId(id); refresh(); }} />}
+              {canManage && infrastructure.mockMode && <TestEventDialog onCreated={(id) => { setSelectedEventId(id); refresh(); }} />}
             </EmptyState>
           ) : (
             <Card className="gap-0 py-0">
@@ -326,7 +405,7 @@ export function AutomationDashboard({
                   <TableBody>
                     {events.items.map((event) => (
                       <TableRow key={event.id}>
-                        <TableCell><div className="font-medium">{event.type}</div><div className="font-mono text-xs text-muted-foreground">{event.shortId}</div></TableCell>
+                        <TableCell><div className="font-medium">{automationEventTypeLabel(event.type)}</div><div className="font-mono text-xs text-muted-foreground">{event.shortId}</div></TableCell>
                         <TableCell><AutomationStatusBadge status={event.status} /></TableCell>
                         <TableCell>{event.attempts} / {event.maxAttempts}</TableCell>
                         <TableCell>{event.latestRun ? <div><span className="font-medium">{event.latestRun.provider}</span><div className="text-xs text-muted-foreground">{formatDuration(event.latestRun.durationMs)}</div></div> : "—"}</TableCell>
@@ -340,7 +419,7 @@ export function AutomationDashboard({
               <div className="divide-y md:hidden">
                 {events.items.map((event) => (
                   <button key={event.id} type="button" onClick={() => setSelectedEventId(event.id)} className="w-full p-4 text-left transition-colors hover:bg-accent/50">
-                    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-medium">{event.type}</p><p className="font-mono text-xs text-muted-foreground">{event.shortId}</p></div><AutomationStatusBadge status={event.status} /></div>
+                    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-medium">{automationEventTypeLabel(event.type)}</p><p className="font-mono text-xs text-muted-foreground">{event.shortId}</p></div><AutomationStatusBadge status={event.status} /></div>
                     <div className="mt-3 grid gap-1 text-xs text-muted-foreground"><div className="flex items-center justify-between"><span>{event.attempts} / {event.maxAttempts} intentos</span><span>{formatDateTime(event.createdAt)}</span></div><span>Actualizado: {formatDateTime(event.updatedAt)}</span>{event.nextAttemptAt && <span className="text-amber-300">Próximo intento: {formatDateTime(event.nextAttemptAt)}</span>}</div>
                   </button>
                 ))}
@@ -362,7 +441,7 @@ export function AutomationDashboard({
             </Select>
             <Select value={filters.runType || "all"} onValueChange={(value) => updateParams({ run_tipo: value === "all" ? null : value, run_pagina: null })}>
               <SelectTrigger className="w-full" aria-label="Tipo de ejecución"><SelectValue placeholder="Todos los tipos" /></SelectTrigger>
-              <SelectContent><SelectItem value="all">Todos los tipos</SelectItem>{eventTypes.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent>
+              <SelectContent><SelectItem value="all">Todos los tipos</SelectItem>{eventTypes.map((type) => <SelectItem key={type} value={type}>{automationEventTypeLabel(type)}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={filters.runOrder} onValueChange={(value) => updateParams({ run_orden: value === "desc" ? null : value, run_pagina: null })}>
               <SelectTrigger className="w-full" aria-label="Orden de ejecuciones"><SelectValue /></SelectTrigger>
@@ -381,7 +460,7 @@ export function AutomationDashboard({
                   <TableBody>
                     {runs.items.map((run) => (
                       <TableRow key={run.id}>
-                        <TableCell><div className="font-medium">{run.eventType}</div><div className="font-mono text-xs text-muted-foreground">{run.eventShortId}</div></TableCell>
+                        <TableCell><div className="font-medium">{automationEventTypeLabel(run.eventType)}</div><div className="font-mono text-xs text-muted-foreground">{run.eventShortId}</div></TableCell>
                         <TableCell>{run.provider}</TableCell>
                         <TableCell><AutomationStatusBadge status={run.status} /></TableCell>
                         <TableCell>{run.attempt}</TableCell>
@@ -397,7 +476,7 @@ export function AutomationDashboard({
               <div className="divide-y md:hidden">
                 {runs.items.map((run) => (
                   <button key={run.id} type="button" onClick={() => setSelectedEventId(run.eventId)} className="w-full p-4 text-left transition-colors hover:bg-accent/50">
-                    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-medium">{run.eventType}</p><p className="text-xs text-muted-foreground">{run.provider} · intento {run.attempt}</p></div><AutomationStatusBadge status={run.status} /></div>
+                    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-medium">{automationEventTypeLabel(run.eventType)}</p><p className="text-xs text-muted-foreground">{run.provider} · intento {run.attempt}</p></div><AutomationStatusBadge status={run.status} /></div>
                     <div className="mt-3 grid gap-1 text-xs text-muted-foreground"><div className="flex items-center justify-between"><span>{formatDuration(run.durationMs)}</span><span>{formatDateTime(run.startedAt)}</span></div><span>Finalizó: {formatDateTime(run.finishedAt)}</span>{(run.errorCode || run.errorMessage) && <span className="text-red-300">{run.errorCode ? `${run.errorCode}: ` : ""}{run.errorMessage}</span>}</div>
                   </button>
                 ))}
@@ -405,6 +484,14 @@ export function AutomationDashboard({
               <Pagination data={runs} onPage={(page) => updateParams({ run_pagina: page === 1 ? null : String(page) })} />
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="rules" className="space-y-3">
+          <AutomationRulesPanel
+            rules={rules}
+            canManage={canManage}
+            organizationName={organizationName}
+          />
         </TabsContent>
       </Tabs>
 

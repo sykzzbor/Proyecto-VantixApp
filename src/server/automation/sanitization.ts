@@ -33,11 +33,13 @@ export function sanitizeAutomationValue(
   if (depth > MAX_DEPTH) return "[contenido profundo omitido]";
   if (
     value === null ||
-    typeof value === "string" ||
     typeof value === "number" ||
     typeof value === "boolean"
   ) {
     return value;
+  }
+  if (typeof value === "string") {
+    return sanitizeAutomationMessage(value, 1000) ?? "";
   }
   if (typeof value === "bigint") return value.toString();
   if (typeof value !== "object") return String(value);

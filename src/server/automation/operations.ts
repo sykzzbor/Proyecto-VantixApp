@@ -66,6 +66,7 @@ const defaultDeps: AutomationOperationDeps = {
               where: buildCancelTransitionWhere(input.id, input.organizationId),
               data: {
                 status: "CANCELLED",
+                cancellationReason: "manual_cancelled",
                 nextAttemptAt: null,
                 lockedAt: null,
                 processedAt: new Date(),

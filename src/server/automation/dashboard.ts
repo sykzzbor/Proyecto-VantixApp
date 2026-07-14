@@ -11,9 +11,8 @@ import type {
 } from "@/lib/validations/automation";
 import {
   getAutomationProviderMode,
-  isCallbackConfigured,
-  isDispatcherConfigured,
-  isN8nConfigured,
+  getN8nConfigurationState,
+  type N8nMissingCategory,
 } from "@/server/automation/config";
 import {
   maskIdempotencyKey,
@@ -51,11 +50,26 @@ export type AutomationOverview = {
   cancelled: number;
   successRate: number;
   averageDurationMs: number | null;
+  handoffRequested: number;
+  followUpsScheduled: number;
+  followUpsSent: number;
+  followUpsCancelled: number;
+  followUpsFailed: number;
 };
 
 export function calculateAutomationOverview(
   statusCounts: Partial<Record<AutomationEventStatus, number>>,
-  averageDurationMs: number | null
+  averageDurationMs: number | null,
+  operational: Partial<
+    Pick<
+      AutomationOverview,
+      | "handoffRequested"
+      | "followUpsScheduled"
+      | "followUpsSent"
+      | "followUpsCancelled"
+      | "followUpsFailed"
+    >
+  > = {}
 ): AutomationOverview {
   const count = (status: AutomationEventStatus) => statusCounts[status] ?? 0;
   const terminal = count("SUCCEEDED") + count("FAILED") + count("DEAD_LETTER");
@@ -70,6 +84,11 @@ export function calculateAutomationOverview(
     successRate: terminal === 0 ? 0 : Math.round((count("SUCCEEDED") / terminal) * 1000) / 10,
     averageDurationMs:
       averageDurationMs === null ? null : Math.round(averageDurationMs),
+    handoffRequested: operational.handoffRequested ?? 0,
+    followUpsScheduled: operational.followUpsScheduled ?? 0,
+    followUpsSent: operational.followUpsSent ?? 0,
+    followUpsCancelled: operational.followUpsCancelled ?? 0,
+    followUpsFailed: operational.followUpsFailed ?? 0,
   };
 }
 
@@ -79,7 +98,7 @@ export async function getAutomationOverview(
 ): Promise<AutomationOverview> {
   const range = resolveAutomationRange(period);
   const where = { organizationId, createdAt: { gte: range.from, lte: range.to } };
-  const [groups, duration] = await Promise.all([
+  const [groups, duration, operationalGroups, followUpsSent] = await Promise.all([
     prisma.automationEvent.groupBy({
       by: ["status"],
       where,
@@ -93,10 +112,47 @@ export async function getAutomationOverview(
       },
       _avg: { durationMs: true },
     }),
+    prisma.automationEvent.groupBy({
+      by: ["type", "status"],
+      where: {
+        ...where,
+        type: {
+          in: ["conversation.handoff_requested", "conversation.followup_due"],
+        },
+      },
+      _count: { _all: true },
+    }),
+    prisma.automationEvent.count({
+      where: {
+        ...where,
+        type: "conversation.followup_due",
+        actionMessage: {
+          deliveryStatus: { in: ["SENT", "DELIVERED", "READ"] },
+        },
+      },
+    }),
   ]);
   const counts: Partial<Record<AutomationEventStatus, number>> = {};
   for (const group of groups) counts[group.status] = group._count._all;
-  return calculateAutomationOverview(counts, duration._avg.durationMs);
+  const countOperational = (type: string, statuses?: AutomationEventStatus[]) =>
+    operationalGroups
+      .filter(
+        (group) =>
+          group.type === type && (!statuses || statuses.includes(group.status))
+      )
+      .reduce((sum, group) => sum + group._count._all, 0);
+  return calculateAutomationOverview(counts, duration._avg.durationMs, {
+    handoffRequested: countOperational("conversation.handoff_requested"),
+    followUpsScheduled: countOperational("conversation.followup_due"),
+    followUpsSent,
+    followUpsCancelled: countOperational("conversation.followup_due", [
+      "CANCELLED",
+    ]),
+    followUpsFailed: countOperational("conversation.followup_due", [
+      "FAILED",
+      "DEAD_LETTER",
+    ]),
+  });
 }
 
 export type AutomationInfrastructureStatus = {
@@ -105,10 +161,15 @@ export type AutomationInfrastructureStatus = {
   mockMode: boolean;
   dispatcherConfigured: boolean;
   callbackConfigured: boolean;
+  endpointConfigured: boolean;
+  outboundSignatureConfigured: boolean;
   providerConfigured: boolean;
+  missingCategories: N8nMissingCategory[];
   connectionEnabled: boolean;
   connectionStatus: "CONNECTED" | "DISCONNECTED" | "ERROR" | "NOT_CREATED";
   lastProcessedAt: string | null;
+  lastEventSentAt: string | null;
+  lastCallbackAt: string | null;
   lastSuccessfulRunAt: string | null;
   lastError: string | null;
 };
@@ -117,12 +178,19 @@ export async function getAutomationInfrastructureStatus(
   organizationId: string
 ): Promise<AutomationInfrastructureStatus> {
   const provider = getAutomationProviderMode();
-  const dispatcherConfigured = isDispatcherConfigured();
-  const callbackConfigured = isCallbackConfigured();
+  const configuration = getN8nConfigurationState();
+  const dispatcherConfigured = configuration.dispatcher;
+  const callbackConfigured = configuration.callbackSignature;
   const [connection, lastProcessed, lastSuccess, lastFailure] = await Promise.all([
     prisma.integrationConnection.findUnique({
       where: { organizationId_provider: { organizationId, provider: "n8n" } },
-      select: { status: true, enabled: true, lastError: true },
+      select: {
+        status: true,
+        enabled: true,
+        lastError: true,
+        lastEventAt: true,
+        lastCallbackAt: true,
+      },
     }),
     prisma.automationEvent.findFirst({
       where: { organizationId, processedAt: { not: null } },
@@ -130,7 +198,11 @@ export async function getAutomationInfrastructureStatus(
       select: { processedAt: true },
     }),
     prisma.automationRun.findFirst({
-      where: { organizationId, status: "SUCCEEDED" },
+      where: {
+        organizationId,
+        status: "SUCCEEDED",
+        ...(provider === "n8n" ? { provider: "n8n" } : {}),
+      },
       orderBy: { finishedAt: "desc" },
       select: { finishedAt: true },
     }),
@@ -141,17 +213,16 @@ export async function getAutomationInfrastructureStatus(
     }),
   ]);
 
-  const providerConfigured = provider === "mock" || isN8nConfigured();
+  const providerConfigured = provider === "mock" || configuration.complete;
   const connectionStatus = connection?.status ?? "NOT_CREATED";
   const state =
     provider === "mock"
       ? "operational"
-      : connectionStatus === "ERROR"
-        ? "error"
-        : providerConfigured && dispatcherConfigured && callbackConfigured &&
-            connection?.enabled && connection.status === "CONNECTED"
-          ? "operational"
-          : "incomplete";
+      : !providerConfigured
+        ? "incomplete"
+        : connectionStatus === "ERROR"
+          ? "error"
+          : "operational";
 
   return {
     provider,
@@ -159,10 +230,15 @@ export async function getAutomationInfrastructureStatus(
     mockMode: provider === "mock",
     dispatcherConfigured,
     callbackConfigured,
+    endpointConfigured: configuration.endpoint,
+    outboundSignatureConfigured: configuration.outboundSignature,
     providerConfigured,
+    missingCategories: provider === "mock" ? [] : configuration.missing,
     connectionEnabled: connection?.enabled ?? false,
     connectionStatus,
     lastProcessedAt: lastProcessed?.processedAt?.toISOString() ?? null,
+    lastEventSentAt: connection?.lastEventAt?.toISOString() ?? null,
+    lastCallbackAt: connection?.lastCallbackAt?.toISOString() ?? null,
     lastSuccessfulRunAt: lastSuccess?.finishedAt?.toISOString() ?? null,
     lastError: sanitizeAutomationMessage(
       connection?.lastError ?? lastFailure?.lastError ?? null
@@ -362,6 +438,13 @@ export type AutomationEventDetail = {
   nextAttemptAt: string | null;
   processedAt: string | null;
   lastError: string | null;
+  conversationId: string | null;
+  sourceMessageId: string | null;
+  ruleType: "HANDOFF_ALERT" | "FOLLOW_UP" | null;
+  cancellationReason: string | null;
+  followUpNumber: number | null;
+  schedulingReason: string | null;
+  actionDeliveryStatus: string | null;
   payload?: unknown;
   runs: AutomationRunRow[];
 };
@@ -387,6 +470,12 @@ export async function getAutomationEventDetail(
       nextAttemptAt: true,
       processedAt: true,
       lastError: true,
+      conversationId: true,
+      sourceMessageId: true,
+      cancellationReason: true,
+      followUpNumber: true,
+      automationRule: { select: { type: true } },
+      actionMessage: { select: { deliveryStatus: true } },
       runs: {
         orderBy: { createdAt: "desc" },
         take: 50,
@@ -407,6 +496,10 @@ export async function getAutomationEventDetail(
     },
   });
   if (!event) return null;
+  const rawPayload =
+    event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+      ? (event.payload as Record<string, unknown>)
+      : null;
   return {
     id: event.id,
     shortId: shortAutomationId(event.id),
@@ -421,6 +514,21 @@ export async function getAutomationEventDetail(
     nextAttemptAt: event.nextAttemptAt?.toISOString() ?? null,
     processedAt: event.processedAt?.toISOString() ?? null,
     lastError: sanitizeAutomationMessage(event.lastError),
+    conversationId: event.conversationId,
+    sourceMessageId: event.sourceMessageId
+      ? shortAutomationId(event.sourceMessageId)
+      : null,
+    ruleType: event.automationRule?.type ?? null,
+    cancellationReason: sanitizeAutomationMessage(
+      event.cancellationReason,
+      120
+    ),
+    followUpNumber: event.followUpNumber,
+    schedulingReason:
+      typeof rawPayload?.reason === "string"
+        ? sanitizeAutomationMessage(rawPayload.reason, 120)
+        : null,
+    actionDeliveryStatus: event.actionMessage?.deliveryStatus ?? null,
     ...(includePayload ? { payload: sanitizeAutomationValue(event.payload) } : {}),
     runs: event.runs.map((run) => ({
       id: run.id,

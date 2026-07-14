@@ -1,0 +1,386 @@
+{
+  "name": "Vantix - Event Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vantix-events",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "c864d75b-885f-4d87-ad64-ec6e19ee70ef",
+      "name": "Receive Vantix event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1120,
+        0
+      ],
+      "webhookId": "4e38ed08-a260-4964-82fc-f7061ad65959"
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "binaryData": true,
+        "binaryPropertyName": "data",
+        "type": "SHA256",
+        "dataPropertyName": "computedSignature",
+        "encoding": "hex"
+      },
+      "id": "0310e8f5-01b9-4ca1-921a-7625f04a51de",
+      "name": "Verify incoming HMAC",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        0
+      ],
+      "notesInFlow": true,
+      "notes": "Select the Crypto credential whose HMAC secret matches N8N_WEBHOOK_SECRET."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = $input.first().json ?? {};\nconst fail = (responseStatus, errorCode) => [{ json: { valid: false, responseStatus, errorCode } }];\nconst isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);\nconst isId = (value) => typeof value === 'string' && value.length >= 1 && value.length <= 64;\nconst cleanText = (value, max) => {\n  if (typeof value !== 'string') return null;\n  const clean = value.trim().replace(/[\\u0000-\\u001f\\u007f]/g, ' ');\n  return clean.length >= 1 && clean.length <= max ? clean : null;\n};\nconst utf8Length = (value) => {\n  let bytes = 0;\n  for (const character of value) {\n    const point = character.codePointAt(0);\n    bytes += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;\n  }\n  return bytes;\n};\nconst rawHeaders = isObject(input.headers) ? input.headers : {};\nconst headers = {};\nfor (const [name, value] of Object.entries(rawHeaders)) {\n  headers[name.toLowerCase()] = Array.isArray(value) ? String(value[0] ?? '') : String(value ?? '');\n}\nconst supplied = headers['x-vantix-signature']?.trim().toLowerCase() ?? '';\nconst calculated = String(input.computedSignature ?? '').toLowerCase();\nif (!/^sha256=[a-f0-9]{64}$/.test(supplied) || !/^[a-f0-9]{64}$/.test(calculated)) {\n  return fail(401, 'invalid_signature');\n}\nlet signatureDifference = 0;\nfor (let index = 0; index < 64; index += 1) {\n  signatureDifference |= supplied.charCodeAt(index + 7) ^ calculated.charCodeAt(index);\n}\nif (signatureDifference !== 0) return fail(401, 'invalid_signature');\nconst body = input.body;\nif (!isObject(body)) return fail(400, 'invalid_json');\nlet payloadJson;\ntry {\n  payloadJson = JSON.stringify(body.payload);\n} catch {\n  return fail(400, 'invalid_payload');\n}\nif (typeof payloadJson !== 'string' || utf8Length(payloadJson) > 32768) {\n  return fail(413, 'payload_too_large');\n}\nif (!Number.isSafeInteger(body.timestamp) || body.timestamp <= 0) return fail(400, 'invalid_timestamp');\nif (headers['x-vantix-timestamp'] !== String(body.timestamp)) return fail(401, 'timestamp_mismatch');\nif (Math.abs(Date.now() - body.timestamp) > 300000) return fail(401, 'stale_timestamp');\nif (!isId(body.eventId) || !isId(body.organizationId) || !isId(body.runId)) return fail(400, 'invalid_identity');\nif (headers['x-vantix-event-id'] !== body.eventId) return fail(400, 'event_id_mismatch');\nif (body.schemaVersion !== 1 || headers['x-vantix-schema-version'] !== '1') return fail(422, 'unsupported_schema');\nif (typeof body.idempotencyKey !== 'string' || body.idempotencyKey.length < 1 || body.idempotencyKey.length > 200) {\n  return fail(400, 'invalid_idempotency_key');\n}\nif (!isObject(body.payload)) return fail(400, 'invalid_payload');\nconst eventBase = {\n  eventId: body.eventId,\n  organizationId: body.organizationId,\n  runId: body.runId,\n  type: body.type,\n  timestamp: body.timestamp,\n  schemaVersion: 1,\n  idempotencyKey: body.idempotencyKey,\n};\nlet safePayload;\nif (body.type === 'conversation.handoff_requested') {\n  const payload = body.payload;\n  if (payload.eventId !== body.eventId || payload.organizationId !== body.organizationId || !isId(payload.conversationId)) {\n    return fail(400, 'invalid_handoff_identity');\n  }\n  const businessName = cleanText(payload.businessName, 100);\n  const customerName = cleanText(payload.customerName, 100);\n  const conversationUrl = cleanText(payload.conversationUrl, 1000);\n  const requestedAt = cleanText(payload.requestedAt, 40);\n  if (!businessName || !customerName || !conversationUrl || !/^https?:\\/\\//i.test(conversationUrl) || !requestedAt || !Number.isFinite(Date.parse(requestedAt))) {\n    return fail(400, 'invalid_handoff_payload');\n  }\n  const normalizeRecipient = (recipient) => {\n    if (!isObject(recipient) || !isId(recipient.userId)) return null;\n    const name = cleanText(recipient.name, 100);\n    const email = cleanText(recipient.email, 254);\n    if (!name || !email || !email.includes('@') || !['OWNER', 'ADMIN', 'AGENT'].includes(recipient.role)) return null;\n    return { userId: recipient.userId, name, email, role: recipient.role };\n  };\n  if (!Array.isArray(payload.recipients) || payload.recipients.length < 1 || payload.recipients.length > 50) {\n    return fail(400, 'invalid_handoff_recipients');\n  }\n  const recipientMap = new Map();\n  for (const rawRecipient of payload.recipients) {\n    const recipient = normalizeRecipient(rawRecipient);\n    if (!recipient) return fail(400, 'invalid_handoff_recipients');\n    recipientMap.set(recipient.userId, recipient);\n  }\n  let assignedAgent = null;\n  if (payload.assignedAgent !== null && payload.assignedAgent !== undefined) {\n    assignedAgent = normalizeRecipient(payload.assignedAgent);\n    if (!assignedAgent) return fail(400, 'invalid_assigned_agent');\n  }\n  safePayload = {\n    eventId: body.eventId,\n    organizationId: body.organizationId,\n    conversationId: payload.conversationId,\n    businessName,\n    customerName,\n    conversationUrl,\n    requestedAt: new Date(requestedAt).toISOString(),\n    assignedAgent,\n    recipients: [...recipientMap.values()],\n  };\n} else if (body.type === 'conversation.followup_due') {\n  const payload = body.payload;\n  if (payload.eventId !== body.eventId || payload.organizationId !== body.organizationId || !isId(payload.conversationId)) {\n    return fail(400, 'invalid_followup_identity');\n  }\n  const scheduledFor = cleanText(payload.scheduledFor, 40);\n  if (!scheduledFor || !Number.isFinite(Date.parse(scheduledFor)) || !Number.isInteger(payload.followUpNumber) || payload.followUpNumber < 1 || payload.followUpNumber > 3 || payload.reason !== 'outbound_message_unanswered') {\n    return fail(400, 'invalid_followup_payload');\n  }\n  safePayload = {\n    eventId: body.eventId,\n    organizationId: body.organizationId,\n    conversationId: payload.conversationId,\n    scheduledFor: new Date(scheduledFor).toISOString(),\n    followUpNumber: payload.followUpNumber,\n    reason: 'outbound_message_unanswered',\n  };\n} else if (body.type === 'automation.test') {\n  if (!['connection-test', 'manual-test'].includes(body.payload.source)) return fail(400, 'invalid_test_payload');\n  safePayload = { source: body.payload.source };\n} else {\n  return fail(422, 'unsupported_event_type');\n}\nreturn [{ json: { valid: true, responseStatus: 202, event: { ...eventBase, payload: safePayload } } }];"
+      },
+      "id": "910e482c-2e69-46e6-a407-92d3775c1a8d",
+      "name": "Validate and normalize contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.valid ? 0 : 1 }}"
+      },
+      "id": "57964086-f638-46f5-b359-f2698eb34de1",
+      "name": "Contract valid?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, eventId: $json.event.eventId } }}",
+        "options": {
+          "responseCode": 202,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "x-n8n-execution-id",
+                "value": "={{ $execution.id }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "b4f95546-4fb0-48d1-b5cd-fdcad629f804",
+      "name": "Accept event",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -224,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: false, error: $json.errorCode } }}",
+        "options": {
+          "responseCode": "={{ $json.responseStatus }}"
+        }
+      },
+      "id": "63b0902c-9431-419d-a2a8-c9fe72895fc0",
+      "name": "Reject event",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -224,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 3,
+        "output": "={{ $json.event.type === 'conversation.handoff_requested' ? 0 : $json.event.type === 'conversation.followup_due' ? 1 : 2 }}"
+      },
+      "id": "97e9a813-a505-445b-8002-12df09654266",
+      "name": "Route event type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        0,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "={{ $vars.VANTIX_HANDOFF_WORKFLOW_ID }}",
+          "mode": "id"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "f509a39b-40c5-421a-88ca-1f20691df0ab",
+      "name": "Run handoff alert",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        -272
+      ]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "={{ $vars.VANTIX_FOLLOWUP_WORKFLOW_ID }}",
+          "mode": "id"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "0a47683c-8840-499f-a2dc-60c3654ec33c",
+      "name": "Run follow-up",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const event = $input.first().json.event;\nconst callbackTimestamp = Date.now();\nconst callbackBody = JSON.stringify({\n  eventId: event.eventId,\n  organizationId: event.organizationId,\n  runId: event.runId,\n  timestamp: callbackTimestamp,\n  status: 'succeeded',\n  externalExecutionId: String($execution.id),\n  responseMeta: { workflow: 'vantix-event-router', eventType: 'automation.test' },\n});\nreturn [{ json: { callbackBody, callbackTimestamp: String(callbackTimestamp) } }];"
+      },
+      "id": "40c57ff4-3d44-44c9-a579-1161a77327df",
+      "name": "Prepare test callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "binaryData": false,
+        "type": "SHA256",
+        "value": "={{ $json.callbackBody }}",
+        "dataPropertyName": "callbackSignature",
+        "encoding": "hex"
+      },
+      "id": "64c8db1a-d1ba-451a-b7e5-e48941d4008a",
+      "name": "Sign test callback",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [
+        464,
+        48
+      ],
+      "notesInFlow": true,
+      "notes": "Select the Crypto credential whose HMAC secret matches N8N_CALLBACK_SECRET."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.VANTIX_APP_BASE_URL.replace(/\\\/$/, '') + '/api/webhooks/n8n/callback' }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-vantix-signature",
+              "value": "={{ 'sha256=' + $json.callbackSignature }}"
+            },
+            {
+              "name": "x-vantix-timestamp",
+              "value": "={{ $json.callbackTimestamp }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.callbackBody }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "f5b94cd0-c8e7-48bd-90e1-7468d5d436ed",
+      "name": "Send test callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        688,
+        48
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Receive Vantix event": {
+      "main": [
+        [
+          {
+            "node": "Verify incoming HMAC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify incoming HMAC": {
+      "main": [
+        [
+          {
+            "node": "Validate and normalize contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and normalize contract": {
+      "main": [
+        [
+          {
+            "node": "Contract valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contract valid?": {
+      "main": [
+        [
+          {
+            "node": "Accept event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accept event": {
+      "main": [
+        [
+          {
+            "node": "Route event type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route event type": {
+      "main": [
+        [
+          {
+            "node": "Run handoff alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Run follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare test callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare test callback": {
+      "main": [
+        [
+          {
+            "node": "Sign test callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign test callback": {
+      "main": [
+        [
+          {
+            "node": "Send test callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false,
+    "redactionPolicy": "all"
+  },
+  "versionId": "0c25e388-62fa-44cb-b79e-e2965306d026"
+}

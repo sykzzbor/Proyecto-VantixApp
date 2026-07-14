@@ -2,8 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { formatCurrency, formatDuration } from "@/lib/format";
-import { recordAudit } from "@/server/audit";
-import { saveMessage } from "@/server/conversations";
+import { requestConversationHumanHandoff } from "@/server/automation/handoff";
 import {
   KNOWLEDGE_SEARCH_DEFAULT_LIMIT,
   KNOWLEDGE_SEARCH_MAX_LIMIT,
@@ -18,6 +17,7 @@ import {
 export type AgentToolContext = {
   organizationId: string;
   conversationId: string;
+  sourceMessageId?: string | null;
   userId: string | null;
   flags: { humanTakeover: boolean };
 };
@@ -403,32 +403,14 @@ async function requestHumanSupport(
 ): Promise<ToolOutcome> {
   const args = humanSupportArgs.parse(rawArgs);
 
-  const updated = await prisma.conversation.updateMany({
-    where: {
-      id: ctx.conversationId,
-      organizationId: ctx.organizationId,
-    },
-    data: { handlingMode: "HUMAN", humanTakeoverAt: new Date() },
-  });
-  if (updated.count !== 1) {
-    throw new Error("conversation_scope_mismatch");
-  }
-  await saveMessage({
+  await requestConversationHumanHandoff({
     organizationId: ctx.organizationId,
     conversationId: ctx.conversationId,
-    senderType: "SYSTEM",
-    content: "El asistente derivó la conversación a atención humana.",
+    sourceMessageId: ctx.sourceMessageId,
+    userId: ctx.userId,
+    reason: args.reason,
   });
   ctx.flags.humanTakeover = true;
-
-  await recordAudit({
-    organizationId: ctx.organizationId,
-    userId: ctx.userId,
-    action: "agente.derivacion_solicitada",
-    entityType: "conversation",
-    entityId: ctx.conversationId,
-    details: { motivo: args.reason.slice(0, 200) },
-  });
 
   return {
     payload: {

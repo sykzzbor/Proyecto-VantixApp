@@ -1,5 +1,6 @@
 import { after } from "next/server";
-import { automationTestBodySchema } from "@/lib/validations/automation";
+import { z } from "zod";
+import { getAutomationProviderMode, getN8nConfigurationState } from "@/server/automation/config";
 import { emitAutomationEvent } from "@/server/automation/events";
 import {
   authorizeAutomationRequest,
@@ -12,18 +13,17 @@ import { recordAudit } from "@/server/audit";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_TEST_BODY_BYTES = 1024;
+const emptyBodySchema = z.object({}).strict();
 
-/**
- * Genera un evento `automation.test` para probar toda la infraestructura.
- * Solo OWNER/ADMIN de la organización de la sesión. La organización se resuelve
- * SIEMPRE desde la membresía del usuario, nunca del cuerpo de la petición.
- */
 export async function POST(request: Request) {
-  const authorization = await authorizeAutomationRequest(request, "automation.manage");
+  const authorization = await authorizeAutomationRequest(
+    request,
+    "automation.manage"
+  );
   if (!authorization.ok) return authorization.response;
 
-  const bodyResult = await readLimitedRawBody(request, MAX_TEST_BODY_BYTES);
+  let body: unknown = {};
+  const bodyResult = await readLimitedRawBody(request, 1024);
   if (!bodyResult.ok) {
     return automationJson(
       {
@@ -31,64 +31,76 @@ export async function POST(request: Request) {
           bodyResult.reason === "too_large"
             ? "payload_too_large"
             : "invalid_body",
-        message:
-          bodyResult.reason === "too_large"
-            ? "El cuerpo es demasiado grande."
-            : "El cuerpo no es válido.",
+        message: "El cuerpo no es válido.",
       },
       { status: bodyResult.reason === "too_large" ? 413 : 400 }
     );
   }
-
-  let rawBody: unknown;
-  try {
-    rawBody = JSON.parse(bodyResult.rawBody);
-  } catch {
+  const rawBody = bodyResult.rawBody;
+  if (rawBody) {
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return automationJson(
+        { error: "invalid_body", message: "El cuerpo no es válido." },
+        { status: 400 }
+      );
+    }
+  }
+  if (!emptyBodySchema.safeParse(body).success) {
     return automationJson(
-      { error: "invalid_body", message: "El cuerpo no es válido." },
+      { error: "invalid_body", message: "Esta prueba no acepta parámetros." },
       { status: 400 }
     );
   }
-  const parsed = automationTestBodySchema.safeParse(rawBody);
-  if (!parsed.success) {
+  if (getAutomationProviderMode() !== "n8n") {
     return automationJson(
-      { error: "invalid_body", message: "Elegí un resultado de prueba válido." },
-      { status: 400 }
+      {
+        error: "mock_mode",
+        message: "El modo de prueba está activo; todavía no se envía a n8n.",
+      },
+      { status: 409 }
+    );
+  }
+  const configuration = getN8nConfigurationState();
+  if (!configuration.complete) {
+    return automationJson(
+      {
+        error: "incomplete_integration",
+        message: "La integración de n8n todavía está incompleta.",
+        missing: configuration.missing,
+      },
+      { status: 409 }
     );
   }
 
   const result = await emitAutomationEvent({
     organizationId: authorization.ctx.organizationId,
     type: "automation.test",
-    payload: { source: "manual-test", mock: parsed.data.mock },
+    payload: { source: "connection-test" },
   });
   if (!result.ok) {
     return automationJson(
-      { error: result.code, message: "No se pudo crear el evento de prueba." },
+      { error: result.code, message: "No se pudo crear la prueba de conexión." },
       { status: 400 }
     );
   }
-
   await recordAudit({
     organizationId: authorization.ctx.organizationId,
     userId: authorization.ctx.userId,
-    action: "automation.test_emitted",
+    action: "automation.connection_test_emitted",
     entityType: "automation_event",
     entityId: result.eventId,
-    details: { duplicate: result.duplicate },
   });
-
-  // Procesa el evento fuera del render (no bloquea la respuesta).
   after(async () => {
     await processAutomationEventNow({
       eventId: result.eventId,
       organizationId: authorization.ctx.organizationId,
     });
   });
-
   return automationJson({
     ok: true,
     eventId: result.eventId,
-    duplicate: result.duplicate,
+    state: "awaiting_callback",
   });
 }

@@ -17,6 +17,7 @@ import {
   listAutomationRuns,
 } from "@/server/automation/dashboard";
 import { requireOrgContext } from "@/server/context";
+import { getAutomationRules } from "@/server/automation/rules";
 
 export const metadata: Metadata = {
   title: "Automatizaciones",
@@ -63,9 +64,13 @@ export default async function AutomatizacionesPage({
   const runQuery = runQueryResult.success
     ? runQueryResult.data
     : automationRunQuerySchema.parse({ period });
-  const tab = scalar(params.tab) === "runs" ? "runs" : "events";
+  const requestedTab = scalar(params.tab);
+  const tab =
+    requestedTab === "runs" || requestedTab === "rules"
+      ? requestedTab
+      : "events";
 
-  const [overview, infrastructure, events, runs, eventTypes, providers] =
+  const [overview, infrastructure, events, runs, eventTypes, providers, rules] =
     await Promise.all([
       getAutomationOverview(org.id, period),
       getAutomationInfrastructureStatus(org.id),
@@ -73,6 +78,7 @@ export default async function AutomatizacionesPage({
       listAutomationRuns(org.id, runQuery),
       listAutomationEventTypes(org.id),
       listAutomationProviders(org.id),
+      getAutomationRules(org.id),
     ]);
 
   return (
@@ -88,6 +94,7 @@ export default async function AutomatizacionesPage({
         runs={runs}
         eventTypes={eventTypes}
         providers={providers}
+        rules={rules}
         organizationName={org.name}
         canManage={can(role, "automation.manage")}
         filters={{

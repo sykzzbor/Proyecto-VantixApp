@@ -39,6 +39,12 @@ const PERMISSIONS = {
 
 export type Permission = keyof typeof PERMISSIONS;
 
+/** Permisos compartidos por la API y las pruebas de reglas de automatización. */
+export const AUTOMATION_RULE_PERMISSIONS = {
+  read: "automation.view",
+  manage: "automation.manage",
+} as const satisfies Record<"read" | "manage", Permission>;
+
 export function can(role: MemberRole, permission: Permission): boolean {
   return (PERMISSIONS[permission] as readonly MemberRole[]).includes(role);
 }

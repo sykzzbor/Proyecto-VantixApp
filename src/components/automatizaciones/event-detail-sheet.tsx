@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Ban, LoaderCircle, RefreshCcw, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { AutomationStatusBadge } from "@/components/automatizaciones/automation-status-badge";
@@ -15,6 +16,28 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AutomationEventDetail } from "@/server/automation/dashboard";
+import { automationEventTypeLabel } from "@/lib/automation-labels";
+
+const CANCELLATION_LABELS: Record<string, string> = {
+  customer_replied: "El cliente respondió",
+  conversation_closed: "La conversación se cerró",
+  conversation_deleted: "La conversación se eliminó",
+  rule_disabled: "La regla se pausó",
+  human_takeover: "Un agente tomó el control",
+  human_handoff: "La conversación fue derivada",
+  handoff_no_longer_active: "La derivación ya no estaba activa",
+  no_valid_recipients: "No había destinatarios activos permitidos",
+  outbound_replaced: "Un mensaje más reciente reemplazó la programación",
+  integration_disabled: "La integración dejó de estar disponible",
+  organization_disabled: "La organización quedó deshabilitada",
+  rule_invalid: "La configuración dejó de ser válida",
+  source_invalid: "El mensaje de origen dejó de ser válido",
+  maximum_reached: "Se alcanzó el máximo configurado",
+  channel_unavailable: "El canal dejó de estar disponible",
+  manual_cancelled: "Cancelado manualmente",
+};
+
+const EVENT_DETAIL_POLL_MS = 5_000;
 
 function formatDateTime(value: string | null) {
   if (!value) return "—";
@@ -60,12 +83,19 @@ export function EventDetailSheet({
 
   useEffect(() => {
     if (!eventId) return;
+    const activeEventId = eventId;
     const controller = new AbortController();
-    fetch(`/api/automation/events/${encodeURIComponent(eventId)}`, {
-      signal: controller.signal,
-      cache: "no-store",
-    })
-      .then(async (response) => {
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    async function loadEvent() {
+      try {
+        const response = await fetch(
+          `/api/automation/events/${encodeURIComponent(activeEventId)}`,
+          {
+            signal: controller.signal,
+            cache: "no-store",
+          }
+        );
         const body = (await response.json()) as {
           event?: AutomationEventDetail;
           message?: string;
@@ -73,12 +103,17 @@ export function EventDetailSheet({
         if (!response.ok || !body.event) {
           throw new Error(body.message ?? "No se pudo cargar el evento.");
         }
-        setResult({ eventId, event: body.event, error: null });
-      })
-      .catch((reason: unknown) => {
+        setResult({ eventId: activeEventId, event: body.event, error: null });
+        if (
+          body.event.status === "PENDING" ||
+          body.event.status === "PROCESSING"
+        ) {
+          pollTimer = setTimeout(loadEvent, EVENT_DETAIL_POLL_MS);
+        }
+      } catch (reason: unknown) {
         if (!controller.signal.aborted) {
           setResult({
-            eventId,
+            eventId: activeEventId,
             event: null,
             error:
               reason instanceof Error
@@ -86,8 +121,14 @@ export function EventDetailSheet({
                 : "No se pudo cargar el evento.",
           });
         }
-      });
-    return () => controller.abort();
+      }
+    }
+
+    void loadEvent();
+    return () => {
+      controller.abort();
+      if (pollTimer) clearTimeout(pollTimer);
+    };
   }, [eventId]);
 
   const currentResult = result?.eventId === eventId ? result : null;
@@ -145,7 +186,7 @@ export function EventDetailSheet({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-mono text-xs text-muted-foreground">{event.shortId}</p>
-                <h3 className="mt-1 font-semibold">{event.type}</h3>
+                <h3 className="mt-1 font-semibold">{automationEventTypeLabel(event.type)}</h3>
               </div>
               <AutomationStatusBadge status={event.status} />
             </div>
@@ -177,8 +218,27 @@ export function EventDetailSheet({
                 <DataRow label="Intentos" value={`${event.attempts} de ${event.maxAttempts}`} />
                 <DataRow label="Creado" value={formatDateTime(event.createdAt)} />
                 <DataRow label="Actualizado" value={formatDateTime(event.updatedAt)} />
-                <DataRow label="Próximo intento" value={formatDateTime(event.nextAttemptAt)} />
+                <DataRow label={event.type === "conversation.followup_due" ? "Fecha programada" : "Próximo intento"} value={formatDateTime(event.nextAttemptAt)} />
                 <DataRow label="Procesado" value={formatDateTime(event.processedAt)} />
+                {event.conversationId && (
+                  <DataRow
+                    label="Conversación"
+                    value={
+                      <Link
+                        href={`/dashboard/conversaciones?conversacion=${encodeURIComponent(event.conversationId)}`}
+                        className="text-[#8eacff] hover:underline"
+                      >
+                        Abrir conversación
+                      </Link>
+                    }
+                  />
+                )}
+                {event.sourceMessageId && <DataRow label="Mensaje origen" value={<span className="font-mono text-xs">{event.sourceMessageId}</span>} />}
+                {event.ruleType && <DataRow label="Regla" value={event.ruleType === "HANDOFF_ALERT" ? "Aviso de atención humana" : "Seguimiento automático"} />}
+                {event.followUpNumber && <DataRow label="Seguimiento" value={`${event.followUpNumber} en la conversación`} />}
+                {event.schedulingReason && <DataRow label="Programación" value={event.schedulingReason === "outbound_message_unanswered" ? "Esperando respuesta del cliente" : event.schedulingReason} />}
+                {event.cancellationReason && <DataRow label="Cancelación" value={CANCELLATION_LABELS[event.cancellationReason] ?? event.cancellationReason} />}
+                {event.actionDeliveryStatus && <DataRow label="Envío" value={event.actionDeliveryStatus.toLowerCase()} />}
               </dl>
               {event.lastError && (
                 <p className="mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-red-200">

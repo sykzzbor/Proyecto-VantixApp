@@ -1,29 +1,26 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { applyAutomationCallback } from "@/server/automation/callback";
+import {
+  n8nCallbackSchema,
+  signedTimestampMatches,
+} from "@/lib/validations/automation-webhooks";
 import { getN8nCallbackSecret } from "@/server/automation/config";
 import { CALLBACK_TIMESTAMP_TOLERANCE_MS } from "@/server/automation/constants";
 import {
   isTimestampFresh,
   verifyAutomationSignature,
 } from "@/server/automation/signature";
+import { readLimitedRawBody } from "@/server/automation/http";
 
 export const runtime = "nodejs";
 
 const MAX_BODY_BYTES = 64 * 1024;
 
-const callbackSchema = z.object({
-  eventId: z.string().min(1).max(64),
-  organizationId: z.string().min(1).max(64),
-  status: z.enum(["succeeded", "failed"]),
-  externalExecutionId: z.string().max(200).nullish(),
-  errorCode: z.string().max(120).nullish(),
-  errorMessage: z.string().max(500).nullish(),
-  responseMeta: z.record(z.string(), z.unknown()).nullish(),
-});
-
 function json(status: number, body: Record<string, unknown>) {
-  return NextResponse.json(body, { status });
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "private, no-store, max-age=0" },
+  });
 }
 
 export async function POST(request: Request) {
@@ -35,10 +32,16 @@ export async function POST(request: Request) {
   }
 
   // 1. Cuerpo crudo, sin parsear, para verificar la firma sobre los bytes exactos.
-  const rawBody = await request.text();
-  if (rawBody.length > MAX_BODY_BYTES) {
-    return json(413, { error: "payload_too_large" });
+  const bodyResult = await readLimitedRawBody(request, MAX_BODY_BYTES);
+  if (!bodyResult.ok) {
+    return json(bodyResult.reason === "too_large" ? 413 : 400, {
+      error:
+        bodyResult.reason === "too_large"
+          ? "payload_too_large"
+          : "invalid_body",
+    });
   }
+  const rawBody = bodyResult.rawBody;
 
   // 2. Firma HMAC.
   const signature = request.headers.get("x-vantix-signature");
@@ -59,15 +62,21 @@ export async function POST(request: Request) {
   } catch {
     return json(400, { error: "invalid_json" });
   }
-  const validated = callbackSchema.safeParse(parsed);
+  const validated = n8nCallbackSchema.safeParse(parsed);
   if (!validated.success) {
     return json(400, { error: "invalid_body" });
+  }
+  if (!signedTimestampMatches(validated.data.timestamp, timestamp)) {
+    return json(401, { error: "timestamp_mismatch" });
   }
 
   // 5. Aplicar (aislado por organización, idempotente, sin confiar en el estado).
   try {
     const result = await applyAutomationCallback(validated.data);
-    if (!result.ok) return json(404, { error: "event_not_found" });
+    if (!result.ok) {
+      const status = result.code === "not_found" ? 404 : 409;
+      return json(status, { error: result.code });
+    }
     return json(200, { ok: true, applied: result.applied });
   } catch (error) {
     console.error(

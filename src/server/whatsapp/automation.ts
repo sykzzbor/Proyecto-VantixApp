@@ -121,6 +121,7 @@ export async function handleWhatsappAutomaticResponse(
   const ctx: AgentToolContext = {
     organizationId,
     conversationId,
+    sourceMessageId: job.persisted.messageId,
     userId: null,
     flags: { humanTakeover: false },
   };
@@ -198,6 +199,7 @@ export async function handleWhatsappAutomaticResponse(
       senderType: "AI",
       senderUserId: null,
       content: reply,
+      scheduleFollowUp: !result.humanTakeover,
     });
     if (!sent.ok) {
       await markConversationNeedsHumanAttention({

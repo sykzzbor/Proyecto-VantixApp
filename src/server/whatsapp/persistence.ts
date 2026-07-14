@@ -1,6 +1,8 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { isSerializableTransactionConflict } from "@/lib/prisma-errors";
 import { nextDeliveryStatus } from "@/server/whatsapp/delivery";
+import { cancelPendingFollowUpsTx } from "@/server/automation/follow-up";
 import type {
   ResolvedWhatsappIntegration,
   WhatsappInboundEvent,
@@ -146,6 +148,7 @@ export async function persistIncomingWhatsappMessage(
           const safeCreatedAt = Number.isNaN(createdAt.getTime())
             ? new Date()
             : createdAt;
+          const ingestedAt = new Date();
 
           const message = await tx.message.create({
             data: {
@@ -156,6 +159,7 @@ export async function persistIncomingWhatsappMessage(
               externalMessageId: event.externalMessageId,
               metadata: event.metadata as Prisma.InputJsonObject,
               createdAt: safeCreatedAt,
+              ingestedAt,
             },
             select: { id: true },
           });
@@ -175,6 +179,13 @@ export async function persistIncomingWhatsappMessage(
             },
           });
           if (updated.count !== 1) throw new Error("conversation_scope_mismatch");
+
+          await cancelPendingFollowUpsTx(tx, {
+            organizationId: scope.organizationId,
+            conversationId: conversation.id,
+            reason: "customer_replied",
+            now: ingestedAt,
+          });
 
           return {
             duplicate: false as const,
@@ -199,7 +210,10 @@ export async function persistIncomingWhatsappMessage(
           };
         }
       }
-      if (isPrismaCode(error, "P2034") && attempt < SERIALIZABLE_RETRIES - 1) {
+      if (
+        isSerializableTransactionConflict(error) &&
+        attempt < SERIALIZABLE_RETRIES - 1
+      ) {
         continue;
       }
       throw error;

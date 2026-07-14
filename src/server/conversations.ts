@@ -5,6 +5,7 @@ import type {
 } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 import { formatTime } from "@/lib/format";
+import { cancelPendingFollowUpsTx } from "@/server/automation/follow-up";
 
 export const TEST_CHANNEL = "test";
 
@@ -94,19 +95,45 @@ export async function saveMessage(input: {
       },
     });
     if (updated.count !== 1) throw new Error("conversation_scope_mismatch");
+    if (input.senderType === "CUSTOMER") {
+      await cancelPendingFollowUpsTx(tx, {
+        organizationId: input.organizationId,
+        conversationId: input.conversationId,
+        reason: "customer_replied",
+      });
+    }
     return message;
   });
 }
 
 /** Cierra la conversación de prueba abierta (el "limpiar chat" del dashboard). */
 export function closeTestConversation(organizationId: string) {
-  return prisma.conversation.updateMany({
-    where: {
-      organizationId,
-      channel: TEST_CHANNEL,
-      status: { not: "CLOSED" },
-    },
-    data: { status: "CLOSED", closedAt: new Date() },
+  return prisma.$transaction(async (tx) => {
+    const conversations = await tx.conversation.findMany({
+      where: {
+        organizationId,
+        channel: TEST_CHANNEL,
+        status: { not: "CLOSED" },
+      },
+      select: { id: true },
+    });
+    const ids = conversations.map((conversation) => conversation.id);
+    const updated = await tx.conversation.updateMany({
+      where: { id: { in: ids }, organizationId },
+      data: { status: "CLOSED", closedAt: new Date() },
+    });
+    if (ids.length > 0) {
+      const now = new Date();
+      for (const conversationId of ids) {
+        await cancelPendingFollowUpsTx(tx, {
+          organizationId,
+          conversationId,
+          reason: "conversation_closed",
+          now,
+        });
+      }
+    }
+    return updated;
   });
 }
 

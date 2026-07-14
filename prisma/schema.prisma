@@ -20,14 +20,16 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  sessions              Session[]
-  accounts              Account[]
-  memberships           OrganizationMember[]
-  auditLogs             AuditLog[]
-  invitations           Invitation[]         @relation("InvitedBy")
-  assignedConversations Conversation[]       @relation("AssignedConversations")
-  sentMessages          Message[]            @relation("SentMessages")
-  knowledgeUploads      KnowledgeDocument[]  @relation("KnowledgeUploads")
+  sessions               Session[]
+  accounts               Account[]
+  memberships            OrganizationMember[]
+  auditLogs              AuditLog[]
+  invitations            Invitation[]                 @relation("InvitedBy")
+  assignedConversations  Conversation[]               @relation("AssignedConversations")
+  sentMessages           Message[]                    @relation("SentMessages")
+  knowledgeUploads       KnowledgeDocument[]          @relation("KnowledgeUploads")
+  createdAutomationRules OrganizationAutomationRule[] @relation("AutomationRuleCreatedBy")
+  updatedAutomationRules OrganizationAutomationRule[] @relation("AutomationRuleUpdatedBy")
 
   @@map("users")
 }
@@ -99,25 +101,26 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members              OrganizationMember[]
-  invitations          Invitation[]
-  businessProfile      BusinessProfile?
-  agentSettings        AgentSettings?
-  products             Product[]
-  services             Service[]
-  faqs                 Faq[]
-  auditLogs            AuditLog[]
-  conversations        Conversation[]
-  messages             Message[]
-  customers            Customer[]
-  whatsappIntegrations WhatsappIntegration[]
-  knowledgeDocuments   KnowledgeDocument[]
-  knowledgeChunks      KnowledgeChunk[]
-  aiUsageEvents        AiUsageEvent[]
-  agentToolUsages      AgentToolUsage[]
-  automationEvents     AutomationEvent[]
-  automationRuns       AutomationRun[]
+  members                OrganizationMember[]
+  invitations            Invitation[]
+  businessProfile        BusinessProfile?
+  agentSettings          AgentSettings?
+  products               Product[]
+  services               Service[]
+  faqs                   Faq[]
+  auditLogs              AuditLog[]
+  conversations          Conversation[]
+  messages               Message[]
+  customers              Customer[]
+  whatsappIntegrations   WhatsappIntegration[]
+  knowledgeDocuments     KnowledgeDocument[]
+  knowledgeChunks        KnowledgeChunk[]
+  aiUsageEvents          AiUsageEvent[]
+  agentToolUsages        AgentToolUsage[]
+  automationEvents       AutomationEvent[]
+  automationRuns         AutomationRun[]
   integrationConnections IntegrationConnection[]
+  automationRules        OrganizationAutomationRule[]
 
   @@map("organizations")
 }
@@ -367,6 +370,7 @@ model Conversation {
   whatsappIntegration WhatsappIntegration? @relation(fields: [whatsappIntegrationId], references: [id], onDelete: SetNull)
   assignedUser        User?                @relation("AssignedConversations", fields: [assignedUserId], references: [id], onDelete: SetNull)
   messages            Message[]
+  automationEvents    AutomationEvent[]
 
   @@index([organizationId, channel, status])
   @@index([organizationId, lastMessageAt(sort: Desc)])
@@ -388,13 +392,17 @@ model Message {
   errorMessage      String?
   metadata          Json?
   createdAt         DateTime               @default(now())
+  ingestedAt        DateTime               @default(now())
   readAt            DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  senderUser   User?        @relation("SentMessages", fields: [senderUserId], references: [id], onDelete: SetNull)
+  organization           Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation           Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderUser             User?             @relation("SentMessages", fields: [senderUserId], references: [id], onDelete: SetNull)
+  sourceAutomationEvents AutomationEvent[] @relation("AutomationSourceMessage")
+  actionAutomationEvent  AutomationEvent?  @relation("AutomationActionMessage")
 
   @@index([conversationId, createdAt])
+  @@index([organizationId, conversationId, ingestedAt])
   @@map("messages")
 }
 
@@ -548,28 +556,73 @@ enum IntegrationConnectionStatus {
   ERROR
 }
 
-model AutomationEvent {
-  id             String                @id @default(cuid())
-  organizationId String
-  type           String
-  payload        Json
-  schemaVersion  Int                   @default(1)
-  status         AutomationEventStatus @default(PENDING)
-  idempotencyKey String
-  attempts       Int                   @default(0)
-  maxAttempts    Int                   @default(5)
-  nextAttemptAt  DateTime?
-  lockedAt       DateTime?
-  processedAt    DateTime?
-  lastError      String?
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
+enum AutomationRuleType {
+  HANDOFF_ALERT
+  FOLLOW_UP
+}
 
-  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  runs         AutomationRun[]
+model OrganizationAutomationRule {
+  id             String             @id @default(cuid())
+  organizationId String
+  type           AutomationRuleType
+  enabled        Boolean            @default(false)
+  config         Json
+  version        Int                @default(1)
+  createdById    String?
+  updatedById    String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?             @relation("AutomationRuleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy    User?             @relation("AutomationRuleUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  events       AutomationEvent[]
+
+  @@unique([organizationId, type])
+  @@index([organizationId, enabled])
+  @@map("organization_automation_rules")
+}
+
+model AutomationEvent {
+  id                 String                @id @default(cuid())
+  organizationId     String
+  automationRuleId   String?
+  conversationId     String?
+  sourceMessageId    String?
+  actionMessageId    String?               @unique
+  type               String
+  payload            Json
+  schemaVersion      Int                   @default(1)
+  status             AutomationEventStatus @default(PENDING)
+  idempotencyKey     String
+  attempts           Int                   @default(0)
+  maxAttempts        Int                   @default(5)
+  nextAttemptAt      DateTime?
+  lockedAt           DateTime?
+  processedAt        DateTime?
+  lastError          String?
+  followUpNumber     Int?
+  cancellationReason String?
+  actionClaimedAt    DateTime?
+  actionCompletedAt  DateTime?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  organization   Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  automationRule OrganizationAutomationRule? @relation(fields: [automationRuleId], references: [id], onDelete: SetNull)
+  conversation   Conversation?               @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  sourceMessage  Message?                    @relation("AutomationSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  actionMessage  Message?                    @relation("AutomationActionMessage", fields: [actionMessageId], references: [id], onDelete: SetNull)
+  runs           AutomationRun[]
 
   @@unique([organizationId, idempotencyKey])
+  @@unique([organizationId, type, sourceMessageId])
   @@index([status, nextAttemptAt])
+  @@index([organizationId, type, status, nextAttemptAt])
+  @@index([organizationId, conversationId, type, status])
+  @@index([conversationId])
+  @@index([automationRuleId, createdAt(sort: Desc)])
+  @@index([sourceMessageId])
   @@index([organizationId, createdAt(sort: Desc)])
   @@map("automation_events")
 }
@@ -607,6 +660,7 @@ model IntegrationConnection {
   externalId      String?
   encryptedSecret String?
   lastEventAt     DateTime?
+  lastCallbackAt  DateTime?
   lastError       String?
   createdAt       DateTime                    @default(now())
   updatedAt       DateTime                    @updatedAt

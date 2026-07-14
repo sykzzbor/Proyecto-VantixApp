@@ -37,6 +37,7 @@ export type DispatchResult =
 /** Cuerpo exacto que se firma y envía a n8n. */
 export type AutomationWebhookPayload = {
   eventId: string;
+  runId: string;
   organizationId: string;
   type: string;
   timestamp: number;
@@ -49,7 +50,9 @@ export type CallbackStatus = "succeeded" | "failed";
 
 export type CallbackInput = {
   eventId: string;
+  runId: string;
   organizationId: string;
+  timestamp: number;
   status: CallbackStatus;
   externalExecutionId?: string | null;
   errorCode?: string | null;

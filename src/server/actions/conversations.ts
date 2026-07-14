@@ -13,6 +13,7 @@ import {
 import { recordAudit } from "@/server/audit";
 import { getOrgContext, requirePermission } from "@/server/context";
 import { saveMessage } from "@/server/conversations";
+import { cancelPendingFollowUpsTx } from "@/server/automation/follow-up";
 import type { ThreadMessage } from "@/server/inbox";
 import { ActionError, toActionFailure, type ActionResult } from "@/server/errors";
 import {
@@ -80,13 +81,20 @@ export async function takeConversation(
       throw new ActionError("La conversación está cerrada. Reabrila para tomarla.");
     }
 
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        handlingMode: "HUMAN",
-        assignedUserId: user.id,
-        humanTakeoverAt: new Date(),
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          handlingMode: "HUMAN",
+          assignedUserId: user.id,
+          humanTakeoverAt: new Date(),
+        },
+      });
+      await cancelPendingFollowUpsTx(tx, {
+        organizationId: org.id,
+        conversationId: conversation.id,
+        reason: "human_takeover",
+      });
     });
 
     await saveMessage({
@@ -328,12 +336,21 @@ export async function setConversationStatus(
 
     if (conversation.status === newStatus) return { ok: true };
 
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        status: newStatus,
-        closedAt: newStatus === "CLOSED" ? new Date() : null,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          status: newStatus,
+          closedAt: newStatus === "CLOSED" ? new Date() : null,
+        },
+      });
+      if (newStatus === "CLOSED") {
+        await cancelPendingFollowUpsTx(tx, {
+          organizationId: org.id,
+          conversationId: conversation.id,
+          reason: "conversation_closed",
+        });
+      }
     });
 
     await recordAudit({

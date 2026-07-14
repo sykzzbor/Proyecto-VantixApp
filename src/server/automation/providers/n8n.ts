@@ -9,6 +9,40 @@ import type {
   DispatchResult,
 } from "@/server/automation/types";
 import type { AutomationProvider } from "@/server/automation/providers/provider";
+import { prisma } from "@/lib/prisma";
+
+async function recordConnectionResult(input: {
+  organizationId: string;
+  sent: boolean;
+  errorCode?: string;
+}) {
+  try {
+    const now = new Date();
+    await prisma.integrationConnection.upsert({
+      where: {
+        organizationId_provider: {
+          organizationId: input.organizationId,
+          provider: "n8n",
+        },
+      },
+      create: {
+        organizationId: input.organizationId,
+        provider: "n8n",
+        enabled: false,
+        status: input.sent ? "CONNECTED" : "ERROR",
+        lastEventAt: input.sent ? now : null,
+        lastError: input.sent ? null : input.errorCode?.slice(0, 120),
+      },
+      update: {
+        status: input.sent ? "CONNECTED" : "ERROR",
+        ...(input.sent ? { lastEventAt: now } : {}),
+        lastError: input.sent ? null : input.errorCode?.slice(0, 120),
+      },
+    });
+  } catch {
+    // La telemetría nunca cambia el resultado real del dispatch.
+  }
+}
 
 /**
  * Envía el evento a n8n mediante un webhook firmado (HMAC SHA-256). La URL sale
@@ -56,6 +90,10 @@ export class N8nProvider implements AutomationProvider {
       });
 
       if (response.ok) {
+        await recordConnectionResult({
+          organizationId: payload.organizationId,
+          sent: true,
+        });
         return {
           ok: true,
           awaitingCallback: true,
@@ -64,6 +102,11 @@ export class N8nProvider implements AutomationProvider {
       }
       // 5xx y 429 se reintentan; otros 4xx no.
       const retryable = response.status === 429 || response.status >= 500;
+      await recordConnectionResult({
+        organizationId: payload.organizationId,
+        sent: false,
+        errorCode: `http_${response.status}`,
+      });
       return {
         ok: false,
         retryable,
@@ -72,6 +115,11 @@ export class N8nProvider implements AutomationProvider {
       };
     } catch (error) {
       const isAbort = error instanceof Error && error.name === "AbortError";
+      await recordConnectionResult({
+        organizationId: payload.organizationId,
+        sent: false,
+        errorCode: isAbort ? "timeout" : "network_error",
+      });
       return {
         ok: false,
         retryable: true,

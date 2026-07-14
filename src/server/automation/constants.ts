@@ -5,9 +5,10 @@
 /** Versión del esquema del webhook enviado a n8n. */
 export const AUTOMATION_SCHEMA_VERSION = 1;
 
-/** Tipos de evento admitidos. Solo `automation.test` está conectado en 6A. */
+/** Tipos de evento admitidos por el contrato versionado. */
 export const AUTOMATION_EVENT_TYPES = [
   "conversation.handoff_requested",
+  "conversation.followup_due",
   "conversation.closed",
   "customer.created",
   "whatsapp.message_failed",

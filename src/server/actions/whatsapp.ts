@@ -8,6 +8,7 @@ import {
 } from "@/lib/validations/whatsapp";
 import { prisma } from "@/lib/prisma";
 import { recordAudit } from "@/server/audit";
+import { cancelPendingFollowUpsTx } from "@/server/automation/follow-up";
 import { getOrgContext, requirePermission } from "@/server/context";
 import { ActionError, toActionFailure, type ActionResult } from "@/server/errors";
 import { checkRateLimit } from "@/server/rate-limit";
@@ -195,9 +196,16 @@ export async function testStoredWhatsappConnection(): Promise<ActionResult> {
       }
     } catch (error) {
       const safe = metaActionError(error);
-      await prisma.whatsappIntegration.updateMany({
-        where: { id: integration.id, organizationId: org.id },
-        data: { status: "ERROR", lastError: safe.message.slice(0, 500) },
+      await prisma.$transaction(async (tx) => {
+        await tx.whatsappIntegration.updateMany({
+          where: { id: integration.id, organizationId: org.id },
+          data: { status: "ERROR", lastError: safe.message.slice(0, 500) },
+        });
+        await cancelPendingFollowUpsTx(tx, {
+          organizationId: org.id,
+          integrationId: integration.id,
+          reason: "integration_disabled",
+        });
       });
       await recordAudit({
         organizationId: org.id,
@@ -229,9 +237,16 @@ export async function disconnectWhatsappIntegration(): Promise<ActionResult> {
     });
     if (!integration) return { ok: true };
 
-    await prisma.whatsappIntegration.updateMany({
-      where: { id: integration.id, organizationId: org.id },
-      data: { status: "DISCONNECTED", lastError: null },
+    await prisma.$transaction(async (tx) => {
+      await tx.whatsappIntegration.updateMany({
+        where: { id: integration.id, organizationId: org.id },
+        data: { status: "DISCONNECTED", lastError: null },
+      });
+      await cancelPendingFollowUpsTx(tx, {
+        organizationId: org.id,
+        integrationId: integration.id,
+        reason: "integration_disabled",
+      });
     });
     await recordAudit({
       organizationId: org.id,

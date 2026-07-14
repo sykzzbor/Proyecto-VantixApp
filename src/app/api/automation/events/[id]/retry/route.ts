@@ -5,7 +5,7 @@ import {
   automationJson,
 } from "@/server/automation/http";
 import { retryAutomationEvent } from "@/server/automation/operations";
-import { processDueAutomationEvents } from "@/server/automation/queue";
+import { processAutomationEventNow } from "@/server/automation/queue";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +35,10 @@ export async function POST(
     );
   }
   after(async () => {
-    await processDueAutomationEvents();
+    await processAutomationEventNow({
+      eventId: parsed.data,
+      organizationId: authorization.ctx.organizationId,
+    });
   });
   return automationJson({ ok: true });
 }

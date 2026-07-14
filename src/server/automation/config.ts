@@ -80,6 +80,15 @@ export function isCallbackConfigured(): boolean {
   }
 }
 
+export function isOutboundSignatureConfigured(): boolean {
+  try {
+    getN8nWebhookSecret();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Bloques de red privados / loopback que no deben ser destino del webhook (SSRF). */
 function isPrivateHostname(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
@@ -134,14 +143,42 @@ export function getN8nWebhookUrl(): URL {
   return url;
 }
 
-/** Indica si n8n está configurado sin exponer los valores. */
-export function isN8nConfigured(): boolean {
+export function isN8nEndpointConfigured(): boolean {
   try {
     getN8nWebhookUrl();
-    getN8nWebhookSecret();
-    getN8nCallbackSecret();
     return true;
   } catch {
     return false;
   }
+}
+
+export type N8nMissingCategory =
+  | "endpoint"
+  | "outbound_signature"
+  | "callback_signature"
+  | "dispatcher";
+
+export function getN8nConfigurationState() {
+  const endpoint = isN8nEndpointConfigured();
+  const outboundSignature = isOutboundSignatureConfigured();
+  const callbackSignature = isCallbackConfigured();
+  const dispatcher = isDispatcherConfigured();
+  const missing: N8nMissingCategory[] = [];
+  if (!endpoint) missing.push("endpoint");
+  if (!outboundSignature) missing.push("outbound_signature");
+  if (!callbackSignature) missing.push("callback_signature");
+  if (!dispatcher) missing.push("dispatcher");
+  return {
+    endpoint,
+    outboundSignature,
+    callbackSignature,
+    dispatcher,
+    missing,
+    complete: missing.length === 0,
+  };
+}
+
+/** Indica si n8n está configurado sin exponer los valores. */
+export function isN8nConfigured(): boolean {
+  return getN8nConfigurationState().complete;
 }

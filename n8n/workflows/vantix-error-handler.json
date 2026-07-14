@@ -1,0 +1,179 @@
+{
+  "name": "Vantix - Error Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "2025ca6d-2a45-4247-bb4c-cbff33ce8d68",
+      "name": "Called by Vantix workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = $input.first().json ?? {};\nconst isId = (value) => typeof value === 'string' && value.length >= 1 && value.length <= 64;\nconst messages = {\n  invalid_handoff_event: 'No se pudo validar el evento de derivación.',\n  notification_rate_limited: 'El canal de avisos limitó temporalmente la solicitud.',\n  notification_rejected: 'El canal de avisos rechazó la solicitud.',\n  notification_unavailable: 'El canal de avisos no está disponible temporalmente.',\n  notification_ledger_unavailable: 'No se pudo confirmar la idempotencia del aviso.',\n  invalid_followup_event: 'No se pudo validar el evento de seguimiento.',\n  invalid_action_response: 'La acción de seguimiento devolvió una respuesta no válida.',\n  action_auth_rejected: 'VantixApp rechazó la autenticación de la acción.',\n  action_not_found: 'No se encontró el evento de seguimiento solicitado.',\n  action_conflict: 'El evento de seguimiento cambió de estado.',\n  action_rate_limited: 'La acción de seguimiento fue limitada temporalmente.',\n  action_rejected: 'VantixApp rechazó la acción de seguimiento.',\n  action_unavailable: 'La acción de seguimiento no está disponible temporalmente.',\n  unknown_workflow_error: 'La automatización no pudo completarse.',\n};\nconst requestedCode = typeof input.errorCode === 'string' ? input.errorCode : 'unknown_workflow_error';\nconst errorCode = Object.prototype.hasOwnProperty.call(messages, requestedCode) ? requestedCode : 'unknown_workflow_error';\nconst errorContext = ['router', 'handoff', 'followup'].includes(input.errorContext) ? input.errorContext : 'router';\nconst shouldCallback = isId(input.eventId) && isId(input.organizationId) && isId(input.runId);\nif (!shouldCallback) return [{ json: { shouldCallback: false } }];\nconst callbackTimestamp = Date.now();\nconst callbackBody = JSON.stringify({\n  eventId: input.eventId,\n  organizationId: input.organizationId,\n  runId: input.runId,\n  timestamp: callbackTimestamp,\n  status: 'failed',\n  externalExecutionId: String($execution.id),\n  errorCode,\n  errorMessage: messages[errorCode],\n  responseMeta: { workflow: 'vantix-error-handler', source: errorContext },\n});\nreturn [{ json: { shouldCallback: true, callbackBody, callbackTimestamp: String(callbackTimestamp) } }];"
+      },
+      "id": "b7284682-aa1e-46b5-a60a-37a053af0fe4",
+      "name": "Build sanitized failure callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.shouldCallback ? 0 : 1 }}"
+      },
+      "id": "ef20dadd-e2ad-4556-a8cd-0822ea7bbff2",
+      "name": "Callback identity valid?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "binaryData": false,
+        "type": "SHA256",
+        "value": "={{ $json.callbackBody }}",
+        "dataPropertyName": "callbackSignature",
+        "encoding": "hex"
+      },
+      "id": "21715787-543f-4a1a-982b-dddb1d79a86a",
+      "name": "Sign failure callback",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [
+        0,
+        -112
+      ],
+      "notesInFlow": true,
+      "notes": "Select the Crypto credential whose HMAC secret matches N8N_CALLBACK_SECRET."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.VANTIX_APP_BASE_URL.replace(/\\\/$/, '') + '/api/webhooks/n8n/callback' }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-vantix-signature",
+              "value": "={{ 'sha256=' + $json.callbackSignature }}"
+            },
+            {
+              "name": "x-vantix-timestamp",
+              "value": "={{ $json.callbackTimestamp }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.callbackBody }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "52a900d2-ccba-423f-b360-1380df55b436",
+      "name": "Send failure callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        224,
+        -112
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Called by Vantix workflow": {
+      "main": [
+        [
+          {
+            "node": "Build sanitized failure callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build sanitized failure callback": {
+      "main": [
+        [
+          {
+            "node": "Callback identity valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback identity valid?": {
+      "main": [
+        [
+          {
+            "node": "Sign failure callback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Sign failure callback": {
+      "main": [
+        [
+          {
+            "node": "Send failure callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false,
+    "redactionPolicy": "all"
+  },
+  "versionId": "65824e66-77b9-472f-88af-44f6a9296cd4"
+}

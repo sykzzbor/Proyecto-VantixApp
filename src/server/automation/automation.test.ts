@@ -27,6 +27,7 @@ function webhook(
 ): AutomationWebhookPayload {
   return {
     eventId: "evt-1",
+    runId: "run-1",
     organizationId: "org-a",
     type: "automation.test",
     timestamp: Date.now(),

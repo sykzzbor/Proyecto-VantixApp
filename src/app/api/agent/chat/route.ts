@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
       HISTORY_LIMIT
     );
 
-    await saveMessage({
+    const customerMessage = await saveMessage({
       organizationId,
       conversationId: conversation.id,
       senderType: "CUSTOMER",
@@ -177,6 +177,7 @@ export async function POST(request: NextRequest) {
     const ctx: AgentToolContext = {
       organizationId,
       conversationId: conversation.id,
+      sourceMessageId: customerMessage.id,
       userId: session.user.id,
       flags: { humanTakeover: false },
     };
