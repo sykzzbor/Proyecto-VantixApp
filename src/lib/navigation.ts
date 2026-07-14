@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   MessageCircleQuestion,
   Package,
+  Workflow,
   Settings,
   Store,
   Users,
@@ -28,6 +29,11 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Inbox,
   },
   { href: "/dashboard/metricas", label: "Métricas", icon: BarChart3 },
+  {
+    href: "/dashboard/automatizaciones",
+    label: "Automatizaciones",
+    icon: Workflow,
+  },
   {
     href: "/dashboard/integraciones/whatsapp",
     label: "WhatsApp",

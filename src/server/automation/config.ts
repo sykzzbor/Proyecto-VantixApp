@@ -60,6 +60,26 @@ export function getCronSecret(): string {
   return requireEnv("AUTOMATION_CRON_SECRET");
 }
 
+/** Estado seguro para UI: nunca devuelve nombres ni valores de credenciales. */
+export function isDispatcherConfigured(): boolean {
+  try {
+    getCronSecret();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Estado seguro para UI: nunca devuelve nombres ni valores de credenciales. */
+export function isCallbackConfigured(): boolean {
+  try {
+    getN8nCallbackSecret();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Bloques de red privados / loopback que no deben ser destino del webhook (SSRF). */
 function isPrivateHostname(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");

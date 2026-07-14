@@ -1,21 +1,15 @@
-import { NextResponse, after } from "next/server";
-import { z } from "zod";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { can } from "@/lib/permissions";
+import { after } from "next/server";
+import { automationTestBodySchema } from "@/lib/validations/automation";
 import { emitAutomationEvent } from "@/server/automation/events";
+import {
+  authorizeAutomationRequest,
+  automationJson,
+} from "@/server/automation/http";
 import { processDueAutomationEvents } from "@/server/automation/queue";
 import { recordAudit } from "@/server/audit";
 
 export const runtime = "nodejs";
-
-const bodySchema = z
-  .object({
-    mock: z
-      .enum(["success", "temporary_error", "permanent_error", "callback"])
-      .optional(),
-  })
-  .optional();
+export const dynamic = "force-dynamic";
 
 /**
  * Genera un evento `automation.test` para probar toda la infraestructura.
@@ -23,43 +17,41 @@ const bodySchema = z
  * SIEMPRE desde la membresía del usuario, nunca del cuerpo de la petición.
  */
 export async function POST(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-  const membership = await prisma.organizationMember.findFirst({
-    where: { userId: session.user.id },
-    orderBy: { createdAt: "asc" },
-    select: { organizationId: true, role: true },
-  });
-  if (!membership) {
-    return NextResponse.json({ error: "no_organization" }, { status: 403 });
-  }
-  if (!can(membership.role, "automation.manage")) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
+  const authorization = await authorizeAutomationRequest(request, "automation.manage");
+  if (!authorization.ok) return authorization.response;
 
-  let rawBody: unknown = {};
+  let rawBody: unknown;
   try {
     rawBody = await request.json();
   } catch {
-    rawBody = {};
+    return automationJson(
+      { error: "invalid_body", message: "El cuerpo no es válido." },
+      { status: 400 }
+    );
   }
-  const parsed = bodySchema.safeParse(rawBody ?? {});
-  const mock = parsed.success ? parsed.data?.mock : undefined;
+  const parsed = automationTestBodySchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return automationJson(
+      { error: "invalid_body", message: "Elegí un resultado de prueba válido." },
+      { status: 400 }
+    );
+  }
 
   const result = await emitAutomationEvent({
-    organizationId: membership.organizationId,
+    organizationId: authorization.ctx.organizationId,
     type: "automation.test",
-    payload: { source: "manual-test", ...(mock ? { mock } : {}) },
+    payload: { source: "manual-test", mock: parsed.data.mock },
   });
   if (!result.ok) {
-    return NextResponse.json({ error: result.code }, { status: 400 });
+    return automationJson(
+      { error: result.code, message: "No se pudo crear el evento de prueba." },
+      { status: 400 }
+    );
   }
 
   await recordAudit({
-    organizationId: membership.organizationId,
-    userId: session.user.id,
+    organizationId: authorization.ctx.organizationId,
+    userId: authorization.ctx.userId,
     action: "automation.test_emitted",
     entityType: "automation_event",
     entityId: result.eventId,
@@ -71,7 +63,7 @@ export async function POST(request: Request) {
     await processDueAutomationEvents();
   });
 
-  return NextResponse.json({
+  return automationJson({
     ok: true,
     eventId: result.eventId,
     duplicate: result.duplicate,

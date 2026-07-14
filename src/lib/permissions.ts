@@ -33,6 +33,7 @@ const PERMISSIONS = {
   "knowledge.delete": ["OWNER", "ADMIN"],
   "metrics.read": ["OWNER", "ADMIN", "AGENT", "VIEWER"],
   "metrics.advanced": ["OWNER", "ADMIN"],
+  "automation.view": ["OWNER", "ADMIN", "AGENT", "VIEWER"],
   "automation.manage": ["OWNER", "ADMIN"],
 } as const satisfies Record<string, readonly MemberRole[]>;
 
