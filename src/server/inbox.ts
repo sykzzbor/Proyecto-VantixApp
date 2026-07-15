@@ -38,7 +38,9 @@ const DELIVERY_STATUS_FROM_DB = {
 } as const;
 
 const WHATSAPP_STATUS_FROM_DB = {
+  CONNECTING: "disconnected",
   CONNECTED: "connected",
+  ACTION_REQUIRED: "disconnected",
   DISCONNECTED: "disconnected",
   ERROR: "error",
 } as const;

@@ -12,6 +12,16 @@ import {
 } from "@/server/automation/decide";
 import { getAutomationProvider } from "@/server/automation/providers";
 import {
+  N8nProvider,
+  canDispatchN8nEvent,
+  isN8nConnectionProbeEvent,
+  isN8nOrganizationReady,
+} from "@/server/automation/providers/n8n";
+import {
+  getN8nConfigurationFingerprint,
+  getN8nConfigurationState,
+} from "@/server/automation/config";
+import {
   cancelOrphanedPendingFollowUps,
   FOLLOW_UP_CANCELLATION_REASONS,
   FOLLOW_UP_EVENT_TYPE,
@@ -405,8 +415,41 @@ async function reclaimStaleProcessing(now: Date): Promise<number> {
 async function processOneEvent(
   eventId: string,
   provider: AutomationProvider,
-  organizationId?: string
+  organizationId?: string,
+  options: { allowUnverifiedN8nProbe?: boolean } = {}
 ): Promise<boolean> {
+  const candidate = await prisma.automationEvent.findFirst({
+    where: {
+      id: eventId,
+      ...(organizationId ? { organizationId } : {}),
+    },
+    select: { organizationId: true, type: true, payload: true },
+  });
+  if (!candidate) return false;
+
+  const connectionProbe = isN8nConnectionProbeEvent(candidate);
+  if (options.allowUnverifiedN8nProbe === true && !connectionProbe) {
+    return false;
+  }
+  if (connectionProbe || provider.name === "n8n") {
+    if (!getN8nConfigurationState().complete) return false;
+    const organizationReady = connectionProbe
+      ? false
+      : await isN8nOrganizationReady(candidate.organizationId);
+    if (
+      provider.name !== "n8n" ||
+      !canDispatchN8nEvent({
+        connectionProbe,
+        allowUnverifiedProbe: options.allowUnverifiedN8nProbe === true,
+        organizationReady,
+      })
+    ) {
+      // No reclamar ni consumir intentos: un probe jamás cae en mock y los
+      // eventos reales esperan hasta que el callback del probe habilite n8n.
+      return false;
+    }
+  }
+
   const lockedAt = new Date();
   // El run STARTED nace junto con el claim. Así un callback muy rápido siempre
   // encuentra la ejecución y no puede quedar un run STARTED huérfano.
@@ -573,6 +616,22 @@ export async function processAutomationEventNow(input: {
 }
 
 /**
+ * Único punto que permite contactar n8n mientras el proveedor global sigue en
+ * mock. `processOneEvent` vuelve a validar que el evento sea el probe estricto.
+ */
+export async function processN8nConnectionProbeNow(input: {
+  eventId: string;
+  organizationId: string;
+}): Promise<boolean> {
+  return processOneEvent(
+    input.eventId,
+    new N8nProvider({ allowUnverifiedProbe: true }),
+    input.organizationId,
+    { allowUnverifiedN8nProbe: true }
+  );
+}
+
+/**
  * Procesa un lote de eventos pendientes. Idempotente y seguro de ejecutar en
  * paralelo (locking por fila). Pensado para una ejecución programada en Vercel.
  */
@@ -586,11 +645,37 @@ export async function processDueAutomationEvents(options?: {
   await cancelOrphanedPendingFollowUps(now);
   const reclaimed = await reclaimStaleProcessing(now);
   const provider = getAutomationProvider();
+  const currentN8nFingerprint =
+    provider.name === "n8n" ? getN8nConfigurationFingerprint() : null;
+  if (provider.name === "n8n" && !currentN8nFingerprint) {
+    return { processed: 0, reclaimed };
+  }
 
   const due = await prisma.automationEvent.findMany({
     where: {
       status: "PENDING",
       OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+      ...(provider.name === "n8n"
+        ? {
+            organization: {
+              integrationConnections: {
+                some: {
+                  provider: "n8n",
+                  enabled: true,
+                  status: "CONNECTED" as const,
+                  lastCallbackAt: { not: null },
+                  externalId: currentN8nFingerprint,
+                },
+              },
+            },
+          }
+        : {}),
+      // Las pruebas de conexión solo se ejecutan desde su endpoint explícito.
+      // Excluirlas aquí evita falsos éxitos del proveedor mock y starvation.
+      NOT: {
+        type: "automation.test",
+        payload: { path: ["source"], equals: "connection-test" },
+      },
     },
     orderBy: { nextAttemptAt: "asc" },
     take: limit,

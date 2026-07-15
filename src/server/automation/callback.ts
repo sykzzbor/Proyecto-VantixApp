@@ -6,6 +6,11 @@ import {
   sanitizeAutomationMessage,
   sanitizeAutomationValue,
 } from "@/server/automation/sanitization";
+import { getN8nConfigurationFingerprint } from "@/server/automation/config";
+import {
+  getN8nConnectionProbeFingerprint,
+  isN8nConnectionProbeEvent,
+} from "@/server/automation/providers/n8n";
 
 const TERMINAL_STATUSES: AutomationEventStatus[] = [
   "SUCCEEDED",
@@ -83,6 +88,7 @@ async function recordCallbackTelemetry(input: {
   recordOutcome: boolean;
 }) {
   try {
+    const safeError = sanitizeAutomationMessage(input.errorCode, 120);
     await prisma.integrationConnection.upsert({
       where: {
         organizationId_provider: {
@@ -93,21 +99,14 @@ async function recordCallbackTelemetry(input: {
       create: {
         organizationId: input.organizationId,
         provider: "n8n",
-        status: input.recordOutcome ? "CONNECTED" : "DISCONNECTED",
+        status: "DISCONNECTED",
         enabled: false,
         lastCallbackAt: input.now,
-        lastError: input.recordOutcome
-          ? sanitizeAutomationMessage(input.errorCode, 120)
-          : null,
+        lastError: input.recordOutcome ? safeError : null,
       },
       update: {
         lastCallbackAt: input.now,
-        ...(input.recordOutcome
-          ? {
-              status: "CONNECTED" as const,
-              lastError: sanitizeAutomationMessage(input.errorCode, 120),
-            }
-          : {}),
+        ...(input.recordOutcome ? { lastError: safeError } : {}),
       },
     });
   } catch {
@@ -130,6 +129,7 @@ export async function applyAutomationCallback(
     },
     select: {
       id: true,
+      provider: true,
       status: true,
       attempt: true,
       startedAt: true,
@@ -140,6 +140,7 @@ export async function applyAutomationCallback(
           status: true,
           attempts: true,
           type: true,
+          payload: true,
           conversationId: true,
           actionCompletedAt: true,
           actionMessage: {
@@ -158,10 +159,34 @@ export async function applyAutomationCallback(
     },
   });
   if (!run) return { ok: false, code: "not_found" };
+  // Un secreto de callback nunca puede cerrar ejecuciones del proveedor mock.
+  if (run.provider !== "n8n") {
+    return { ok: false, code: "stale_attempt" };
+  }
 
   const now = new Date();
   const event = run.automationEvent;
-  const transition = resolveCallbackTransition(event.status, input.status);
+  const connectionProbe = isN8nConnectionProbeEvent(event);
+  const probeFingerprint = getN8nConnectionProbeFingerprint(event);
+  const currentConfigurationFingerprint = getN8nConfigurationFingerprint();
+  const probeConfigurationMatches =
+    !!probeFingerprint &&
+    probeFingerprint === currentConfigurationFingerprint;
+  const probeConnectionSucceeded =
+    connectionProbe &&
+    input.status === "succeeded" &&
+    probeConfigurationMatches;
+  const probeConnectionErrorCode =
+    input.status === "succeeded" && !probeConfigurationMatches
+      ? "configuration_changed"
+      : input.errorCode ?? "connection_probe_failed";
+  const effectiveStatus: CallbackStatus =
+    connectionProbe &&
+    input.status === "succeeded" &&
+    !probeConfigurationMatches
+      ? "failed"
+      : input.status;
+  const transition = resolveCallbackTransition(event.status, effectiveStatus);
 
   // Un callback duplicado del mismo run es idempotente. Nunca busca "el run
   // más reciente", porque eso permitiría que un intento viejo cierre uno nuevo.
@@ -236,7 +261,7 @@ export async function applyAutomationCallback(
     return { ok: false, code: "action_incomplete" };
   }
 
-  const applied = await prisma.$transaction(async (tx) => {
+  const application = await prisma.$transaction(async (tx) => {
     // Guardas de concurrencia: evento, organización, intento y run exactos.
     const updated = await tx.automationEvent.updateMany({
       where: {
@@ -266,15 +291,17 @@ export async function applyAutomationCallback(
         processedAt: now,
         lockedAt: null,
         lastError:
-          input.status === "failed"
+          effectiveStatus === "failed"
             ? sanitizeAutomationMessage(
-                input.errorCode ?? "callback_failed",
+                connectionProbe
+                  ? probeConnectionErrorCode
+                  : input.errorCode ?? "callback_failed",
                 120
               )
             : null,
       },
     });
-    if (updated.count !== 1) return false;
+    if (updated.count !== 1) return { applied: false };
 
     const updatedRun = await tx.automationRun.updateMany({
       where: {
@@ -291,15 +318,21 @@ export async function applyAutomationCallback(
         externalExecutionId:
           input.externalExecutionId ?? run.externalExecutionId,
         errorCode:
-          input.status === "failed"
+          effectiveStatus === "failed"
             ? sanitizeAutomationMessage(
-                input.errorCode ?? "callback_failed",
+                connectionProbe
+                  ? probeConnectionErrorCode
+                  : input.errorCode ?? "callback_failed",
                 120
               )
             : null,
         errorMessage:
-          input.status === "failed"
-            ? sanitizeAutomationMessage(input.errorMessage)
+          effectiveStatus === "failed"
+            ? sanitizeAutomationMessage(
+                connectionProbe && input.status === "succeeded"
+                  ? "La configuración cambió durante la prueba."
+                  : input.errorMessage
+              )
             : null,
         responseMeta: input.responseMeta
           ? (sanitizeAutomationValue(input.responseMeta) as Prisma.InputJsonValue)
@@ -309,14 +342,118 @@ export async function applyAutomationCallback(
     if (updatedRun.count !== 1) {
       throw new Error("callback_run_conflict");
     }
-    return true;
+    if (connectionProbe) {
+      if (probeConfigurationMatches) {
+        const latestEquivalentProbe = await tx.automationEvent.findFirst({
+          where: {
+            organizationId: input.organizationId,
+            type: "automation.test",
+            AND: [
+              {
+                payload: { path: ["source"], equals: "connection-test" },
+              },
+              {
+                payload: {
+                  path: ["configurationFingerprint"],
+                  equals: probeFingerprint,
+                },
+              },
+            ],
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          select: { id: true },
+        });
+        if (latestEquivalentProbe?.id === event.id) {
+          const probeSucceeded = probeConnectionSucceeded;
+          await tx.integrationConnection.upsert({
+            where: {
+              organizationId_provider: {
+                organizationId: input.organizationId,
+                provider: "n8n",
+              },
+            },
+            create: {
+              organizationId: input.organizationId,
+              provider: "n8n",
+              status: probeSucceeded ? "CONNECTED" : "ERROR",
+              enabled: probeSucceeded,
+              externalId: probeSucceeded ? probeFingerprint : null,
+              lastCallbackAt: now,
+              lastError: probeSucceeded
+                ? null
+                : sanitizeAutomationMessage(probeConnectionErrorCode, 120),
+            },
+            update: {
+              status: probeSucceeded ? "CONNECTED" : "ERROR",
+              enabled: probeSucceeded,
+              externalId: probeSucceeded ? probeFingerprint : null,
+              lastCallbackAt: now,
+              lastError: probeSucceeded
+                ? null
+                : sanitizeAutomationMessage(probeConnectionErrorCode, 120),
+            },
+          });
+        }
+      } else {
+        const safeProbeError =
+          sanitizeAutomationMessage(probeConnectionErrorCode, 120) ??
+          "configuration_changed";
+        // Si no existe conexión aún, el callback obsoleto deja un diagnóstico
+        // útil. Si una prueba nueva ya verificó la configuración actual, el
+        // UPDATE condicional no puede degradarla aunque los callbacks se crucen.
+        await tx.integrationConnection.createMany({
+          data: [
+            {
+              organizationId: input.organizationId,
+              provider: "n8n",
+              status: "ERROR",
+              enabled: false,
+              externalId: null,
+              lastCallbackAt: now,
+              lastError: safeProbeError,
+            },
+          ],
+          skipDuplicates: true,
+        });
+        await tx.integrationConnection.updateMany({
+          where: {
+            organizationId: input.organizationId,
+            provider: "n8n",
+            OR: [
+              { enabled: false },
+              { status: { not: "CONNECTED" } },
+              { externalId: null },
+              {
+                externalId: {
+                  not: currentConfigurationFingerprint ?? "",
+                },
+              },
+            ],
+          },
+          data: {
+            status: "ERROR",
+            enabled: false,
+            externalId: null,
+            lastCallbackAt: now,
+            lastError: safeProbeError,
+          },
+        });
+      }
+    }
+    return { applied: true };
   });
+  const { applied } = application;
 
   await recordCallbackTelemetry({
     organizationId: input.organizationId,
     now,
-    errorCode: input.status === "failed" ? input.errorCode : null,
-    recordOutcome: applied,
+    errorCode:
+      connectionProbe && !probeConnectionSucceeded
+        ? probeConnectionErrorCode
+        : input.status === "failed"
+          ? input.errorCode
+          : null,
+    recordOutcome: connectionProbe ? false : applied,
   });
 
   const currentStatus = applied

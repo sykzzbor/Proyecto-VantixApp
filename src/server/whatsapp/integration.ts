@@ -1,9 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { formatDateTime } from "@/lib/format";
+import { resolveCurrentWhatsappIntegration } from "@/server/whatsapp/current-integration";
 
 export type WhatsappIntegrationView = {
   id: string;
-  status: "connected" | "disconnected" | "error";
+  status:
+    | "connecting"
+    | "connected"
+    | "action_required"
+    | "disconnected"
+    | "error";
   wabaId: string;
   phoneNumberId: string;
   displayPhoneNumber: string;
@@ -18,9 +24,10 @@ export type WhatsappIntegrationView = {
 export async function getWhatsappIntegrationView(
   organizationId: string
 ): Promise<WhatsappIntegrationView | null> {
+  const resolution = await resolveCurrentWhatsappIntegration(organizationId);
+  if (resolution.state !== "current") return null;
   const integration = await prisma.whatsappIntegration.findFirst({
-    where: { organizationId },
-    orderBy: { updatedAt: "desc" },
+    where: { id: resolution.id, organizationId },
     select: {
       id: true,
       status: true,

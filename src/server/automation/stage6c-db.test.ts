@@ -227,6 +227,7 @@ test(
           conversationId: takeoverConversation.id,
         },
         {
+          getProviderMode: () => "n8n" as const,
           afterReservation: async () => {
             await conversations.saveMessage({
               organizationId: organization.id,
@@ -319,6 +320,7 @@ test(
           conversationId: claimedFirstConversation.id,
         },
         {
+          getProviderMode: () => "n8n" as const,
           afterDeliveryClaim: async () => {
             await conversations.saveMessage({
               organizationId: organization.id,
@@ -356,12 +358,15 @@ test(
       assert.equal(claimedFirstEvent?.cancellationReason, null);
       assert.equal(claimedFirstEvent?.actionClaimedAt instanceof Date, true);
       assert.equal(claimedFirstEvent?.actionMessage?.deliveryStatus, "SENT");
-      const duplicateResult = await action.executeFollowUpAction({
-        eventId: claimedFirstScheduled.eventId,
-        runId: claimedFirstRun.id,
-        organizationId: organization.id,
-        conversationId: claimedFirstConversation.id,
-      });
+      const duplicateResult = await action.executeFollowUpAction(
+        {
+          eventId: claimedFirstScheduled.eventId,
+          runId: claimedFirstRun.id,
+          organizationId: organization.id,
+          conversationId: claimedFirstConversation.id,
+        },
+        { getProviderMode: () => "n8n" as const }
+      );
       assert.equal(duplicateResult.ok, true);
       assert.equal(
         duplicateResult.ok && duplicateResult.state,
@@ -479,6 +484,482 @@ test(
         process.env.META_GRAPH_API_VERSION = originalGraphApiVersion;
       }
       await prisma.organization.delete({ where: { id: organization.id } });
+      await prisma.$disconnect();
+    }
+  }
+);
+
+test(
+  "n8n readiness DB: solo el callback exitoso del probe habilita la conexión",
+  { skip: !isExplicitSafeLocalDatabase() && "requiere opt-in y PostgreSQL local" },
+  async () => {
+    const [{ prisma }, callback, providerModule, automationConfig, queue] = await Promise.all([
+      import("@/lib/prisma"),
+      import("@/server/automation/callback"),
+      import("@/server/automation/providers/n8n"),
+      import("@/server/automation/config"),
+      import("@/server/automation/queue"),
+    ]);
+    const suffix = randomUUID();
+    const organizations = await Promise.all(
+      ["success", "regular", "failed", "ordering", "changed"].map((label) =>
+        prisma.organization.create({
+          data: {
+            name: `n8n probe ${label}`,
+            slug: `n8n-probe-${label}-${suffix}`,
+          },
+          select: { id: true },
+        })
+      )
+    );
+    const originalFetch = globalThis.fetch;
+    const originalConfiguration = {
+      AUTOMATION_PROVIDER: process.env.AUTOMATION_PROVIDER,
+      AUTOMATION_DISPATCHER_ENABLED:
+        process.env.AUTOMATION_DISPATCHER_ENABLED,
+      AUTOMATION_CRON_SECRET: process.env.AUTOMATION_CRON_SECRET,
+      N8N_WEBHOOK_URL: process.env.N8N_WEBHOOK_URL,
+      N8N_WEBHOOK_SECRET: process.env.N8N_WEBHOOK_SECRET,
+      N8N_CALLBACK_SECRET: process.env.N8N_CALLBACK_SECRET,
+      N8N_WORKFLOWS_PUBLISHED: process.env.N8N_WORKFLOWS_PUBLISHED,
+    };
+
+    let currentProbeFingerprint = "";
+    async function createProcessingRun(input: {
+      organizationId: string;
+      source: "connection-test" | "manual-test";
+    }) {
+      const startedAt = new Date();
+      const event = await prisma.automationEvent.create({
+        data: {
+          organizationId: input.organizationId,
+          type: "automation.test",
+          payload:
+            input.source === "connection-test"
+              ? {
+                  source: input.source,
+                  configurationFingerprint: currentProbeFingerprint,
+                }
+              : { source: input.source },
+          status: "PROCESSING",
+          idempotencyKey: `n8n-probe-${input.source}-${randomUUID()}`,
+          attempts: 1,
+          maxAttempts: 1,
+          lockedAt: startedAt,
+        },
+        select: { id: true },
+      });
+      const run = await prisma.automationRun.create({
+        data: {
+          organizationId: input.organizationId,
+          automationEventId: event.id,
+          provider: "n8n",
+          status: "STARTED",
+          attempt: 1,
+          startedAt,
+        },
+        select: { id: true },
+      });
+      return { eventId: event.id, runId: run.id };
+    }
+
+    try {
+      process.env.AUTOMATION_DISPATCHER_ENABLED = "true";
+      process.env.AUTOMATION_CRON_SECRET = "dispatcher-test-secret-32-characters-minimum";
+      process.env.N8N_WEBHOOK_URL = "https://n8n.example.test/webhook/vantix-events";
+      process.env.N8N_WEBHOOK_SECRET = "outbound-test-secret-not-real";
+      process.env.N8N_CALLBACK_SECRET = "callback-test-secret-not-real";
+      process.env.N8N_WORKFLOWS_PUBLISHED = "true";
+      currentProbeFingerprint =
+        automationConfig.getN8nConfigurationFingerprint() ?? "";
+      assert.match(currentProbeFingerprint, /^[a-f0-9]{64}$/);
+      let n8nFetchCalls = 0;
+      globalThis.fetch = (async () => {
+        n8nFetchCalls += 1;
+        return new Response(null, {
+          status: 202,
+          headers: { "x-n8n-execution-id": "probe-execution-test" },
+        });
+      }) as typeof fetch;
+
+      const accepted = await new providerModule.N8nProvider({
+        allowUnverifiedProbe: true,
+      }).dispatch({
+        eventId: "probe-event-test",
+        runId: "probe-run-test",
+        organizationId: organizations[0]!.id,
+        type: "automation.test",
+        timestamp: Date.now(),
+        schemaVersion: 1,
+        idempotencyKey: "probe-idempotency-test",
+        payload: {
+          source: "connection-test",
+          configurationFingerprint: currentProbeFingerprint,
+        },
+      });
+      assert.equal(accepted.ok, true);
+      assert.equal(accepted.ok && accepted.awaitingCallback, true);
+      const acceptedOnly = await prisma.integrationConnection.findUnique({
+        where: {
+          organizationId_provider: {
+            organizationId: organizations[0]!.id,
+            provider: "n8n",
+          },
+        },
+        select: {
+          enabled: true,
+          status: true,
+          lastEventAt: true,
+          lastCallbackAt: true,
+        },
+      });
+      assert.equal(acceptedOnly?.enabled, false);
+      assert.equal(acceptedOnly?.status, "DISCONNECTED");
+      assert.equal(acceptedOnly?.lastEventAt instanceof Date, true);
+      assert.equal(acceptedOnly?.lastCallbackAt, null);
+      const blockedRealEvent = await new providerModule.N8nProvider().dispatch({
+        eventId: "real-event-test",
+        runId: "real-run-test",
+        organizationId: organizations[0]!.id,
+        type: "automation.test",
+        timestamp: Date.now(),
+        schemaVersion: 1,
+        idempotencyKey: "real-idempotency-test",
+        payload: { source: "manual-test" },
+      });
+      assert.equal(blockedRealEvent.ok, false);
+      assert.equal(
+        !blockedRealEvent.ok && blockedRealEvent.errorCode,
+        "integration_not_verified"
+      );
+      assert.equal(n8nFetchCalls, 1);
+
+      const successfulProbe = await createProcessingRun({
+        organizationId: organizations[0]!.id,
+        source: "connection-test",
+      });
+      const success = await callback.applyAutomationCallback({
+        ...successfulProbe,
+        organizationId: organizations[0]!.id,
+        timestamp: Date.now(),
+        status: "succeeded",
+      });
+      assert.deepEqual(success, { ok: true, applied: true, status: "SUCCEEDED" });
+      const ready = await prisma.integrationConnection.findUnique({
+        where: {
+          organizationId_provider: {
+            organizationId: organizations[0]!.id,
+            provider: "n8n",
+          },
+        },
+        select: {
+          enabled: true,
+          status: true,
+          lastCallbackAt: true,
+          externalId: true,
+        },
+      });
+      assert.equal(ready?.enabled, true);
+      assert.equal(ready?.status, "CONNECTED");
+      assert.equal(ready?.lastCallbackAt instanceof Date, true);
+      assert.equal(ready?.externalId, currentProbeFingerprint);
+      assert.equal(
+        await providerModule.isN8nOrganizationReady(organizations[0]!.id),
+        true
+      );
+      process.env.N8N_WEBHOOK_SECRET = "rotated-outbound-test-secret-not-real";
+      assert.equal(
+        await providerModule.isN8nOrganizationReady(organizations[0]!.id),
+        false
+      );
+      process.env.N8N_WEBHOOK_SECRET = "outbound-test-secret-not-real";
+
+      const queueNow = new Date();
+      await prisma.integrationConnection.upsert({
+        where: {
+          organizationId_provider: {
+            organizationId: organizations[1]!.id,
+            provider: "n8n",
+          },
+        },
+        create: {
+          organizationId: organizations[1]!.id,
+          provider: "n8n",
+          enabled: true,
+          status: "CONNECTED",
+          externalId: "0".repeat(64),
+          lastCallbackAt: queueNow,
+        },
+        update: {
+          enabled: true,
+          status: "CONNECTED",
+          externalId: "0".repeat(64),
+          lastCallbackAt: queueNow,
+        },
+      });
+      const staleFingerprintEvent = await prisma.automationEvent.create({
+        data: {
+          organizationId: organizations[1]!.id,
+          type: "automation.test",
+          payload: { source: "manual-test" },
+          status: "PENDING",
+          idempotencyKey: `stale-fingerprint-${suffix}`,
+          nextAttemptAt: new Date(queueNow.getTime() - 2_000),
+        },
+        select: { id: true },
+      });
+      const currentFingerprintEvent = await prisma.automationEvent.create({
+        data: {
+          organizationId: organizations[0]!.id,
+          type: "automation.test",
+          payload: { source: "manual-test" },
+          status: "PENDING",
+          idempotencyKey: `current-fingerprint-${suffix}`,
+          nextAttemptAt: new Date(queueNow.getTime() - 1_000),
+        },
+        select: { id: true },
+      });
+      process.env.AUTOMATION_PROVIDER = "n8n";
+      assert.deepEqual(
+        await queue.processDueAutomationEvents({ now: queueNow, limit: 1 }),
+        { processed: 1, reclaimed: 0 }
+      );
+      assert.deepEqual(
+        await prisma.automationEvent.findMany({
+          where: {
+            id: { in: [staleFingerprintEvent.id, currentFingerprintEvent.id] },
+          },
+          orderBy: { id: "asc" },
+          select: { id: true, status: true },
+        }),
+        [
+          { id: currentFingerprintEvent.id, status: "PROCESSING" },
+          { id: staleFingerprintEvent.id, status: "PENDING" },
+        ].sort((left, right) => left.id.localeCompare(right.id))
+      );
+      if (originalConfiguration.AUTOMATION_PROVIDER === undefined) {
+        delete process.env.AUTOMATION_PROVIDER;
+      } else {
+        process.env.AUTOMATION_PROVIDER =
+          originalConfiguration.AUTOMATION_PROVIDER;
+      }
+      await prisma.integrationConnection.delete({
+        where: {
+          organizationId_provider: {
+            organizationId: organizations[1]!.id,
+            provider: "n8n",
+          },
+        },
+      });
+
+      const regularTest = await createProcessingRun({
+        organizationId: organizations[1]!.id,
+        source: "manual-test",
+      });
+      await callback.applyAutomationCallback({
+        ...regularTest,
+        organizationId: organizations[1]!.id,
+        timestamp: Date.now(),
+        status: "succeeded",
+      });
+      const regularConnection = await prisma.integrationConnection.findUnique({
+        where: {
+          organizationId_provider: {
+            organizationId: organizations[1]!.id,
+            provider: "n8n",
+          },
+        },
+        select: { enabled: true, status: true },
+      });
+      assert.deepEqual(regularConnection, {
+        enabled: false,
+        status: "DISCONNECTED",
+      });
+
+      const failedProbe = await createProcessingRun({
+        organizationId: organizations[2]!.id,
+        source: "connection-test",
+      });
+      await callback.applyAutomationCallback({
+        ...failedProbe,
+        organizationId: organizations[2]!.id,
+        timestamp: Date.now(),
+        status: "failed",
+        errorCode: "controlled_probe_failed",
+      });
+      const failedConnection = await prisma.integrationConnection.findUnique({
+        where: {
+          organizationId_provider: {
+            organizationId: organizations[2]!.id,
+            provider: "n8n",
+          },
+        },
+        select: { enabled: true, status: true, lastError: true },
+      });
+      assert.deepEqual(failedConnection, {
+        enabled: false,
+        status: "ERROR",
+        lastError: "controlled_probe_failed",
+      });
+
+      const oldProbe = await createProcessingRun({
+        organizationId: organizations[3]!.id,
+        source: "connection-test",
+      });
+      process.env.N8N_WEBHOOK_SECRET =
+        "rotated-ordering-outbound-test-secret-not-real";
+      const newerFingerprint =
+        automationConfig.getN8nConfigurationFingerprint() ?? "";
+      assert.match(newerFingerprint, /^[a-f0-9]{64}$/);
+      assert.notEqual(newerFingerprint, currentProbeFingerprint);
+      const previousFingerprint = currentProbeFingerprint;
+      currentProbeFingerprint = newerFingerprint;
+      const newerProbe = await createProcessingRun({
+        organizationId: organizations[3]!.id,
+        source: "connection-test",
+      });
+      await callback.applyAutomationCallback({
+        ...newerProbe,
+        organizationId: organizations[3]!.id,
+        timestamp: Date.now(),
+        status: "succeeded",
+      });
+      const connectionAfterNewerProbe =
+        await prisma.integrationConnection.findUniqueOrThrow({
+          where: {
+            organizationId_provider: {
+              organizationId: organizations[3]!.id,
+              provider: "n8n",
+            },
+          },
+          select: {
+            enabled: true,
+            status: true,
+            externalId: true,
+            lastError: true,
+            lastCallbackAt: true,
+          },
+        });
+      assert.deepEqual(
+        {
+          enabled: connectionAfterNewerProbe.enabled,
+          status: connectionAfterNewerProbe.status,
+          externalId: connectionAfterNewerProbe.externalId,
+          lastError: connectionAfterNewerProbe.lastError,
+        },
+        {
+          enabled: true,
+          status: "CONNECTED",
+          externalId: newerFingerprint,
+          lastError: null,
+        }
+      );
+      const telemetryBaseline = new Date("2020-01-01T00:00:00.000Z");
+      await prisma.integrationConnection.update({
+        where: {
+          organizationId_provider: {
+            organizationId: organizations[3]!.id,
+            provider: "n8n",
+          },
+        },
+        data: { lastCallbackAt: telemetryBaseline },
+      });
+      const staleOldCallback = await callback.applyAutomationCallback({
+        ...oldProbe,
+        organizationId: organizations[3]!.id,
+        timestamp: Date.now(),
+        status: "succeeded",
+      });
+      assert.deepEqual(staleOldCallback, {
+        ok: true,
+        applied: true,
+        status: "FAILED",
+      });
+      assert.equal(
+        (
+          await prisma.automationEvent.findUniqueOrThrow({
+            where: { id: oldProbe.eventId },
+            select: { lastError: true },
+          })
+        ).lastError,
+        "configuration_changed"
+      );
+      const connectionAfterOldCallback =
+        await prisma.integrationConnection.findUniqueOrThrow({
+          where: {
+            organizationId_provider: {
+              organizationId: organizations[3]!.id,
+              provider: "n8n",
+            },
+          },
+          select: {
+            enabled: true,
+            status: true,
+            externalId: true,
+            lastError: true,
+            lastCallbackAt: true,
+          },
+        });
+      assert.equal(connectionAfterOldCallback.enabled, true);
+      assert.equal(connectionAfterOldCallback.status, "CONNECTED");
+      assert.equal(connectionAfterOldCallback.externalId, newerFingerprint);
+      assert.equal(connectionAfterOldCallback.lastError, null);
+      assert.ok(
+        connectionAfterOldCallback.lastCallbackAt!.getTime() >
+          telemetryBaseline.getTime()
+      );
+      assert.equal(
+        await providerModule.isN8nOrganizationReady(organizations[3]!.id),
+        true
+      );
+      process.env.N8N_WEBHOOK_SECRET = "outbound-test-secret-not-real";
+      currentProbeFingerprint = previousFingerprint;
+
+      const changedProbe = await createProcessingRun({
+        organizationId: organizations[4]!.id,
+        source: "connection-test",
+      });
+      process.env.N8N_CALLBACK_SECRET = "rotated-callback-test-secret-not-real";
+      const changed = await callback.applyAutomationCallback({
+        ...changedProbe,
+        organizationId: organizations[4]!.id,
+        timestamp: Date.now(),
+        status: "succeeded",
+      });
+      assert.deepEqual(changed, {
+        ok: true,
+        applied: true,
+        status: "FAILED",
+      });
+      const changedConnection = await prisma.integrationConnection.findUnique({
+        where: {
+          organizationId_provider: {
+            organizationId: organizations[4]!.id,
+            provider: "n8n",
+          },
+        },
+        select: {
+          enabled: true,
+          status: true,
+          externalId: true,
+          lastError: true,
+        },
+      });
+      assert.deepEqual(changedConnection, {
+        enabled: false,
+        status: "ERROR",
+        externalId: null,
+        lastError: "configuration_changed",
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+      for (const [name, value] of Object.entries(originalConfiguration)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      await prisma.organization.deleteMany({
+        where: { id: { in: organizations.map((organization) => organization.id) } },
+      });
       await prisma.$disconnect();
     }
   }

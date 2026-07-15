@@ -15,6 +15,10 @@ import {
   FOLLOW_UP_EVENT_TYPE,
   type FollowUpCancellationReason,
 } from "@/server/automation/follow-up";
+import {
+  getAutomationProviderMode,
+  type AutomationProviderMode,
+} from "@/server/automation/config";
 import { sanitizeAutomationMessage } from "@/server/automation/sanitization";
 import {
   deliverPreparedWhatsappMessage,
@@ -23,6 +27,13 @@ import {
 import { recordAudit } from "@/server/audit";
 
 const SENT_DELIVERY_STATUSES = ["SENT", "DELIVERED", "READ"] as const;
+
+export function canExecuteN8nFollowUpAction(input: {
+  providerMode: AutomationProviderMode;
+  runProvider: string | null;
+}): boolean {
+  return input.providerMode === "n8n" && input.runProvider === "n8n";
+}
 
 export type FollowUpActionResult =
   | {
@@ -414,7 +425,7 @@ async function loadFollowUpExecutionSnapshot(
       organizationId: input.organizationId,
       automationEventId: event.id,
     },
-    select: { id: true, status: true, attempt: true },
+    select: { id: true, provider: true, status: true, attempt: true },
   });
   const actionMessage = event.actionMessageId
     ? await tx.message.findFirst({
@@ -532,6 +543,7 @@ async function reserveFollowUpMessageOnce(input: {
   organizationId: string;
   conversationId: string;
   now: Date;
+  providerMode: AutomationProviderMode;
 }): Promise<
   | { kind: "reserved"; data: ReservedAction }
   | { kind: "existing"; result: FollowUpActionResult }
@@ -548,7 +560,11 @@ async function reserveFollowUpMessageOnce(input: {
       if (
         !activeRun ||
         activeRun.status !== "STARTED" ||
-        activeRun.attempt !== event.attempts
+        activeRun.attempt !== event.attempts ||
+        !canExecuteN8nFollowUpAction({
+          providerMode: input.providerMode,
+          runProvider: activeRun.provider,
+        })
       ) {
         return { kind: "not_executable" } as const;
       }
@@ -1005,11 +1021,23 @@ export async function executeFollowUpAction(input: {
 }, testHooks?: {
   afterReservation?: () => Promise<void>;
   afterDeliveryClaim?: () => Promise<void>;
+  getProviderMode?: typeof getAutomationProviderMode;
 }): Promise<FollowUpActionResult> {
+  const providerMode = (
+    testHooks?.getProviderMode ?? getAutomationProviderMode
+  )();
+  if (providerMode !== "n8n") {
+    return {
+      ok: false,
+      code: "not_executable",
+      message: "El proveedor de automatización no está habilitado para esta acción.",
+      retryable: false,
+    };
+  }
   const now = new Date();
   let reservation: Awaited<ReturnType<typeof reserveFollowUpMessage>>;
   try {
-    reservation = await reserveFollowUpMessage({ ...input, now });
+    reservation = await reserveFollowUpMessage({ ...input, now, providerMode });
   } catch (error) {
     console.error(
       "[VantixApp] reserva de seguimiento:",

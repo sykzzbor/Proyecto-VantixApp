@@ -246,7 +246,7 @@ export function AutomationDashboard({
 
   const stateMeta =
     infrastructure.state === "operational"
-      ? { label: infrastructure.mockMode ? "Operativa" : "Configurado", className: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300", icon: ShieldCheck }
+      ? { label: infrastructure.mockMode ? "Modo de prueba: Listo" : "Configurado", className: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300", icon: ShieldCheck }
       : infrastructure.state === "error"
         ? { label: "Con error", className: "border-red-400/20 bg-red-400/10 text-red-300", icon: XCircle }
         : { label: "Configuración incompleta", className: "border-amber-400/20 bg-amber-400/10 text-amber-300", icon: TriangleAlert };
@@ -277,12 +277,11 @@ export function AutomationDashboard({
               onClick={testConnection}
               disabled={
                 testingConnection ||
-                infrastructure.mockMode ||
                 !infrastructure.providerConfigured
               }
               title={
-                infrastructure.mockMode
-                  ? "Disponible cuando el proveedor n8n esté activo"
+                !infrastructure.providerConfigured
+                  ? "Completá la preparación técnica de n8n antes de probar"
                   : undefined
               }
             >
@@ -309,22 +308,15 @@ export function AutomationDashboard({
           </div>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-          {infrastructure.mockMode ? (
-            <>
-              <ConfigIndicator configured label="Proveedor" configuredLabel="mock" />
-              <ConfigIndicator configured label="Modo de prueba" configuredLabel="Listo" />
-            </>
-          ) : (
-            <>
-              <ConfigIndicator configured={infrastructure.endpointConfigured} label="Endpoint" />
-              <ConfigIndicator configured={infrastructure.outboundSignatureConfigured} label="Firma de salida" />
-              <ConfigIndicator configured={infrastructure.callbackConfigured} label="Firma de callback" />
-              <ConfigIndicator configured={infrastructure.dispatcherConfigured} label="Dispatcher" />
-            </>
-          )}
-          {!infrastructure.mockMode && infrastructure.missingCategories.length > 0 && (
+          <ConfigIndicator configured={infrastructure.endpointConfigured} label="Endpoint" />
+          <ConfigIndicator configured={infrastructure.outboundSignatureConfigured} label="Firma de salida" />
+          <ConfigIndicator configured={infrastructure.callbackConfigured} label="Firma de callback" />
+          <ConfigIndicator configured={infrastructure.dispatcherConfigured} label="Dispatcher" />
+          <ConfigIndicator configured={infrastructure.workflowsPublished} label="Workflows" configuredLabel="Publicados" />
+          <ConfigIndicator configured={infrastructure.probeVerified} label="Router y callback" configuredLabel="Verificados" />
+          {infrastructure.readinessMissingCategories.length > 0 && (
             <p className="rounded-lg border border-amber-400/20 bg-amber-400/10 p-3 text-xs text-amber-200 md:col-span-2 lg:col-span-4">
-              Falta completar: {infrastructure.missingCategories.map((category) => ({ endpoint: "endpoint", outbound_signature: "firma de salida", callback_signature: "firma de callback", dispatcher: "dispatcher" })[category]).join(", ")}.
+              Falta completar: {infrastructure.readinessMissingCategories.map((category) => ({ endpoint: "endpoint", outbound_signature: "firma de salida", callback_signature: "firma de callback", dispatcher: "dispatcher", workflows: "workflows por publicar", connection_test: "prueba de router y callback" })[category]).join(", ")}.
             </p>
           )}
           <div className="text-xs text-muted-foreground md:col-span-2">{infrastructure.mockMode ? "Último evento procesado" : "Último evento enviado"}: <span className="text-foreground">{formatDateTime(infrastructure.mockMode ? infrastructure.lastProcessedAt : infrastructure.lastEventSentAt)}</span></div>

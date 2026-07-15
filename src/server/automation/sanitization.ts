@@ -14,6 +14,7 @@ const SENSITIVE_KEYS = [
   "refreshtoken",
   "webhooksecret",
   "credential",
+  "fingerprint",
 ];
 
 function normalizedKey(key: string): string {
@@ -57,6 +58,9 @@ export function sanitizeAutomationValue(
   const output: Record<string, unknown> = {};
   const entries = Object.entries(value).slice(0, MAX_OBJECT_KEYS);
   for (const [key, nested] of entries) {
+    // El fingerprint es un detalle interno de readiness; ni su nombre debe
+    // aparecer en payloads administrativos enviados al navegador.
+    if (normalizedKey(key).includes("fingerprint")) continue;
     output[key] = isSensitiveAutomationKey(key)
       ? REDACTED
       : sanitizeAutomationValue(nested, depth + 1, seen);

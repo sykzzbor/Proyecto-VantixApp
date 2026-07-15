@@ -23,6 +23,7 @@ import {
   signedTimestampMatches,
 } from "@/lib/validations/automation-webhooks";
 import {
+  canExecuteN8nFollowUpAction,
   decideFollowUpEligibility,
   resolveExistingFollowUpAction,
   resolveStaleFollowUpAction,
@@ -1051,6 +1052,30 @@ test("follow-up: decisiones puras son deterministas bajo evaluación concurrente
 // ============================================================
 // Acción firmada: HMAC, timestamp y payload alterado
 // ============================================================
+
+test("follow-up firmado: exige modo n8n y un run del proveedor n8n", () => {
+  assert.equal(
+    canExecuteN8nFollowUpAction({
+      providerMode: "n8n",
+      runProvider: "n8n",
+    }),
+    true
+  );
+  assert.equal(
+    canExecuteN8nFollowUpAction({
+      providerMode: "mock",
+      runProvider: "n8n",
+    }),
+    false
+  );
+  assert.equal(
+    canExecuteN8nFollowUpAction({
+      providerMode: "n8n",
+      runProvider: "mock",
+    }),
+    false
+  );
+});
 
 test("acción n8n: firma los bytes exactos del payload con timestamp incluido", () => {
   const body = JSON.stringify({

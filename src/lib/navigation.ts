@@ -7,12 +7,12 @@ import {
   LayoutDashboard,
   MessageCircleQuestion,
   Package,
+  Plug,
   Workflow,
   Settings,
   Store,
   Users,
 } from "lucide-react";
-import { WhatsappIcon } from "@/components/whatsapp/whatsapp-icon";
 
 export type NavItem = {
   href: string;
@@ -35,9 +35,9 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Workflow,
   },
   {
-    href: "/dashboard/integraciones/whatsapp",
-    label: "WhatsApp",
-    icon: WhatsappIcon,
+    href: "/dashboard/integraciones",
+    label: "Integraciones",
+    icon: Plug,
   },
   { href: "/dashboard/negocio", label: "Negocio", icon: Store },
   { href: "/dashboard/productos", label: "Productos", icon: Package },

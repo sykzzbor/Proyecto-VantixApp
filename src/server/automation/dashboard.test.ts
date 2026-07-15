@@ -190,15 +190,38 @@ test("el sanitizador recursivo oculta todas las familias de claves sensibles", (
     AuthorizationHeader: "seis",
     cookies: "siete",
     credentials: { user: "ocho" },
+    configurationFingerprint: "nueve",
     safe: "visible",
   };
   const sanitized = sanitizeAutomationValue(input) as Record<string, unknown>;
   const serialized = JSON.stringify(sanitized);
-  for (const secret of ["uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho"]) {
+  for (const secret of [
+    "uno",
+    "dos",
+    "tres",
+    "cuatro",
+    "cinco",
+    "seis",
+    "siete",
+    "ocho",
+    "nueve",
+  ]) {
     assert.equal(serialized.includes(secret), false);
   }
   assert.equal(serialized.includes("visible"), true);
-  for (const key of ["password", "secretToken", "authorization", "cookie", "apiKey", "access_token", "refreshToken", "webhook-secret", "credentialId"]) {
+  assert.equal(serialized.includes("configurationFingerprint"), false);
+  for (const key of [
+    "password",
+    "secretToken",
+    "authorization",
+    "cookie",
+    "apiKey",
+    "access_token",
+    "refreshToken",
+    "webhook-secret",
+    "credentialId",
+    "configurationFingerprint",
+  ]) {
     assert.equal(isSensitiveAutomationKey(key), true);
   }
 });

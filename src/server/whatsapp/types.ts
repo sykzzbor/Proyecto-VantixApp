@@ -50,5 +50,10 @@ export type ResolvedWhatsappIntegration = {
   phoneNumberId: string;
   displayPhoneNumber: string;
   encryptedAccessToken: string;
-  status: "CONNECTED" | "DISCONNECTED" | "ERROR";
+  status:
+    | "CONNECTING"
+    | "CONNECTED"
+    | "ACTION_REQUIRED"
+    | "DISCONNECTED"
+    | "ERROR";
 };

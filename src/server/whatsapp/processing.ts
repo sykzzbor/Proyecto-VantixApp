@@ -72,6 +72,10 @@ export async function ingestWhatsappWebhookEvents(
     touched.add(integration.id);
 
     if (event.kind === "message") {
+      // Los estados de entrega siguen actualizando el historial aunque una
+      // integración se haya desconectado. Los mensajes entrantes, en cambio,
+      // solo pueden abrir conversaciones cuando el canal sigue operativo.
+      if (integration.status !== "CONNECTED") continue;
       const persisted = await deps.persistIncoming(event, {
         organizationId: integration.organizationId,
         integrationId: integration.id,

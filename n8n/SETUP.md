@@ -56,7 +56,10 @@ La integración usa estos nombres del lado de VantixApp:
 - `N8N_WEBHOOK_URL`
 - `N8N_WEBHOOK_SECRET`
 - `N8N_CALLBACK_SECRET`
+- `N8N_WORKFLOWS_PUBLISHED` (señal no secreta; cambiar a `true` solo después de publicar los cuatro workflows)
 - `AUTOMATION_CRON_SECRET`
+- `AUTOMATION_DISPATCHER_ENABLED` (señal no secreta; dejar `false` hasta que el
+  scheduler esté configurado y autorizado)
 - `CRON_SECRET` para Vercel Cron, cuando corresponda
 
 Opcionalmente, la infraestructura existente admite:
@@ -158,9 +161,18 @@ No publicar ni activar los workflows durante esta etapa. Cuando exista una autor
 2. Seleccionar las dos credenciales Crypto en cada nodo correspondiente, incluida **Sign handoff action**.
 3. Publicar primero **Error Handler**, **Handoff Alert** y **Follow-up**.
 4. Publicar por último **Event Router** y copiar su Production URL a la configuración segura de VantixApp.
-5. Mantener `AUTOMATION_PROVIDER=mock` hasta que la persona responsable autorice la activación.
-6. Cuando se autorice, usar **Probar conexión** en VantixApp; la prueba solo debe considerarse exitosa después del callback firmado.
-7. Probar derivación y seguimiento con datos locales o de prueba autorizados, nunca con datos inventados en producción.
+5. Confirmar que los cuatro workflows están publicados y recién entonces
+   cambiar `N8N_WORKFLOWS_PUBLISHED` a `true`.
+6. Confirmar que el scheduler llama al dispatcher con la credencial correcta y
+   recién entonces cambiar `AUTOMATION_DISPATCHER_ENABLED` a `true`.
+7. Mantener `AUTOMATION_PROVIDER=mock` hasta que la persona responsable autorice la activación.
+8. Cuando se autorice, usar **Probar conexión** en VantixApp; la prueba solo debe considerarse exitosa después del callback firmado.
+9. Probar derivación y seguimiento con datos locales o de prueba autorizados, nunca con datos inventados en producción.
+
+Si se cambia el endpoint, cualquiera de las firmas o la credencial del
+dispatcher, VantixApp invalida la verificación anterior y exige una nueva prueba
+firmada. El fingerprint persistido es opaco y nunca contiene ni expone los
+valores de esas credenciales.
 
 ## Controles de seguridad incluidos
 

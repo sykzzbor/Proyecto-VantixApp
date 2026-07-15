@@ -6,7 +6,11 @@ import {
   getAIProviderMode,
   isAgentConfigured,
 } from "@/server/agent/openai";
-import { isWhatsappDevMode } from "@/server/whatsapp/config";
+import {
+  getWhatsappWebhookUrl,
+  isWhatsappWebhookRuntimeConfigured,
+  isWhatsappDevMode,
+} from "@/server/whatsapp/config";
 import {
   CredentialsEncryptionError,
   decryptAccessToken,
@@ -412,6 +416,63 @@ test("ingest usa tenant resuelto, ignora desconocidos y duplicados y aplica stat
   assert.equal(jobs[0]?.persisted.organizationId, integration.organizationId);
 });
 
+test("webhook desconectado conserva estados pero no ingresa mensajes", async () => {
+  const integration: ResolvedWhatsappIntegration = {
+    id: "integration-disabled",
+    organizationId: "organization-disabled",
+    phoneNumberId: "phone-disabled",
+    displayPhoneNumber: "+1 202-555-0199",
+    encryptedAccessToken: "encrypted-placeholder",
+    status: "DISCONNECTED",
+  };
+  const message: WhatsappInboundEvent = {
+    kind: "message",
+    phoneNumberId: integration.phoneNumberId,
+    externalMessageId: "wamid.disabled.inbound",
+    from: "12025550198",
+    customerName: "Cliente",
+    timestamp: null,
+    messageType: "text",
+    content: "No debe persistirse",
+    metadata: {},
+  };
+  const status: WhatsappStatusEvent = {
+    kind: "status",
+    phoneNumberId: integration.phoneNumberId,
+    externalMessageId: "wamid.disabled.outbound",
+    timestamp: null,
+    deliveryStatus: "DELIVERED",
+    errorCode: null,
+    errorMessage: null,
+  };
+  let persisted = 0;
+  let applied = 0;
+  const jobs = await ingestWhatsappWebhookEvents([message, status], {
+    resolveIntegration: async () => integration,
+    persistIncoming: async () => {
+      persisted += 1;
+      throw new Error("disabled_inbound_was_persisted");
+    },
+    applyStatus: async (_, organizationId) => {
+      applied += 1;
+      assert.equal(organizationId, integration.organizationId);
+      return {
+        found: true,
+        changed: true,
+        organizationId,
+        messageId: "message-disabled-outbound",
+        deliveryStatus: "DELIVERED",
+      };
+    },
+    touchIntegration: async () => undefined,
+    audit: async () => undefined,
+    onUnknownNumber: () => assert.fail("La integración estaba registrada"),
+  });
+  assert.equal(persisted, 0);
+  assert.equal(applied, 1);
+  assert.deepEqual(jobs, []);
+});
+
 test("roles separan lectura, respuesta y administracion de WhatsApp", () => {
   assert.equal(can("VIEWER", "inbox.respond"), false);
   assert.equal(can("VIEWER", "whatsapp.manage"), false);
@@ -495,6 +556,110 @@ test("WHATSAPP_DEV_MODE nunca habilita el simulador en produccion", () => {
       Reflect.deleteProperty(process.env, "NODE_ENV");
     }
     setEnv("WHATSAPP_DEV_MODE", previousDevMode);
+  }
+});
+
+test("webhook: exige HTTPS salvo loopback en desarrollo", () => {
+  const nodeEnvDescriptor = Object.getOwnPropertyDescriptor(
+    process.env,
+    "NODE_ENV"
+  );
+  const nodeEnvValue = process.env.NODE_ENV;
+  const previousBaseUrl = process.env.BETTER_AUTH_URL;
+  const previousVerifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
+  const previousAppSecret = process.env.META_APP_SECRET;
+  const setNodeEnv = (value: string) => {
+    Object.defineProperty(process.env, "NODE_ENV", {
+      value,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  };
+  try {
+    setNodeEnv("development");
+    process.env.BETTER_AUTH_URL = "http://localhost:3000";
+    assert.equal(
+      getWhatsappWebhookUrl(),
+      "http://localhost:3000/api/webhooks/whatsapp"
+    );
+    for (const baseUrl of [
+      "http://127.0.0.1:3000",
+      "http://[::1]:3000",
+    ]) {
+      process.env.BETTER_AUTH_URL = baseUrl;
+      assert.doesNotThrow(() => getWhatsappWebhookUrl());
+    }
+
+    for (const baseUrl of ["http://example.test", "http://10.0.0.1"]) {
+      process.env.BETTER_AUTH_URL = baseUrl;
+      assert.throws(() => getWhatsappWebhookUrl());
+    }
+
+    setNodeEnv("production");
+    process.env.BETTER_AUTH_URL = "http://localhost:3000";
+    assert.throws(() => getWhatsappWebhookUrl());
+
+    for (const baseUrl of [
+      "https://localhost",
+      "https://localhost.",
+      "https://127.0.0.1",
+      "https://127.0.0.2",
+      "https://10.0.0.1",
+      "https://172.16.0.1",
+      "https://172.31.255.255",
+      "https://192.168.1.1",
+      "https://169.254.1.1",
+      "https://100.64.0.1",
+      "https://100.127.255.254",
+      "https://198.18.0.1",
+      "https://intranet",
+      "https://[::1]",
+      "https://[fc00::1]",
+      "https://[fdff::1]",
+      "https://[fe80::1]",
+      "https://[::ffff:127.0.0.1]",
+      "https://[::ffff:10.0.0.1]",
+    ]) {
+      process.env.BETTER_AUTH_URL = baseUrl;
+      assert.throws(() => getWhatsappWebhookUrl(), baseUrl);
+    }
+
+    for (const baseUrl of [
+      "https://app.example.test",
+      "https://1.1.1.1",
+      "https://172.15.255.255",
+      "https://172.32.0.1",
+      "https://fca.example.com",
+      "https://fdoc.example.com",
+      "https://fea.example.com",
+    ]) {
+      process.env.BETTER_AUTH_URL = baseUrl;
+      assert.doesNotThrow(() => getWhatsappWebhookUrl(), baseUrl);
+    }
+
+    process.env.BETTER_AUTH_URL = "https://app.example.test";
+    assert.equal(
+      getWhatsappWebhookUrl(),
+      "https://app.example.test/api/webhooks/whatsapp"
+    );
+    process.env.WHATSAPP_VERIFY_TOKEN = "unit-verify-token";
+    process.env.META_APP_SECRET = FAKE_APP_SECRET;
+    assert.equal(isWhatsappWebhookRuntimeConfigured(), true);
+    process.env.BETTER_AUTH_URL = "https://127.0.0.1";
+    assert.equal(isWhatsappWebhookRuntimeConfigured(), false);
+  } finally {
+    if (nodeEnvDescriptor) {
+      Object.defineProperty(process.env, "NODE_ENV", {
+        ...nodeEnvDescriptor,
+        value: nodeEnvValue,
+      });
+    } else {
+      Reflect.deleteProperty(process.env, "NODE_ENV");
+    }
+    setEnv("BETTER_AUTH_URL", previousBaseUrl);
+    setEnv("WHATSAPP_VERIFY_TOKEN", previousVerifyToken);
+    setEnv("META_APP_SECRET", previousAppSecret);
   }
 });
 

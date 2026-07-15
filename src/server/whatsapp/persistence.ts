@@ -47,7 +47,7 @@ function isPrismaCode(error: unknown, code: string): boolean {
 export async function resolveWhatsappIntegration(
   phoneNumberId: string
 ): Promise<ResolvedWhatsappIntegration | null> {
-  return prisma.whatsappIntegration.findUnique({
+  const integration = await prisma.whatsappIntegration.findFirst({
     where: { phoneNumberId },
     select: {
       id: true,
@@ -58,6 +58,7 @@ export async function resolveWhatsappIntegration(
       status: true,
     },
   });
+  return integration;
 }
 
 async function findDuplicate(externalMessageId: string) {

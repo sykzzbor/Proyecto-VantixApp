@@ -30,6 +30,7 @@ model User {
   knowledgeUploads       KnowledgeDocument[]          @relation("KnowledgeUploads")
   createdAutomationRules OrganizationAutomationRule[] @relation("AutomationRuleCreatedBy")
   updatedAutomationRules OrganizationAutomationRule[] @relation("AutomationRuleUpdatedBy")
+  whatsappSignupAttempts WhatsappEmbeddedSignupAttempt[]
 
   @@map("users")
 }
@@ -113,6 +114,7 @@ model Organization {
   messages               Message[]
   customers              Customer[]
   whatsappIntegrations   WhatsappIntegration[]
+  whatsappSignupAttempts WhatsappEmbeddedSignupAttempt[]
   knowledgeDocuments     KnowledgeDocument[]
   knowledgeChunks        KnowledgeChunk[]
   aiUsageEvents          AiUsageEvent[]
@@ -297,9 +299,23 @@ enum SenderType {
 }
 
 enum WhatsappIntegrationStatus {
+  CONNECTING
   CONNECTED
+  ACTION_REQUIRED
   DISCONNECTED
   ERROR
+}
+
+enum WhatsappConnectionMethod {
+  MANUAL
+  EMBEDDED_SIGNUP
+}
+
+enum WhatsappEmbeddedSignupAttemptStatus {
+  AWAITING_CODE
+  PROCESSING
+  SUCCEEDED
+  FAILED
 }
 
 enum MessageDeliveryStatus {
@@ -319,17 +335,49 @@ model WhatsappIntegration {
   verifiedName         String
   encryptedAccessToken String
   status               WhatsappIntegrationStatus @default(DISCONNECTED)
+  connectionMethod     WhatsappConnectionMethod  @default(MANUAL)
+  businessId           String?
+  tokenExpiresAt       DateTime?
+  grantedScopes        String[]                  @default([])
+  lastSyncedAt         DateTime?
+  webhookSubscribedAt  DateTime?
+  lastErrorCode        String?
   lastError            String?
   connectedAt          DateTime?
   lastWebhookAt        DateTime?
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
 
-  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  conversations Conversation[]
+  organization           Organization                    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversations          Conversation[]
+  embeddedSignupAttempts WhatsappEmbeddedSignupAttempt[]
 
   @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([wabaId])
   @@map("whatsapp_integrations")
+}
+
+model WhatsappEmbeddedSignupAttempt {
+  id             String                              @id @default(cuid())
+  organizationId String                              @unique
+  userId         String
+  integrationId  String?
+  nonceHash      String                              @unique
+  codeHash       String?                             @unique
+  status         WhatsappEmbeddedSignupAttemptStatus @default(AWAITING_CODE)
+  lastErrorCode  String?
+  expiresAt      DateTime
+  createdAt      DateTime                            @default(now())
+  updatedAt      DateTime                            @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  integration  WhatsappIntegration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+
+  @@index([status, expiresAt])
+  @@index([userId])
+  @@map("whatsapp_embedded_signup_attempts")
 }
 
 model Customer {

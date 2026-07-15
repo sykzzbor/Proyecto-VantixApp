@@ -11,6 +11,7 @@ import type {
 } from "@/lib/validations/automation";
 import {
   getAutomationProviderMode,
+  getN8nConfigurationFingerprint,
   getN8nConfigurationState,
   type N8nMissingCategory,
 } from "@/server/automation/config";
@@ -165,9 +166,14 @@ export type AutomationInfrastructureStatus = {
   outboundSignatureConfigured: boolean;
   providerConfigured: boolean;
   missingCategories: N8nMissingCategory[];
+  readinessMissingCategories: Array<N8nMissingCategory | "connection_test">;
+  workflowsPublished: boolean;
+  probeVerified: boolean;
+  activationReady: boolean;
   connectionEnabled: boolean;
   connectionStatus: "CONNECTED" | "DISCONNECTED" | "ERROR" | "NOT_CREATED";
   lastProcessedAt: string | null;
+  lastConnectionAt: string | null;
   lastEventSentAt: string | null;
   lastCallbackAt: string | null;
   lastSuccessfulRunAt: string | null;
@@ -181,7 +187,7 @@ export async function getAutomationInfrastructureStatus(
   const configuration = getN8nConfigurationState();
   const dispatcherConfigured = configuration.dispatcher;
   const callbackConfigured = configuration.callbackSignature;
-  const [connection, lastProcessed, lastSuccess, lastFailure] = await Promise.all([
+  const [connection, lastProcessed, lastSuccess, lastFailure, lastConnection] = await Promise.all([
     prisma.integrationConnection.findUnique({
       where: { organizationId_provider: { organizationId, provider: "n8n" } },
       select: {
@@ -190,6 +196,7 @@ export async function getAutomationInfrastructureStatus(
         lastError: true,
         lastEventAt: true,
         lastCallbackAt: true,
+        externalId: true,
       },
     }),
     prisma.automationEvent.findFirst({
@@ -201,28 +208,56 @@ export async function getAutomationInfrastructureStatus(
       where: {
         organizationId,
         status: "SUCCEEDED",
-        ...(provider === "n8n" ? { provider: "n8n" } : {}),
+        provider: "n8n",
       },
       orderBy: { finishedAt: "desc" },
       select: { finishedAt: true },
     }),
-    prisma.automationEvent.findFirst({
-      where: { organizationId, status: { in: ["FAILED", "DEAD_LETTER"] } },
-      orderBy: { updatedAt: "desc" },
-      select: { lastError: true },
+    prisma.automationRun.findFirst({
+      where: { organizationId, provider: "n8n", status: "FAILED" },
+      orderBy: { createdAt: "desc" },
+      select: { errorCode: true, errorMessage: true },
+    }),
+    prisma.automationRun.findFirst({
+      where: {
+        organizationId,
+        provider: "n8n",
+        status: "SUCCEEDED",
+        automationEvent: {
+          type: "automation.test",
+          payload: { path: ["source"], equals: "connection-test" },
+        },
+      },
+      orderBy: { finishedAt: "desc" },
+      select: { finishedAt: true },
     }),
   ]);
 
-  const providerConfigured = provider === "mock" || configuration.complete;
   const connectionStatus = connection?.status ?? "NOT_CREATED";
+  const currentConfigurationFingerprint = getN8nConfigurationFingerprint();
+  const probeVerified = Boolean(
+    connection?.enabled &&
+      connection.status === "CONNECTED" &&
+      connection.lastCallbackAt &&
+      currentConfigurationFingerprint &&
+      connection.externalId === currentConfigurationFingerprint
+  );
+  const providerConfigured = configuration.complete;
+  const activationReady = providerConfigured && probeVerified;
+  const readinessMissingCategories: Array<
+    N8nMissingCategory | "connection_test"
+  > = [
+    ...configuration.missing,
+    ...(probeVerified ? [] : (["connection_test"] as const)),
+  ];
   const state =
     provider === "mock"
       ? "operational"
-      : !providerConfigured
-        ? "incomplete"
-        : connectionStatus === "ERROR"
+      : connectionStatus === "ERROR"
           ? "error"
-          : "operational";
+          : !activationReady
+            ? "incomplete"
+            : "operational";
 
   return {
     provider,
@@ -233,15 +268,24 @@ export async function getAutomationInfrastructureStatus(
     endpointConfigured: configuration.endpoint,
     outboundSignatureConfigured: configuration.outboundSignature,
     providerConfigured,
-    missingCategories: provider === "mock" ? [] : configuration.missing,
+    // Mostrar preparación real aun mientras mock es el proveedor activo.
+    missingCategories: configuration.missing,
+    readinessMissingCategories,
+    workflowsPublished: configuration.workflowsPublished,
+    probeVerified,
+    activationReady,
     connectionEnabled: connection?.enabled ?? false,
     connectionStatus,
     lastProcessedAt: lastProcessed?.processedAt?.toISOString() ?? null,
+    lastConnectionAt: lastConnection?.finishedAt?.toISOString() ?? null,
     lastEventSentAt: connection?.lastEventAt?.toISOString() ?? null,
     lastCallbackAt: connection?.lastCallbackAt?.toISOString() ?? null,
     lastSuccessfulRunAt: lastSuccess?.finishedAt?.toISOString() ?? null,
     lastError: sanitizeAutomationMessage(
-      connection?.lastError ?? lastFailure?.lastError ?? null
+      connection?.lastError ??
+        lastFailure?.errorMessage ??
+        lastFailure?.errorCode ??
+        null
     ),
   };
 }

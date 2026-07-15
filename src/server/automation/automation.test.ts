@@ -14,11 +14,24 @@ import {
 } from "@/server/automation/events";
 import { MockProvider } from "@/server/automation/providers/mock";
 import {
+  canDispatchN8nEvent,
+  isN8nConnectionProbeEvent,
+} from "@/server/automation/providers/n8n";
+import {
+  getCronSecret,
+  isDispatcherEnabledSignal,
+  isN8nWorkflowsPublishedSignal,
+} from "@/server/automation/config";
+import {
   isTimestampFresh,
   signAutomationBody,
   verifyAutomationSignature,
 } from "@/server/automation/signature";
 import type { AutomationWebhookPayload } from "@/server/automation/types";
+import {
+  n8nProbeIdempotencyKey,
+  shouldReuseN8nProbe,
+} from "@/app/api/automation/test-connection/route";
 
 const SECRET = "clave-secreta-de-prueba";
 
@@ -242,6 +255,168 @@ test("MockProvider simula éxito, error temporal, error definitivo y callback", 
   assert.equal(permanent.ok === false && permanent.retryable, false);
   const callback = await provider.dispatch(webhook({ payload: { mock: "callback" } }));
   assert.equal(callback.ok === true && callback.awaitingCallback, true);
+});
+
+test("n8n readiness: reconoce solo el probe controlado y bloquea eventos reales", () => {
+  const configurationFingerprint = "a".repeat(64);
+  assert.equal(
+    isN8nConnectionProbeEvent({
+      type: "automation.test",
+      payload: { source: "connection-test", configurationFingerprint },
+    }),
+    true
+  );
+  for (const input of [
+    { type: "automation.test", payload: { source: "manual-test" } },
+    {
+      type: "automation.test",
+      payload: { source: "connection-test", configurationFingerprint, extra: true },
+    },
+    {
+      type: "conversation.handoff_requested",
+      payload: { source: "connection-test" },
+    },
+  ]) {
+    assert.equal(isN8nConnectionProbeEvent(input), false);
+  }
+
+  assert.equal(
+    canDispatchN8nEvent({
+      connectionProbe: true,
+      allowUnverifiedProbe: true,
+      organizationReady: false,
+    }),
+    true
+  );
+  assert.equal(
+    canDispatchN8nEvent({
+      connectionProbe: true,
+      allowUnverifiedProbe: false,
+      organizationReady: true,
+    }),
+    false
+  );
+  assert.equal(
+    canDispatchN8nEvent({
+      connectionProbe: false,
+      allowUnverifiedProbe: true,
+      organizationReady: false,
+    }),
+    false
+  );
+  assert.equal(
+    canDispatchN8nEvent({
+      connectionProbe: false,
+      allowUnverifiedProbe: false,
+      organizationReady: true,
+    }),
+    true
+  );
+});
+
+test("probe n8n: reutiliza el abierto y encadena la siguiente prueba", () => {
+  const fingerprint = "b".repeat(64);
+  const now = new Date("2026-07-15T12:00:00.000Z");
+  assert.equal(
+    n8nProbeIdempotencyKey(null),
+    "automation.connection-test:initial"
+  );
+  assert.notEqual(
+    n8nProbeIdempotencyKey(null),
+    n8nProbeIdempotencyKey("previous-event")
+  );
+  assert.equal(
+    shouldReuseN8nProbe(
+      {
+        type: "automation.test",
+        payload: { source: "connection-test", configurationFingerprint: fingerprint },
+        status: "PROCESSING",
+        createdAt: new Date(now.getTime() - 10 * 60_000),
+      },
+      fingerprint,
+      now
+    ),
+    true
+  );
+  assert.equal(
+    shouldReuseN8nProbe(
+      {
+        type: "automation.test",
+        payload: { source: "connection-test", configurationFingerprint: fingerprint },
+        status: "SUCCEEDED",
+        createdAt: new Date(now.getTime() - 59_999),
+      },
+      fingerprint,
+      now
+    ),
+    true
+  );
+  assert.equal(
+    shouldReuseN8nProbe(
+      {
+        type: "automation.test",
+        payload: { source: "connection-test", configurationFingerprint: fingerprint },
+        status: "SUCCEEDED",
+        createdAt: new Date(now.getTime() - 60_000),
+      },
+      fingerprint,
+      now
+    ),
+    false
+  );
+  assert.equal(
+    shouldReuseN8nProbe(
+      {
+        type: "automation.test",
+        payload: { source: "connection-test", configurationFingerprint: "c".repeat(64) },
+        status: "PROCESSING",
+        createdAt: now,
+      },
+      fingerprint,
+      now
+    ),
+    false
+  );
+});
+
+test("dispatcher: exige la señal explícita con valor true", () => {
+  assert.equal(isDispatcherEnabledSignal("true"), true);
+  assert.equal(isDispatcherEnabledSignal(" TRUE "), true);
+  for (const value of ["", "false", "1", "yes"]) {
+    assert.equal(isDispatcherEnabledSignal(value), false);
+  }
+});
+
+test("workflows: exige confirmación explícita de publicación", () => {
+  assert.equal(isN8nWorkflowsPublishedSignal("true"), true);
+  assert.equal(isN8nWorkflowsPublishedSignal(" TRUE "), true);
+  for (const value of ["", "false", "1", "yes"]) {
+    assert.equal(isN8nWorkflowsPublishedSignal(value), false);
+  }
+});
+
+test("dispatcher: el secreto no habilita por sí solo el endpoint", () => {
+  const previousEnabled = process.env.AUTOMATION_DISPATCHER_ENABLED;
+  const previousSecret = process.env.AUTOMATION_CRON_SECRET;
+  try {
+    process.env.AUTOMATION_CRON_SECRET =
+      "dispatcher-test-secret-with-at-least-32-characters";
+    process.env.AUTOMATION_DISPATCHER_ENABLED = "false";
+    assert.throws(() => getCronSecret());
+    process.env.AUTOMATION_DISPATCHER_ENABLED = "true";
+    assert.equal(
+      getCronSecret(),
+      "dispatcher-test-secret-with-at-least-32-characters"
+    );
+  } finally {
+    if (previousEnabled === undefined) {
+      delete process.env.AUTOMATION_DISPATCHER_ENABLED;
+    } else {
+      process.env.AUTOMATION_DISPATCHER_ENABLED = previousEnabled;
+    }
+    if (previousSecret === undefined) delete process.env.AUTOMATION_CRON_SECRET;
+    else process.env.AUTOMATION_CRON_SECRET = previousSecret;
+  }
 });
 
 // ============================================================

@@ -74,12 +74,21 @@ const valueSchema = z
       .object({
         phone_number_id: z.string().min(1),
       })
-      .passthrough(),
+      .passthrough()
+      .optional(),
     contacts: z.array(contactSchema).optional(),
     messages: z.array(messageSchema).optional(),
     statuses: z.array(statusSchema).optional(),
   })
   .passthrough();
+
+const messagesValueSchema = valueSchema.extend({
+  metadata: z
+    .object({
+      phone_number_id: z.string().min(1),
+    })
+    .passthrough(),
+});
 
 const webhookPayloadSchema = z
   .object({
@@ -255,14 +264,17 @@ export function parseWhatsappWebhookPayload(input: unknown): WhatsappWebhookEven
 
   for (const entry of payload.entry) {
     for (const change of entry.changes) {
-      if (change.field && change.field !== "messages") continue;
-      const phoneNumberId = change.value.metadata.phone_number_id;
-      const contacts = change.value.contacts ?? [];
+      // Meta envía otros campos de la WABA por el mismo webhook. Solo el campo
+      // `messages` tiene el contrato de metadata/número que procesa Vantix.
+      if (change.field !== "messages") continue;
+      const messageValue = messagesValueSchema.parse(change.value);
+      const phoneNumberId = messageValue.metadata.phone_number_id;
+      const contacts = messageValue.contacts ?? [];
 
-      for (const message of change.value.messages ?? []) {
+      for (const message of messageValue.messages ?? []) {
         events.push(toInboundEvent(phoneNumberId, message, contacts));
       }
-      for (const status of change.value.statuses ?? []) {
+      for (const status of messageValue.statuses ?? []) {
         events.push(toStatusEvent(phoneNumberId, status));
       }
     }

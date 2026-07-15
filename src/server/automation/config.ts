@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   DEFAULT_MAX_ATTEMPTS,
   DEFAULT_REQUEST_TIMEOUT_MS,
@@ -57,11 +58,35 @@ export function getN8nCallbackSecret(): string {
 }
 
 export function getCronSecret(): string {
-  return requireEnv("AUTOMATION_CRON_SECRET");
+  if (!isDispatcherEnabledSignal()) {
+    throw new AutomationConfigurationError(
+      "El dispatcher de automatizaciones no está habilitado."
+    );
+  }
+  const secret = requireEnv("AUTOMATION_CRON_SECRET");
+  if (secret.length < 32 || secret.length > 4096) {
+    throw new AutomationConfigurationError(
+      "La credencial del dispatcher no es válida."
+    );
+  }
+  return secret;
+}
+
+/** Señal explícita y no secreta: evita inferir que existe un scheduler real. */
+export function isDispatcherEnabledSignal(value?: string): boolean {
+  const configured = value ?? process.env.AUTOMATION_DISPATCHER_ENABLED;
+  return configured?.trim().toLowerCase() === "true";
+}
+
+/** Confirmación no secreta que se habilita solo tras publicar los 4 workflows. */
+export function isN8nWorkflowsPublishedSignal(value?: string): boolean {
+  const configured = value ?? process.env.N8N_WORKFLOWS_PUBLISHED;
+  return configured?.trim().toLowerCase() === "true";
 }
 
 /** Estado seguro para UI: nunca devuelve nombres ni valores de credenciales. */
 export function isDispatcherConfigured(): boolean {
+  if (!isDispatcherEnabledSignal()) return false;
   try {
     getCronSecret();
     return true;
@@ -156,26 +181,55 @@ export type N8nMissingCategory =
   | "endpoint"
   | "outbound_signature"
   | "callback_signature"
-  | "dispatcher";
+  | "dispatcher"
+  | "workflows";
 
 export function getN8nConfigurationState() {
   const endpoint = isN8nEndpointConfigured();
   const outboundSignature = isOutboundSignatureConfigured();
   const callbackSignature = isCallbackConfigured();
   const dispatcher = isDispatcherConfigured();
+  const workflowsPublished = isN8nWorkflowsPublishedSignal();
   const missing: N8nMissingCategory[] = [];
   if (!endpoint) missing.push("endpoint");
   if (!outboundSignature) missing.push("outbound_signature");
   if (!callbackSignature) missing.push("callback_signature");
   if (!dispatcher) missing.push("dispatcher");
+  if (!workflowsPublished) missing.push("workflows");
   return {
     endpoint,
     outboundSignature,
     callbackSignature,
     dispatcher,
+    workflowsPublished,
     missing,
     complete: missing.length === 0,
   };
+}
+
+/**
+ * Versión opaca de la configuración que fue realmente probada. Incluye los
+ * valores sensibles solo como material de hash en memoria; el digest no se
+ * expone al navegador y una rotación obliga a confirmar un callback nuevo.
+ */
+export function getN8nConfigurationFingerprint(): string | null {
+  if (!getN8nConfigurationState().complete) return null;
+  try {
+    return createHash("sha256")
+      .update(
+        JSON.stringify({
+          version: "n8n-readiness-v1",
+          endpoint: getN8nWebhookUrl().toString(),
+          outboundSignature: getN8nWebhookSecret(),
+          callbackSignature: getN8nCallbackSecret(),
+          dispatcherCredential: getCronSecret(),
+          workflowsPublished: true,
+        })
+      )
+      .digest("hex");
+  } catch {
+    return null;
+  }
 }
 
 /** Indica si n8n está configurado sin exponer los valores. */

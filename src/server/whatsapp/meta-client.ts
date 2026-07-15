@@ -1,4 +1,6 @@
 import {
+  getMetaAppId,
+  getMetaAppSecret,
   getMetaGraphApiBaseUrl,
   META_REQUEST_TIMEOUT_MS,
 } from "@/server/whatsapp/config";
@@ -60,9 +62,14 @@ export type WhatsappSendResult = {
 type MetaRequest = {
   path: string;
   accessToken: string;
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "DELETE";
   body?: unknown;
 };
+
+const REQUIRED_EMBEDDED_SIGNUP_SCOPES = [
+  "whatsapp_business_management",
+  "whatsapp_business_messaging",
+] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -222,6 +229,289 @@ export async function testWhatsappConnection(input: {
     displayPhoneNumber: payload.display_phone_number.trim(),
     verifiedName: payload.verified_name.trim(),
   };
+}
+
+export type MetaEmbeddedSignupToken = {
+  accessToken: string;
+  expiresAt: Date | null;
+};
+
+export type MetaEmbeddedSignupGrant = {
+  scopes: string[];
+  wabaIds: string[];
+  expiresAt: Date | null;
+};
+
+export type MetaEmbeddedSignupAsset = {
+  wabaId: string;
+  businessId: string;
+  phoneNumberId: string;
+  displayPhoneNumber: string;
+  verifiedName: string;
+};
+
+function validStringList(value: unknown, maxItems = 50): string[] {
+  if (!Array.isArray(value) || value.length > maxItems) return [];
+  const result = value
+    .filter((entry): entry is string =>
+      typeof entry === "string" && entry.length > 0 && entry.length <= 100
+    )
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return [...new Set(result)].sort();
+}
+
+function expiryFromSeconds(value: unknown): Date | null {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    return null;
+  }
+  const date = new Date(value * 1000);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** Intercambia el código una sola vez; el secreto y el token nunca salen del servidor. */
+export async function exchangeMetaEmbeddedSignupCode(
+  code: string
+): Promise<MetaEmbeddedSignupToken> {
+  const appId = getMetaAppId();
+  const appSecret = getMetaAppSecret();
+  const params = new URLSearchParams({
+    client_id: appId,
+    client_secret: appSecret,
+    code,
+  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), META_REQUEST_TIMEOUT_MS);
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `${getMetaGraphApiBaseUrl()}/oauth/access_token?${params.toString()}`,
+      {
+        method: "GET",
+        cache: "no-store",
+        redirect: "error",
+        signal: controller.signal,
+      }
+    );
+  } catch {
+    if (controller.signal.aborted) {
+      throw new MetaApiError({
+        code: "timeout",
+        safeMessage: "Meta no respondió dentro del tiempo esperado.",
+        retryable: true,
+      });
+    }
+    throw new MetaApiError({
+      code: "network_error",
+      safeMessage: "No se pudo conectar con Meta.",
+      retryable: true,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const payload = await readJson(response);
+  if (!response.ok) {
+    throw errorForResponse(response.status, extractMetaErrorCode(payload));
+  }
+  if (
+    !isRecord(payload) ||
+    typeof payload.access_token !== "string" ||
+    payload.access_token.length < 20 ||
+    payload.access_token.length > 4096
+  ) {
+    throw new MetaApiError({
+      code: "invalid_response",
+      safeMessage: "Meta no confirmó la autorización de WhatsApp.",
+    });
+  }
+
+  const expiresIn = payload.expires_in;
+  const expiresAt =
+    typeof expiresIn === "number" &&
+    Number.isFinite(expiresIn) &&
+    expiresIn > 0
+      ? new Date(Date.now() + expiresIn * 1000)
+      : null;
+  return { accessToken: payload.access_token, expiresAt };
+}
+
+/** Verifica que el token pertenezca a esta app y tenga permisos granulares útiles. */
+export async function inspectMetaEmbeddedSignupToken(
+  accessToken: string
+): Promise<MetaEmbeddedSignupGrant> {
+  const appId = getMetaAppId();
+  const appAccessToken = `${appId}|${getMetaAppSecret()}`;
+  const query = new URLSearchParams({ input_token: accessToken });
+  const payload = await requestMeta({
+    path: `debug_token?${query.toString()}`,
+    accessToken: appAccessToken,
+  });
+  const data = isRecord(payload) && isRecord(payload.data) ? payload.data : null;
+  if (!data || data.is_valid !== true || data.app_id !== appId) {
+    throw new MetaApiError({
+      code: "authentication",
+      safeMessage: "Meta no confirmó la autorización de WhatsApp.",
+    });
+  }
+
+  const scopes = validStringList(data.scopes);
+  if (
+    !REQUIRED_EMBEDDED_SIGNUP_SCOPES.every((scope) => scopes.includes(scope))
+  ) {
+    throw new MetaApiError({
+      code: "authentication",
+      safeMessage: "La autorización de Meta todavía no tiene todos los permisos necesarios.",
+    });
+  }
+
+  const targetsByScope = new Map<string, Set<string>>();
+  if (Array.isArray(data.granular_scopes)) {
+    for (const item of data.granular_scopes.slice(0, 50)) {
+      if (!isRecord(item) || typeof item.scope !== "string") continue;
+      const targets = validStringList(item.target_ids).filter((id) =>
+        META_ID_PATTERN.test(id)
+      );
+      targetsByScope.set(item.scope, new Set(targets));
+    }
+  }
+
+  // Meta documenta los WABA compartidos en los targets granulares del permiso
+  // de administración; el permiso de mensajería puede no traer target_ids.
+  const managementTargets = targetsByScope.get("whatsapp_business_management");
+  if (!managementTargets) {
+    throw new MetaApiError({
+      code: "invalid_response",
+      safeMessage: "Meta no informó una cuenta de WhatsApp autorizada.",
+    });
+  }
+  const wabaIds = [...managementTargets].sort();
+
+  const tokenExpiry = expiryFromSeconds(data.expires_at);
+  const dataExpiry = expiryFromSeconds(data.data_access_expires_at);
+  const expiries = [tokenExpiry, dataExpiry].filter((date): date is Date => !!date);
+  const expiresAt = expiries.length
+    ? new Date(Math.min(...expiries.map((date) => date.getTime())))
+    : null;
+  if (expiresAt && expiresAt.getTime() <= Date.now()) {
+    throw new MetaApiError({
+      code: "authentication",
+      safeMessage: "La autorización de Meta venció.",
+    });
+  }
+
+  return { scopes, wabaIds, expiresAt };
+}
+
+/** Obtiene los activos desde Meta. Falla cerrado ante cero o múltiples números. */
+export async function resolveMetaEmbeddedSignupAsset(input: {
+  accessToken: string;
+  wabaId: string;
+}): Promise<MetaEmbeddedSignupAsset> {
+  const wabaId = assertMetaId(input.wabaId);
+  const wabaQuery = new URLSearchParams({ fields: "id,owner_business_info" });
+  const waba = await requestMeta({
+    path: `${wabaId}?${wabaQuery.toString()}`,
+    accessToken: input.accessToken,
+  });
+  const owner = isRecord(waba) && isRecord(waba.owner_business_info)
+    ? waba.owner_business_info
+    : null;
+  if (
+    !isRecord(waba) ||
+    waba.id !== wabaId ||
+    !owner ||
+    typeof owner.id !== "string" ||
+    !META_ID_PATTERN.test(owner.id)
+  ) {
+    throw new MetaApiError({
+      code: "invalid_response",
+      safeMessage: "Meta no confirmó la cuenta comercial de WhatsApp.",
+    });
+  }
+
+  const phoneQuery = new URLSearchParams({
+    fields: "id,display_phone_number,verified_name",
+    limit: "2",
+  });
+  const phonesPayload = await requestMeta({
+    path: `${wabaId}/phone_numbers?${phoneQuery.toString()}`,
+    accessToken: input.accessToken,
+  });
+  const phones = isRecord(phonesPayload) && Array.isArray(phonesPayload.data)
+    ? phonesPayload.data
+    : [];
+  const hasNext =
+    isRecord(phonesPayload) &&
+    isRecord(phonesPayload.paging) &&
+    typeof phonesPayload.paging.next === "string";
+  if (phones.length !== 1 || hasNext || !isRecord(phones[0])) {
+    throw new MetaApiError({
+      code: "invalid_response",
+      safeMessage:
+        phones.length === 0
+          ? "Meta no informó un número de WhatsApp disponible."
+          : "La cuenta tiene más de un número; elegí una conexión inequívoca.",
+    });
+  }
+  const phone = phones[0];
+  if (
+    typeof phone.id !== "string" ||
+    !META_ID_PATTERN.test(phone.id) ||
+    typeof phone.display_phone_number !== "string" ||
+    !phone.display_phone_number.trim() ||
+    typeof phone.verified_name !== "string" ||
+    !phone.verified_name.trim()
+  ) {
+    throw new MetaApiError({
+      code: "invalid_response",
+      safeMessage: "Meta devolvió un número de WhatsApp no válido.",
+    });
+  }
+
+  return {
+    wabaId,
+    businessId: owner.id,
+    phoneNumberId: phone.id,
+    displayPhoneNumber: phone.display_phone_number.trim(),
+    verifiedName: phone.verified_name.trim(),
+  };
+}
+
+export async function subscribeMetaAppToWaba(input: {
+  accessToken: string;
+  wabaId: string;
+}): Promise<void> {
+  const payload = await requestMeta({
+    path: `${assertMetaId(input.wabaId)}/subscribed_apps`,
+    accessToken: input.accessToken,
+    method: "POST",
+  });
+  if (!isRecord(payload) || payload.success !== true) {
+    throw new MetaApiError({
+      code: "invalid_response",
+      safeMessage: "Meta no confirmó la suscripción del webhook.",
+    });
+  }
+}
+
+export async function isMetaAppSubscribedToWaba(input: {
+  accessToken: string;
+  wabaId: string;
+}): Promise<boolean> {
+  const payload = await requestMeta({
+    path: `${assertMetaId(input.wabaId)}/subscribed_apps`,
+    accessToken: input.accessToken,
+  });
+  const data = isRecord(payload) && Array.isArray(payload.data) ? payload.data : [];
+  const appId = getMetaAppId();
+  return data.some((entry) => {
+    if (!isRecord(entry) || !isRecord(entry.whatsapp_business_api_data)) {
+      return false;
+    }
+    return entry.whatsapp_business_api_data.id === appId;
+  });
 }
 
 export async function sendWhatsappTextMessage(input: {
