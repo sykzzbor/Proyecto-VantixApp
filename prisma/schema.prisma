@@ -119,6 +119,7 @@ model Organization {
   agentToolUsages        AgentToolUsage[]
   automationEvents       AutomationEvent[]
   automationRuns         AutomationRun[]
+  automationActionDeliveries AutomationActionDelivery[]
   integrationConnections IntegrationConnection[]
   automationRules        OrganizationAutomationRule[]
 
@@ -561,6 +562,12 @@ enum AutomationRuleType {
   FOLLOW_UP
 }
 
+enum AutomationActionDeliveryStatus {
+  PROCESSING
+  SENT
+  FAILED
+}
+
 model OrganizationAutomationRule {
   id             String             @id @default(cuid())
   organizationId String
@@ -614,9 +621,11 @@ model AutomationEvent {
   sourceMessage  Message?                    @relation("AutomationSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
   actionMessage  Message?                    @relation("AutomationActionMessage", fields: [actionMessageId], references: [id], onDelete: SetNull)
   runs           AutomationRun[]
+  actionDeliveries AutomationActionDelivery[]
 
   @@unique([organizationId, idempotencyKey])
   @@unique([organizationId, type, sourceMessageId])
+  @@unique([organizationId, id])
   @@index([status, nextAttemptAt])
   @@index([organizationId, type, status, nextAttemptAt])
   @@index([organizationId, conversationId, type, status])
@@ -649,6 +658,31 @@ model AutomationRun {
   @@index([automationEventId])
   @@index([organizationId, createdAt(sort: Desc)])
   @@map("automation_runs")
+}
+
+model AutomationActionDelivery {
+  id                  String                         @id @default(cuid())
+  organizationId      String
+  eventId             String
+  recipientHash       String
+  status              AutomationActionDeliveryStatus @default(PROCESSING)
+  templateName        String
+  templateLanguage    String
+  externalMessageId   String?
+  errorCode           String?
+  errorMessage        String?
+  processingStartedAt DateTime                       @default(now())
+  completedAt         DateTime?
+  createdAt           DateTime                       @default(now())
+  updatedAt           DateTime                       @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  event        AutomationEvent @relation(fields: [organizationId, eventId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([eventId, recipientHash])
+  @@index([organizationId, status, createdAt(sort: Desc)])
+  @@index([organizationId, eventId, status])
+  @@map("automation_action_deliveries")
 }
 
 model IntegrationConnection {

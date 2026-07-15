@@ -24,6 +24,14 @@ export const n8nFollowUpActionSchema = z
   })
   .strict();
 
+/** El timestamp de esta acción viaja únicamente en el header HMAC firmado. */
+export const n8nHandoffAlertActionSchema = z
+  .object({
+    eventId: z.string().trim().min(1).max(64),
+    organizationId: z.string().trim().min(1).max(64),
+  })
+  .strict();
+
 export function signedTimestampMatches(
   bodyTimestamp: number,
   timestampHeader: string | null | undefined

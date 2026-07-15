@@ -15,6 +15,7 @@ import {
 import { nextDeliveryStatus } from "@/server/whatsapp/delivery";
 import {
   MetaApiError,
+  sendWhatsappTemplateMessage,
   sendWhatsappTextMessage,
   testWhatsappConnection,
 } from "@/server/whatsapp/meta-client";
@@ -550,6 +551,139 @@ test("cliente Meta ejecuta GET y POST sin reintentos ni exponer el token", async
     assert.equal(body.messaging_product, "whatsapp");
     assert.equal(body.to, "5491112345678");
     assert.equal(JSON.stringify(calls.map((call) => call.url)).includes(FAKE_ACCESS_TOKEN), false);
+  } finally {
+    globalThis.fetch = previousFetch;
+    setEnv("META_GRAPH_API_VERSION", previousVersion);
+  }
+});
+
+test("cliente Meta envia una plantilla aprobada con payload exacto", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousVersion = process.env.META_GRAPH_API_VERSION;
+  process.env.META_GRAPH_API_VERSION = "v99.0";
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+
+  globalThis.fetch = (async (
+    input: string | URL | Request,
+    init?: RequestInit
+  ) => {
+    calls.push({ url: String(input), init });
+    return Response.json({ messages: [{ id: "wamid.template-sent" }] });
+  }) as typeof fetch;
+
+  try {
+    const sent = await sendWhatsappTemplateMessage({
+      phoneNumberId: FAKE_PHONE_NUMBER_ID,
+      accessToken: FAKE_ACCESS_TOKEN,
+      to: "+5491112345678",
+      templateName: "handoff_alert_v1",
+      language: "es_AR",
+    });
+
+    assert.deepEqual(sent, { messageId: "wamid.template-sent" });
+    assert.equal(calls.length, 1);
+    assert.equal(
+      calls[0]?.url,
+      `https://graph.facebook.com/v99.0/${FAKE_PHONE_NUMBER_ID}/messages`
+    );
+    assert.equal(calls[0]?.init?.method, "POST");
+    assert.deepEqual(JSON.parse(String(calls[0]?.init?.body)), {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: "5491112345678",
+      type: "template",
+      template: {
+        name: "handoff_alert_v1",
+        language: { code: "es_AR" },
+      },
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+    setEnv("META_GRAPH_API_VERSION", previousVersion);
+  }
+});
+
+test("cliente Meta rechaza destinatario, plantilla e idioma invalidos sin enviar", async () => {
+  const previousFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return Response.json({ messages: [{ id: "unexpected" }] });
+  }) as typeof fetch;
+
+  const valid = {
+    phoneNumberId: FAKE_PHONE_NUMBER_ID,
+    accessToken: FAKE_ACCESS_TOKEN,
+    to: "+5491112345678",
+    templateName: "handoff_alert_v1",
+    language: "es_AR",
+  };
+  const invalidInputs = [
+    { ...valid, to: "5491112345678" },
+    { ...valid, to: "+0491112345678" },
+    { ...valid, templateName: "Handoff_Alert" },
+    { ...valid, templateName: "handoff-alert" },
+    { ...valid, templateName: "" },
+    { ...valid, language: "es-ar" },
+    { ...valid, language: "../../es_AR" },
+  ];
+
+  try {
+    for (const input of invalidInputs) {
+      await assert.rejects(
+        () => sendWhatsappTemplateMessage(input),
+        (error: unknown) => {
+          assert.ok(error instanceof MetaApiError);
+          assert.equal(error.code, "invalid_request");
+          assert.equal(error.safeMessage, "La plantilla de WhatsApp no es valida.");
+          assert.doesNotMatch(error.safeMessage, /549111|handoff|\.\.\//i);
+          return true;
+        }
+      );
+    }
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("cliente Meta sanitiza errores remotos al enviar plantillas", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousVersion = process.env.META_GRAPH_API_VERSION;
+  process.env.META_GRAPH_API_VERSION = "v99.0";
+  globalThis.fetch = (async () =>
+    Response.json(
+      {
+        error: {
+          code: 100,
+          message: "raw-sensitive-template-error-for-5491112345678",
+        },
+      },
+      { status: 400 }
+    )) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      () =>
+        sendWhatsappTemplateMessage({
+          phoneNumberId: FAKE_PHONE_NUMBER_ID,
+          accessToken: FAKE_ACCESS_TOKEN,
+          to: "+5491112345678",
+          templateName: "handoff_alert_v1",
+          language: "es_AR",
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof MetaApiError);
+        assert.equal(error.code, "invalid_request");
+        assert.equal(error.metaCode, "100");
+        assert.doesNotMatch(
+          error.safeMessage,
+          /raw-sensitive|549111|handoff_alert|access-token/i
+        );
+        assert.equal("accessToken" in error, false);
+        return true;
+      }
+    );
   } finally {
     globalThis.fetch = previousFetch;
     setEnv("META_GRAPH_API_VERSION", previousVersion);

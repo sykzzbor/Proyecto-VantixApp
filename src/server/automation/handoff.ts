@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
-import { handoffRuleConfigSchema } from "@/lib/validations/automation-rules";
+import { completeHandoffRuleConfigSchema } from "@/lib/validations/automation-rules";
 import { AUTOMATION_SCHEMA_VERSION } from "@/server/automation/constants";
 import { getMaxAttempts } from "@/server/automation/config";
 import { cancelPendingFollowUpsTx } from "@/server/automation/follow-up";
@@ -198,7 +198,7 @@ async function transitionHandoff(
       select: { id: true, enabled: true, config: true },
     });
     const config = rule?.enabled
-      ? handoffRuleConfigSchema.safeParse(rule.config)
+      ? completeHandoffRuleConfigSchema.safeParse(rule.config)
       : null;
     const sourceMessage = input.sourceMessageId
       ? await tx.message.findFirst({
@@ -397,7 +397,7 @@ export async function preflightHandoffForDispatchTx(
     ) {
       return cancel("rule_disabled");
     }
-    const config = handoffRuleConfigSchema.safeParse(rule.config);
+    const config = completeHandoffRuleConfigSchema.safeParse(rule.config);
     if (!config.success) return cancel("rule_invalid");
 
     const conversation = event.conversation;
@@ -436,10 +436,6 @@ export async function preflightHandoffForDispatchTx(
         role: membership.role,
       })),
     });
-    if (resolved.recipients.length === 0) {
-      return cancel("no_valid_recipients");
-    }
-
     const updated = await tx.automationEvent.updateMany({
       where: {
         id: event.id,

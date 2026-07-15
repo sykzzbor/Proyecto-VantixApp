@@ -1,5 +1,5 @@
 import { automationRuleUpdateSchema } from "@/lib/validations/automation-rules";
-import { AUTOMATION_RULE_PERMISSIONS } from "@/lib/permissions";
+import { AUTOMATION_RULE_PERMISSIONS, can } from "@/lib/permissions";
 import {
   authorizeAutomationRequest,
   automationJson,
@@ -22,7 +22,12 @@ export async function GET(request: Request) {
     AUTOMATION_RULE_PERMISSIONS.read
   );
   if (!authorization.ok) return authorization.response;
-  const rules = await getAutomationRules(authorization.ctx.organizationId);
+  const rules = await getAutomationRules(authorization.ctx.organizationId, {
+    redactSensitiveConfig: !can(
+      authorization.ctx.role,
+      AUTOMATION_RULE_PERMISSIONS.manage
+    ),
+  });
   return automationJson({ rules });
 }
 

@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { loadEnvConfig } from "@next/env";
-import { DEFAULT_FOLLOW_UP_CONFIG } from "@/lib/validations/automation-rules";
+import {
+  DEFAULT_FOLLOW_UP_CONFIG,
+  DEFAULT_HANDOFF_CONFIG,
+} from "@/lib/validations/automation-rules";
 
 loadEnvConfig(process.cwd());
 
@@ -538,12 +541,38 @@ test(
         rule: {
           type: "HANDOFF_ALERT",
           enabled: true,
-          config: { recipients: "OWNERS_ADMINS" },
+          config: {
+            ...DEFAULT_HANDOFF_CONFIG,
+            recipients: "OWNERS_ADMINS",
+            phoneNumbers: ["+12025550123"],
+            templateName: "handoff_alert_test",
+          },
           expectedVersion: initial?.version ?? null,
         },
       });
       assert.equal(saved.version, 2);
       assert.equal(saved.enabled, true);
+      const redacted = (
+        await rules.getAutomationRules(organizationA.id, {
+          redactSensitiveConfig: true,
+        })
+      ).find((rule) => rule.type === "HANDOFF_ALERT");
+      assert.deepEqual(
+        redacted && "phoneNumbers" in redacted.config
+          ? redacted.config.phoneNumbers
+          : null,
+        ["•••• 0123"]
+      );
+      const ruleAudit = await prisma.auditLog.findFirst({
+        where: {
+          organizationId: organizationA.id,
+          action: "automation.rule_updated",
+          entityId: ruleA.id,
+        },
+        orderBy: { createdAt: "desc" },
+        select: { details: true },
+      });
+      assert.equal(JSON.stringify(ruleAudit?.details).includes("+12025550123"), false);
 
       await assert.rejects(
         rules.updateAutomationRule({
@@ -634,6 +663,467 @@ test(
         where: { id: { in: [organizationA.id, organizationB.id] } },
       });
       await prisma.user.delete({ where: { id: user.id } });
+      await prisma.$disconnect();
+    }
+  }
+);
+
+test(
+  "handoff WhatsApp DB: aislamiento, configuración, idempotencia y error seguro",
+  { skip: !isExplicitSafeLocalDatabase() && "requiere opt-in y PostgreSQL local" },
+  async () => {
+    const [{ prisma }, action, meta] = await Promise.all([
+      import("@/lib/prisma"),
+      import("@/server/automation/handoff-alert-action"),
+      import("@/server/whatsapp/meta-client"),
+    ]);
+    const suffix = randomUUID();
+    const organizationA = await prisma.organization.create({
+      data: { name: "Handoff action A", slug: `handoff-action-a-${suffix}` },
+      select: { id: true },
+    });
+    const organizationB = await prisma.organization.create({
+      data: { name: "Handoff action B", slug: `handoff-action-b-${suffix}` },
+      select: { id: true },
+    });
+
+    const configA = {
+      ...DEFAULT_HANDOFF_CONFIG,
+      phoneNumbers: ["+12025550123", "+12025550124"],
+      templateName: "handoff_alert_test",
+      templateLanguage: "es_AR",
+    };
+    const configB = {
+      ...DEFAULT_HANDOFF_CONFIG,
+      phoneNumbers: ["+12025550125"],
+      templateName: "handoff_alert_test_b",
+      templateLanguage: "en_US",
+    };
+
+    try {
+      const [ruleA, ruleB] = await Promise.all([
+        prisma.organizationAutomationRule.create({
+          data: {
+            organizationId: organizationA.id,
+            type: "HANDOFF_ALERT",
+            enabled: true,
+            config: configA,
+          },
+          select: { id: true },
+        }),
+        prisma.organizationAutomationRule.create({
+          data: {
+            organizationId: organizationB.id,
+            type: "HANDOFF_ALERT",
+            enabled: true,
+            config: configB,
+          },
+          select: { id: true },
+        }),
+      ]);
+      const [customerA, customerB] = await Promise.all([
+        prisma.customer.create({
+          data: { organizationId: organizationA.id, name: "Cliente A" },
+          select: { id: true },
+        }),
+        prisma.customer.create({
+          data: { organizationId: organizationB.id, name: "Cliente B" },
+          select: { id: true },
+        }),
+      ]);
+      const [integrationA, integrationB] = await Promise.all([
+        prisma.whatsappIntegration.create({
+          data: {
+            organizationId: organizationA.id,
+            wabaId: `test-waba-a-${suffix}`,
+            phoneNumberId: "900000000000001",
+            displayPhoneNumber: "+1 202 555 0101",
+            verifiedName: "Test A",
+            encryptedAccessToken: "test-encrypted-token-a",
+            status: "CONNECTED",
+          },
+          select: { id: true },
+        }),
+        prisma.whatsappIntegration.create({
+          data: {
+            organizationId: organizationB.id,
+            wabaId: `test-waba-b-${suffix}`,
+            phoneNumberId: "900000000000002",
+            displayPhoneNumber: "+1 202 555 0102",
+            verifiedName: "Test B",
+            encryptedAccessToken: "test-encrypted-token-b",
+            status: "CONNECTED",
+          },
+          select: { id: true },
+        }),
+      ]);
+      const [conversationA, conversationB] = await Promise.all([
+        prisma.conversation.create({
+          data: {
+            organizationId: organizationA.id,
+            customerId: customerA.id,
+            whatsappIntegrationId: integrationA.id,
+            channel: "whatsapp",
+            status: "OPEN",
+            handlingMode: "HUMAN",
+          },
+          select: { id: true },
+        }),
+        prisma.conversation.create({
+          data: {
+            organizationId: organizationB.id,
+            customerId: customerB.id,
+            whatsappIntegrationId: integrationB.id,
+            channel: "whatsapp",
+            status: "OPEN",
+            handlingMode: "HUMAN",
+          },
+          select: { id: true },
+        }),
+      ]);
+      // Una segunda conexión más nueva no puede sustituir silenciosamente la
+      // integración vinculada a la conversación.
+      await prisma.whatsappIntegration.create({
+        data: {
+          organizationId: organizationA.id,
+          wabaId: `test-waba-a-secondary-${suffix}`,
+          phoneNumberId: "900000000000003",
+          displayPhoneNumber: "+1 202 555 0103",
+          verifiedName: "Test A secundaria",
+          encryptedAccessToken: "test-encrypted-token-a-secondary",
+          status: "CONNECTED",
+        },
+      });
+
+      async function createProcessingEvent(input: {
+        organizationId: string;
+        ruleId: string;
+        conversationId: string;
+        type?: string;
+        provider?: string;
+        label: string;
+      }) {
+        const lockedAt = new Date();
+        const event = await prisma.automationEvent.create({
+          data: {
+            organizationId: input.organizationId,
+            automationRuleId: input.ruleId,
+            conversationId: input.conversationId,
+            type: input.type ?? action.HANDOFF_ALERT_EVENT_TYPE,
+            payload: {},
+            status: "PROCESSING",
+            idempotencyKey: `handoff-action-${input.label}-${suffix}`,
+            attempts: 1,
+            lockedAt,
+          },
+          select: { id: true },
+        });
+        await prisma.automationRun.create({
+          data: {
+            organizationId: input.organizationId,
+            automationEventId: event.id,
+            provider: input.provider ?? "n8n",
+            status: "STARTED",
+            attempt: 1,
+            startedAt: lockedAt,
+          },
+        });
+        return event;
+      }
+
+      const eventA = await createProcessingEvent({
+        organizationId: organizationA.id,
+        ruleId: ruleA.id,
+        conversationId: conversationA.id,
+        label: "a",
+      });
+      const sendCalls: Array<{
+        to: string;
+        templateName: string;
+        phoneNumberId: string;
+      }> = [];
+      const sendTemplate = async (input: {
+        to: string;
+        templateName: string;
+        phoneNumberId: string;
+      }) => {
+        sendCalls.push({
+          to: input.to,
+          templateName: input.templateName,
+          phoneNumberId: input.phoneNumberId,
+        });
+        return { messageId: `test-meta-message-${sendCalls.length}` };
+      };
+      const commonDependencies = {
+        getRecipientHashSecret: () => "test-recipient-hash-secret",
+        decryptToken: () => "test-decrypted-access-token",
+        sendTemplate,
+        getProviderMode: () => "n8n" as const,
+      };
+
+      const mockMode = await action.executeHandoffAlertAction(
+        { eventId: eventA.id, organizationId: organizationA.id },
+        { ...commonDependencies, getProviderMode: () => "mock" as const }
+      );
+      assert.equal(mockMode.ok, false);
+      assert.equal(!mockMode.ok && mockMode.code, "not_executable");
+      assert.equal(sendCalls.length, 0);
+
+      const wrongOrganization = await action.executeHandoffAlertAction(
+        { eventId: eventA.id, organizationId: organizationB.id },
+        commonDependencies
+      );
+      assert.deepEqual(wrongOrganization, {
+        ok: false,
+        code: "not_found",
+        message: "No se encontró la acción solicitada.",
+        retryable: false,
+      });
+      assert.equal(sendCalls.length, 0);
+
+      const wrongEvent = await createProcessingEvent({
+        organizationId: organizationA.id,
+        ruleId: ruleA.id,
+        conversationId: conversationA.id,
+        type: "automation.test",
+        label: "wrong-event",
+      });
+      const wrongEventResult = await action.executeHandoffAlertAction(
+        { eventId: wrongEvent.id, organizationId: organizationA.id },
+        commonDependencies
+      );
+      assert.equal(wrongEventResult.ok, false);
+      assert.equal(!wrongEventResult.ok && wrongEventResult.code, "not_executable");
+      assert.equal(sendCalls.length, 0);
+
+      const mockRunEvent = await createProcessingEvent({
+        organizationId: organizationA.id,
+        ruleId: ruleA.id,
+        conversationId: conversationA.id,
+        provider: "mock",
+        label: "mock-provider",
+      });
+      const mockRunResult = await action.executeHandoffAlertAction(
+        { eventId: mockRunEvent.id, organizationId: organizationA.id },
+        commonDependencies
+      );
+      assert.equal(mockRunResult.ok, false);
+      assert.equal(!mockRunResult.ok && mockRunResult.code, "not_executable");
+      assert.equal(sendCalls.length, 0);
+
+      await prisma.organizationAutomationRule.update({
+        where: { id: ruleA.id },
+        data: { config: { ...configA, templateName: "" } },
+      });
+      const missingTemplate = await action.executeHandoffAlertAction(
+        { eventId: eventA.id, organizationId: organizationA.id },
+        commonDependencies
+      );
+      assert.equal(missingTemplate.ok, false);
+      assert.equal(!missingTemplate.ok && missingTemplate.code, "template_missing");
+
+      await prisma.organizationAutomationRule.update({
+        where: { id: ruleA.id },
+        data: {
+          config: { ...configA, phoneNumbers: ["not-e164"] },
+        },
+      });
+      const invalidRecipients = await action.executeHandoffAlertAction(
+        { eventId: eventA.id, organizationId: organizationA.id },
+        commonDependencies
+      );
+      assert.equal(invalidRecipients.ok, false);
+      assert.equal(
+        !invalidRecipients.ok && invalidRecipients.code,
+        "invalid_recipients"
+      );
+      assert.equal(sendCalls.length, 0);
+      await prisma.organizationAutomationRule.update({
+        where: { id: ruleA.id },
+        data: { config: configA },
+      });
+
+      const claimNow = new Date();
+      await prisma.automationEvent.update({
+        where: { id: eventA.id },
+        data: { lockedAt: new Date(claimNow.getTime() - 10 * 60 * 1000) },
+      });
+      let releaseFirst!: () => void;
+      let notifyClaimed!: () => void;
+      const releasePromise = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      const claimedPromise = new Promise<void>((resolve) => {
+        notifyClaimed = resolve;
+      });
+      const first = action.executeHandoffAlertAction(
+        { eventId: eventA.id, organizationId: organizationA.id },
+        {
+          ...commonDependencies,
+          now: () => claimNow,
+          afterClaim: async () => {
+            notifyClaimed();
+            await releasePromise;
+          },
+        }
+      );
+      await claimedPromise;
+      const refreshedClaim = await prisma.automationEvent.findFirst({
+        where: { id: eventA.id, organizationId: organizationA.id },
+        select: { actionClaimedAt: true, lockedAt: true },
+      });
+      assert.equal(
+        refreshedClaim?.actionClaimedAt?.getTime(),
+        claimNow.getTime()
+      );
+      assert.equal(refreshedClaim?.lockedAt?.getTime(), claimNow.getTime());
+      const concurrentRetry = await action.executeHandoffAlertAction(
+        { eventId: eventA.id, organizationId: organizationA.id },
+        commonDependencies
+      );
+      assert.equal(concurrentRetry.ok, true);
+      assert.equal(concurrentRetry.ok && concurrentRetry.state, "in_progress");
+      releaseFirst();
+      const firstResult = await first;
+      assert.equal(firstResult.ok, true);
+      assert.equal(firstResult.ok && firstResult.state, "success");
+      assert.equal(sendCalls.length, 2);
+      assert.deepEqual(
+        sendCalls.map((call) => call.to),
+        configA.phoneNumbers
+      );
+      assert.equal(
+        sendCalls.every((call) => call.phoneNumberId === "900000000000001"),
+        true
+      );
+
+      const duplicate = await action.executeHandoffAlertAction(
+        { eventId: eventA.id, organizationId: organizationA.id },
+        commonDependencies
+      );
+      assert.equal(duplicate.ok, true);
+      assert.equal(duplicate.ok && duplicate.state, "already_sent");
+      assert.equal(sendCalls.length, 2);
+      const storedA = await prisma.automationEvent.findFirst({
+        where: { id: eventA.id, organizationId: organizationA.id },
+        select: {
+          actionClaimedAt: true,
+          actionCompletedAt: true,
+          actionDeliveries: {
+            select: {
+              status: true,
+              recipientHash: true,
+              templateName: true,
+            },
+          },
+        },
+      });
+      assert.equal(storedA?.actionClaimedAt instanceof Date, true);
+      assert.equal(storedA?.actionCompletedAt instanceof Date, true);
+      assert.equal(storedA?.actionDeliveries.length, 2);
+      assert.equal(
+        storedA?.actionDeliveries.every((delivery) => delivery.status === "SENT"),
+        true
+      );
+      assert.equal(
+        JSON.stringify(storedA?.actionDeliveries).includes("+1202555"),
+        false
+      );
+
+      const eventB = await createProcessingEvent({
+        organizationId: organizationB.id,
+        ruleId: ruleB.id,
+        conversationId: conversationB.id,
+        label: "b",
+      });
+      const resultB = await action.executeHandoffAlertAction(
+        { eventId: eventB.id, organizationId: organizationB.id },
+        commonDependencies
+      );
+      assert.equal(resultB.ok, true);
+      assert.deepEqual(sendCalls.slice(2).map((call) => call.to), [
+        "+12025550125",
+      ]);
+
+      const failedEvent = await createProcessingEvent({
+        organizationId: organizationA.id,
+        ruleId: ruleA.id,
+        conversationId: conversationA.id,
+        label: "meta-failure",
+      });
+      let failingCalls = 0;
+      const failed = await action.executeHandoffAlertAction(
+        { eventId: failedEvent.id, organizationId: organizationA.id },
+        {
+          ...commonDependencies,
+          sendTemplate: async () => {
+            failingCalls += 1;
+            throw new meta.MetaApiError({
+              code: "authentication",
+              safeMessage: "Meta rechazó la configuración de WhatsApp.",
+            });
+          },
+        }
+      );
+      assert.equal(failed.ok, false);
+      assert.equal(!failed.ok && failed.code, "send_failed");
+      assert.equal(!failed.ok && failed.retryable, false);
+      assert.equal(
+        !failed.ok && failed.message,
+        "Meta rechazó la configuración de WhatsApp."
+      );
+      assert.equal(JSON.stringify(failed).includes("test-decrypted"), false);
+      assert.equal(failingCalls, 2);
+
+      const retryAfterFailure = await action.executeHandoffAlertAction(
+        { eventId: failedEvent.id, organizationId: organizationA.id },
+        commonDependencies
+      );
+      assert.equal(retryAfterFailure.ok, false);
+      assert.equal(
+        !retryAfterFailure.ok && retryAfterFailure.code,
+        "send_failed"
+      );
+      assert.equal(failingCalls, 2);
+      const failedDeliveries = await prisma.automationActionDelivery.findMany({
+        where: {
+          organizationId: organizationA.id,
+          eventId: failedEvent.id,
+        },
+        select: { status: true, errorCode: true, errorMessage: true },
+      });
+      assert.equal(failedDeliveries.length, 2);
+      assert.equal(
+        failedDeliveries.every(
+          (delivery) =>
+            delivery.status === "FAILED" &&
+            delivery.errorCode === "meta_authentication"
+        ),
+        true
+      );
+      assert.equal(
+        JSON.stringify(failedDeliveries).includes("test-decrypted"),
+        false
+      );
+
+      const audits = await prisma.auditLog.findMany({
+        where: {
+          organizationId: organizationA.id,
+          action: {
+            in: [
+              "automation.handoff_alert_sent",
+              "automation.handoff_alert_failed",
+            ],
+          },
+        },
+        select: { details: true },
+      });
+      assert.equal(audits.length >= 2, true);
+      assert.equal(JSON.stringify(audits).includes("+1202555"), false);
+    } finally {
+      await prisma.organization.deleteMany({
+        where: { id: { in: [organizationA.id, organizationB.id] } },
+      });
       await prisma.$disconnect();
     }
   }

@@ -50,13 +50,23 @@ type AutomationRunStatusLike = "STARTED" | "SUCCEEDED" | "FAILED";
 export function canAcceptSuccessfulAutomationCallback(input: {
   eventType: string;
   actionDeliveryStatus: string | null;
+  actionCompletedAt?: Date | null;
+  handoffDeliveryStatuses?: string[];
 }) {
-  return (
-    input.eventType !== "conversation.followup_due" ||
-    ["SENT", "DELIVERED", "READ"].includes(
+  if (input.eventType === "conversation.followup_due") {
+    return ["SENT", "DELIVERED", "READ"].includes(
       input.actionDeliveryStatus ?? ""
-    )
-  );
+    );
+  }
+  if (input.eventType === "conversation.handoff_requested") {
+    const deliveries = input.handoffDeliveryStatuses ?? [];
+    return (
+      input.actionCompletedAt instanceof Date &&
+      deliveries.length > 0 &&
+      deliveries.every((status) => status === "SENT")
+    );
+  }
+  return true;
 }
 
 export type ApplyCallbackResult =
@@ -131,12 +141,17 @@ export async function applyAutomationCallback(
           attempts: true,
           type: true,
           conversationId: true,
+          actionCompletedAt: true,
           actionMessage: {
             select: {
               organizationId: true,
               conversationId: true,
               deliveryStatus: true,
             },
+          },
+          actionDeliveries: {
+            where: { organizationId: input.organizationId },
+            select: { status: true },
           },
         },
       },
@@ -202,12 +217,20 @@ export async function applyAutomationCallback(
         event.actionMessage.conversationId === event.conversationId
           ? event.actionMessage.deliveryStatus
           : null,
+      actionCompletedAt: event.actionCompletedAt,
+      handoffDeliveryStatuses: event.actionDeliveries.map(
+        (delivery) => delivery.status
+      ),
     })
   ) {
+    const actionErrorCode =
+      event.type === "conversation.handoff_requested"
+        ? "handoff_action_incomplete"
+        : "followup_action_incomplete";
     await recordCallbackTelemetry({
       organizationId: input.organizationId,
       now,
-      errorCode: "followup_action_incomplete",
+      errorCode: actionErrorCode,
       recordOutcome: true,
     });
     return { ok: false, code: "action_incomplete" };
@@ -221,6 +244,22 @@ export async function applyAutomationCallback(
         organizationId: input.organizationId,
         status: "PROCESSING",
         attempts: run.attempt,
+        ...(input.status === "succeeded" &&
+        event.type === "conversation.handoff_requested"
+          ? {
+              actionCompletedAt: event.actionCompletedAt,
+              actionDeliveries: {
+                some: {
+                  organizationId: input.organizationId,
+                  status: "SENT" as const,
+                },
+                none: {
+                  organizationId: input.organizationId,
+                  status: { not: "SENT" as const },
+                },
+              },
+            }
+          : {}),
       },
       data: {
         status: transition.newStatus,

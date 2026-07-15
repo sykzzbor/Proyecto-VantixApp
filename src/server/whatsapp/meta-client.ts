@@ -5,6 +5,9 @@ import {
 
 const META_ID_PATTERN = /^\d{5,32}$/;
 const RECIPIENT_PATTERN = /^[1-9]\d{6,14}$/;
+const E164_PATTERN = /^\+[1-9]\d{7,14}$/;
+const TEMPLATE_NAME_PATTERN = /^[a-z0-9_]{1,512}$/;
+const TEMPLATE_LANGUAGE_PATTERN = /^[a-z]{2,3}(?:_[A-Z]{2})?$/;
 const MAX_TEXT_LENGTH = 4096;
 
 export type MetaApiErrorCode =
@@ -261,6 +264,61 @@ export async function sendWhatsappTextMessage(input: {
     throw new MetaApiError({
       code: "invalid_response",
       safeMessage: "Meta no confirmo el envio del mensaje.",
+    });
+  }
+
+  return { messageId: firstMessage.id.trim() };
+}
+
+export async function sendWhatsappTemplateMessage(input: {
+  phoneNumberId: string;
+  accessToken: string;
+  to: string;
+  templateName: string;
+  language: string;
+}): Promise<WhatsappSendResult> {
+  const phoneNumberId = assertMetaId(input.phoneNumberId);
+  const e164Recipient = input.to.trim();
+  const templateName = input.templateName.trim();
+  const language = input.language.trim();
+
+  if (
+    !E164_PATTERN.test(e164Recipient) ||
+    !TEMPLATE_NAME_PATTERN.test(templateName) ||
+    !TEMPLATE_LANGUAGE_PATTERN.test(language)
+  ) {
+    throw new MetaApiError({
+      code: "invalid_request",
+      safeMessage: "La plantilla de WhatsApp no es valida.",
+    });
+  }
+
+  const payload = await requestMeta({
+    path: `${phoneNumberId}/messages`,
+    accessToken: input.accessToken,
+    method: "POST",
+    body: {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: e164Recipient.slice(1),
+      type: "template",
+      template: {
+        name: templateName,
+        language: { code: language },
+      },
+    },
+  });
+
+  const messages = isRecord(payload) ? payload.messages : undefined;
+  const firstMessage = Array.isArray(messages) ? messages[0] : undefined;
+  if (
+    !isRecord(firstMessage) ||
+    typeof firstMessage.id !== "string" ||
+    !firstMessage.id.trim()
+  ) {
+    throw new MetaApiError({
+      code: "invalid_response",
+      safeMessage: "Meta no confirmo el envio de la plantilla.",
     });
   }
 

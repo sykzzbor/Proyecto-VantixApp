@@ -24,7 +24,6 @@ Después de importar, mantenerlos inactivos hasta completar variables, credencia
 Crear estas variables en el proyecto de n8n:
 
 - `VANTIX_APP_BASE_URL`: origen público HTTPS de VantixApp, sin ruta de API.
-- `VANTIX_HANDOFF_NOTIFICATION_URL`: endpoint HTTPS del canal de avisos gestionado por n8n.
 - `VANTIX_HANDOFF_WORKFLOW_ID`: ID asignado por n8n al workflow **Vantix - Handoff Alert**.
 - `VANTIX_FOLLOWUP_WORKFLOW_ID`: ID asignado por n8n al workflow **Vantix - Follow-up**.
 - `VANTIX_ERROR_WORKFLOW_ID`: ID asignado por n8n al workflow **Vantix - Error Handler**.
@@ -45,15 +44,9 @@ La contraparte en VantixApp es la variable `N8N_WEBHOOK_SECRET`.
 
 ### Firma de callbacks y acciones
 
-Crear una segunda credencial **Crypto** cuyo campo HMAC corresponda al secreto de callbacks/acciones de VantixApp. Seleccionarla en todos los nodos **Sign ... callback** y en **Sign follow-up action**.
+Crear una segunda credencial **Crypto** cuyo campo HMAC corresponda al secreto de callbacks/acciones de VantixApp. Seleccionarla en todos los nodos **Sign ... callback**, en **Sign handoff action** y en **Sign follow-up action**.
 
 La contraparte en VantixApp es la variable `N8N_CALLBACK_SECRET`. No reutilizar el secreto de entrada.
-
-### Canal de avisos
-
-Crear una credencial **HTTP Header Auth** propia de n8n para el servicio configurado en `VANTIX_HANDOFF_NOTIFICATION_URL` y seleccionarla en **Notify allowed recipients**.
-
-Ese servicio debe aceptar el cuerpo mínimo del aviso, responder con `2xx` únicamente cuando acepte la notificación y respetar el header `Idempotency-Key`. También se puede reemplazar ese nodo por un nodo oficial de Slack, Teams o correo, conservando la entrada validada, la deduplicación y las ramas de éxito/error.
 
 ## Variables de VantixApp/Vercel
 
@@ -122,19 +115,22 @@ Todo callback usa `POST /api/webhooks/n8n/callback`, firma el body crudo con la 
 
 ## Derivación humana
 
-**Vantix - Handoff Alert** vuelve a validar el evento y construye un aviso con:
+**Vantix - Handoff Alert** vuelve a validar el wrapper recibido del router y delega el envío exclusivamente a VantixApp. No selecciona destinatarios, no recibe números telefónicos, no renderiza plantillas y no conserva un ledger propio.
 
-- IDs del evento, organización y conversación;
-- nombre visible del negocio y nombre seguro del cliente;
-- enlace interno y fecha de solicitud;
-- agente asignado, cuando existe;
-- destinatarios ya autorizados por VantixApp.
+El workflow envía este único cuerpo crudo a `POST /api/webhooks/n8n/actions/send-handoff-alert`:
 
-No recibe historial de conversación, tokens ni objetos Prisma.
+```json
+{
+  "eventId": "<id del evento>",
+  "organizationId": "<id de organización>"
+}
+```
 
-Antes de contactar el canal, el workflow reserva `eventId + idempotencyKey` en los datos estáticos globales y propaga la misma clave mediante `Idempotency-Key`. Solo un `2xx` cambia el ledger a `succeeded`; únicamente ese estado puede omitir una notificación y emitir callback exitoso. Un estado `reserved` se reintenta con la misma clave y nunca se presenta como éxito por sí solo.
+`runId` se conserva solo dentro de la ejecución para correlacionar el callback normal y nunca forma parte del cuerpo de la acción. El workflow genera `x-vantix-timestamp` en milisegundos y firma HMAC SHA-256 sobre la concatenación exacta `${timestamp}.${rawBody}` con la credencial Crypto asociada a `N8N_CALLBACK_SECRET`. El digest se envía como `x-vantix-signature: sha256=<digest hexadecimal>`.
 
-El workflow conserva `handoffNotificationLedger` hasta siete días, sujeto a la cota de 10.000 entradas, una ventana superior a los reintentos automáticos previstos. No lo limpies manualmente. Los datos estáticos de n8n no son un lock distribuido fuerte y solo se persisten al finalizar ejecuciones de producción; por eso el canal externo **debe garantizar idempotencia** para `Idempotency-Key`. Las ejecuciones manuales del editor no sirven para verificar esta protección. Si el canal elegido no ofrece ese contrato, no activar `HANDOFF_ALERT`: se prioriza no duplicar avisos y no informar éxitos falsos.
+VantixApp busca el evento y la regla reales, obtiene allí los números E.164 y la plantilla aprobada, usa su propia integración de WhatsApp Cloud API, registra auditoría e impide duplicados. n8n no recibe credenciales de Meta, teléfonos, texto de plantilla ni tokens.
+
+La acción espera como máximo 30 segundos. Las respuestas `success` y `already_sent` generan el callback exitoso normal. `in_progress` y `not_executable` terminan sin callback para no producir estados falsos. Un timeout, un error de red o una respuesta HTTP `408`, `425`, `429` o `5xx` también termina sin callback: VantixApp conserva el evento para reconciliar un resultado potencialmente ambiguo sin duplicar avisos. La única excepción es HTTP `502` con `error: "send_failed"`, que confirma que Meta rechazó o no completó el envío y pasa al error handler. Los errores confirmados usan códigos estables y nunca propagan cuerpos, mensajes o detalles de red.
 
 ## Seguimiento automático
 
@@ -156,16 +152,15 @@ El workflow envía callback de éxito solamente cuando la acción responde HTTP 
 
 ## Publicación y prueba controlada
 
-Después de la revisión de código:
+No publicar ni activar los workflows durante esta etapa. Cuando exista una autorización posterior:
 
 1. Completar las variables no secretas.
-2. Seleccionar las dos credenciales Crypto en cada nodo correspondiente.
-3. Seleccionar la credencial del canal de avisos.
-4. Publicar primero **Error Handler**, **Handoff Alert** y **Follow-up**.
-5. Publicar por último **Event Router** y copiar su Production URL a la configuración segura de VantixApp.
-6. Mantener `AUTOMATION_PROVIDER=mock` hasta que la persona responsable autorice la activación.
-7. Cuando se autorice, usar **Probar conexión** en VantixApp; la prueba solo debe considerarse exitosa después del callback firmado.
-8. Probar derivación y seguimiento con datos locales o de prueba autorizados, nunca con datos inventados en producción.
+2. Seleccionar las dos credenciales Crypto en cada nodo correspondiente, incluida **Sign handoff action**.
+3. Publicar primero **Error Handler**, **Handoff Alert** y **Follow-up**.
+4. Publicar por último **Event Router** y copiar su Production URL a la configuración segura de VantixApp.
+5. Mantener `AUTOMATION_PROVIDER=mock` hasta que la persona responsable autorice la activación.
+6. Cuando se autorice, usar **Probar conexión** en VantixApp; la prueba solo debe considerarse exitosa después del callback firmado.
+7. Probar derivación y seguimiento con datos locales o de prueba autorizados, nunca con datos inventados en producción.
 
 ## Controles de seguridad incluidos
 
@@ -177,4 +172,4 @@ Después de la revisión de código:
 - Los callbacks correlacionan `eventId`, `organizationId` y el `runId` exacto del intento.
 - Las ejecuciones exitosas, fallidas y manuales no se guardan; la política de redacción está en `all`.
 - El error handler nunca propaga respuestas HTTP, stack traces ni mensajes arbitrarios.
-- El seguimiento se envía únicamente desde VantixApp y no desde n8n.
+- Las alertas de derivación y los seguimientos se envían únicamente desde VantixApp y no desde n8n.

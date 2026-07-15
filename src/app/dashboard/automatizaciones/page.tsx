@@ -36,6 +36,7 @@ export default async function AutomatizacionesPage({
 }) {
   const { org, role } = await requireOrgContext();
   if (!can(role, "automation.view")) redirect("/dashboard");
+  const canManageAutomation = can(role, "automation.manage");
 
   const params = await searchParams;
   const periodResult = automationPeriodSchema.safeParse(scalar(params.periodo));
@@ -78,7 +79,9 @@ export default async function AutomatizacionesPage({
       listAutomationRuns(org.id, runQuery),
       listAutomationEventTypes(org.id),
       listAutomationProviders(org.id),
-      getAutomationRules(org.id),
+      getAutomationRules(org.id, {
+        redactSensitiveConfig: !canManageAutomation,
+      }),
     ]);
 
   return (
@@ -96,7 +99,7 @@ export default async function AutomatizacionesPage({
         providers={providers}
         rules={rules}
         organizationName={org.name}
-        canManage={can(role, "automation.manage")}
+        canManage={canManageAutomation}
         filters={{
           period,
           tab,

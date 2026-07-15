@@ -3,11 +3,13 @@ import { prisma } from "@/lib/prisma";
 import {
   DEFAULT_FOLLOW_UP_CONFIG,
   DEFAULT_HANDOFF_CONFIG,
+  automationRuleUpdateSchema,
+  isCompleteHandoffConfig,
   parseAutomationRuleConfig,
   type AutomationRuleTypeValue,
   type AutomationRuleUpdate,
   type FollowUpRuleConfig,
-  type HandoffRuleConfig,
+  type ParsedHandoffRuleConfig,
 } from "@/lib/validations/automation-rules";
 import { sanitizeAutomationMessage } from "@/server/automation/sanitization";
 import { cancelPendingFollowUpsTx } from "@/server/automation/follow-up";
@@ -25,7 +27,7 @@ export type AutomationRuleView = {
   version: number | null;
   type: AutomationRuleTypeValue;
   enabled: boolean;
-  config: HandoffRuleConfig | FollowUpRuleConfig;
+  config: ParsedHandoffRuleConfig | FollowUpRuleConfig;
   state: AutomationRuleVisualState;
   lastExecutionAt: string | null;
   lastError: string | null;
@@ -56,6 +58,12 @@ function defaultConfig(type: AutomationRuleTypeValue) {
     : DEFAULT_FOLLOW_UP_CONFIG;
 }
 
+function maskPhoneNumber(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  const suffix = digits.slice(-4);
+  return suffix ? `•••• ${suffix}` : "••••";
+}
+
 export function resolveAutomationRuleState(input: {
   enabled: boolean;
   configValid: boolean;
@@ -75,7 +83,11 @@ export function resolveAutomationRuleState(input: {
   return "ACTIVE";
 }
 
-function toView(type: AutomationRuleTypeValue, stored?: StoredRule): AutomationRuleView {
+function toView(
+  type: AutomationRuleTypeValue,
+  stored?: StoredRule,
+  options: { redactSensitiveConfig?: boolean } = {}
+): AutomationRuleView {
   if (!stored) {
     return {
       id: null,
@@ -84,16 +96,27 @@ function toView(type: AutomationRuleTypeValue, stored?: StoredRule): AutomationR
       type,
       enabled: false,
       config: defaultConfig(type),
-      state: "PAUSED",
+      state: type === "HANDOFF_ALERT" ? "INCOMPLETE" : "PAUSED",
       lastExecutionAt: null,
       lastError: null,
     };
   }
 
-  let config: HandoffRuleConfig | FollowUpRuleConfig = defaultConfig(type);
+  let config: ParsedHandoffRuleConfig | FollowUpRuleConfig = defaultConfig(type);
   let configValid = true;
   try {
     config = parseAutomationRuleConfig(type, stored.config);
+    if (type === "HANDOFF_ALERT") {
+      configValid = isCompleteHandoffConfig(config);
+      if (options.redactSensitiveConfig) {
+        config = {
+          ...(config as ParsedHandoffRuleConfig),
+          phoneNumbers: (config as ParsedHandoffRuleConfig).phoneNumbers.map(
+            maskPhoneNumber
+          ),
+        };
+      }
+    }
   } catch {
     configValid = false;
   }
@@ -118,7 +141,8 @@ function toView(type: AutomationRuleTypeValue, stored?: StoredRule): AutomationR
 }
 
 export async function getAutomationRules(
-  organizationId: string
+  organizationId: string,
+  options: { redactSensitiveConfig?: boolean } = {}
 ): Promise<AutomationRuleView[]> {
   const stored = await prisma.organizationAutomationRule.findMany({
     where: { organizationId },
@@ -211,16 +235,24 @@ export async function getAutomationRules(
   }
   const byType = new Map(enriched.map((rule) => [rule.type, rule]));
   return (["HANDOFF_ALERT", "FOLLOW_UP"] as const).map((type) =>
-    toView(type, byType.get(type))
+    toView(type, byType.get(type), options)
   );
 }
 
 function safeAuditDetails(input: AutomationRuleUpdate) {
   if (input.type === "HANDOFF_ALERT") {
+    const parsed = parseAutomationRuleConfig(
+      "HANDOFF_ALERT",
+      input.config
+    ) as ParsedHandoffRuleConfig;
     return {
       type: input.type,
       enabled: input.enabled,
       recipients: input.config.recipients,
+      channel: parsed.channel,
+      phoneNumberCount: parsed.phoneNumbers.length,
+      templateConfigured: parsed.templateName.length > 0,
+      templateLanguage: parsed.templateLanguage,
     };
   }
   return {
@@ -240,13 +272,15 @@ export async function updateAutomationRule(input: {
   userId: string;
   rule: AutomationRuleUpdate;
 }): Promise<AutomationRuleView> {
+  // Mantiene las invariantes aunque el servicio sea invocado fuera de la ruta HTTP.
+  const rule = automationRuleUpdateSchema.parse(input.rule);
   try {
     await prisma.$transaction(async (tx) => {
       const existing = await tx.organizationAutomationRule.findUnique({
         where: {
           organizationId_type: {
             organizationId: input.organizationId,
-            type: input.rule.type,
+            type: rule.type,
           },
         },
         select: { id: true, version: true },
@@ -254,7 +288,7 @@ export async function updateAutomationRule(input: {
 
       let savedId: string;
       if (existing) {
-        const expected = input.rule.expectedVersion;
+        const expected = rule.expectedVersion;
         if (!expected || existing.version !== expected) {
           throw new AutomationRuleConflictError();
         }
@@ -265,8 +299,8 @@ export async function updateAutomationRule(input: {
             version: expected,
           },
           data: {
-            enabled: input.rule.enabled,
-            config: input.rule.config as Prisma.InputJsonValue,
+            enabled: rule.enabled,
+            config: rule.config as Prisma.InputJsonValue,
             updatedById: input.userId,
             version: { increment: 1 },
           },
@@ -274,15 +308,15 @@ export async function updateAutomationRule(input: {
         if (updated.count !== 1) throw new AutomationRuleConflictError();
         savedId = existing.id;
       } else {
-        if (input.rule.expectedVersion !== null) {
+        if (rule.expectedVersion !== null) {
           throw new AutomationRuleConflictError();
         }
         const created = await tx.organizationAutomationRule.create({
           data: {
             organizationId: input.organizationId,
-            type: input.rule.type,
-            enabled: input.rule.enabled,
-            config: input.rule.config as Prisma.InputJsonValue,
+            type: rule.type,
+            enabled: rule.enabled,
+            config: rule.config as Prisma.InputJsonValue,
             createdById: input.userId,
             updatedById: input.userId,
           },
@@ -291,7 +325,7 @@ export async function updateAutomationRule(input: {
         savedId = created.id;
       }
 
-      if (input.rule.type === "FOLLOW_UP" && !input.rule.enabled) {
+      if (rule.type === "FOLLOW_UP" && !rule.enabled) {
         await cancelPendingFollowUpsTx(tx, {
           organizationId: input.organizationId,
           reason: "rule_disabled",
@@ -307,7 +341,7 @@ export async function updateAutomationRule(input: {
             : "automation.rule_created",
           entityType: "automation_rule",
           entityId: savedId,
-          details: safeAuditDetails(input.rule),
+          details: safeAuditDetails(rule),
         },
       });
     });
@@ -323,5 +357,5 @@ export async function updateAutomationRule(input: {
   }
 
   const rules = await getAutomationRules(input.organizationId);
-  return rules.find((rule) => rule.type === input.rule.type)!;
+  return rules.find((savedRule) => savedRule.type === rule.type)!;
 }

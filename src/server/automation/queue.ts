@@ -26,6 +26,28 @@ import type {
 import { resolveStaleFollowUpAction } from "@/server/automation/follow-up-action";
 import { preflightHandoffForDispatchTx } from "@/server/automation/handoff";
 
+const HANDOFF_EVENT_TYPE = "conversation.handoff_requested";
+
+export function resolveStaleHandoffAction(input: {
+  eventType: string;
+  actionClaimedAt: Date | null;
+  deliveryStatuses: string[];
+}): "sent" | "failed" | "ambiguous" | null {
+  if (input.eventType !== HANDOFF_EVENT_TYPE || !input.actionClaimedAt) {
+    return null;
+  }
+  if (input.deliveryStatuses.some((status) => status === "FAILED")) {
+    return "failed";
+  }
+  if (
+    input.deliveryStatuses.length > 0 &&
+    input.deliveryStatuses.every((status) => status === "SENT")
+  ) {
+    return "sent";
+  }
+  return "ambiguous";
+}
+
 /**
  * Cola persistida en PostgreSQL. No depende de memoria local ni de procesos
  * encendidos permanentemente: cada corrida es un lote acotado, con locking
@@ -65,6 +87,10 @@ async function reclaimStaleProcessing(now: Date): Promise<number> {
                 actionClaimedAt: true,
                 cancellationReason: true,
                 actionMessage: { select: { deliveryStatus: true } },
+                actionDeliveries: {
+                  where: { organizationId: candidate.organizationId },
+                  select: { status: true },
+                },
               },
             });
             if (!event?.lockedAt) return false;
@@ -73,6 +99,13 @@ async function reclaimStaleProcessing(now: Date): Promise<number> {
               eventType: event.type,
               deliveryStatus: event.actionMessage?.deliveryStatus ?? null,
               actionClaimedAt: event.actionClaimedAt,
+            });
+            const staleHandoffAction = resolveStaleHandoffAction({
+              eventType: event.type,
+              actionClaimedAt: event.actionClaimedAt,
+              deliveryStatuses: event.actionDeliveries.map(
+                (delivery) => delivery.status
+              ),
             });
             const cancellationReason =
               staleAction === null &&
@@ -121,6 +154,33 @@ async function reclaimStaleProcessing(now: Date): Promise<number> {
                 lastError: "followup_delivery_ambiguous",
                 clearLock: true,
               };
+            } else if (staleHandoffAction === "sent") {
+              decision = {
+                status: "SUCCEEDED",
+                attempts: event.attempts,
+                nextAttemptAt: null,
+                processedAt: now,
+                lastError: null,
+                clearLock: true,
+              };
+            } else if (staleHandoffAction === "failed") {
+              decision = {
+                status: "FAILED",
+                attempts: event.attempts,
+                nextAttemptAt: null,
+                processedAt: now,
+                lastError: "handoff_delivery_failed",
+                clearLock: true,
+              };
+            } else if (staleHandoffAction === "ambiguous") {
+              decision = {
+                status: "DEAD_LETTER",
+                attempts: event.attempts,
+                nextAttemptAt: null,
+                processedAt: now,
+                lastError: "handoff_delivery_ambiguous",
+                clearLock: true,
+              };
             } else {
               decision = decideStaleProcessing({
                 attempts: event.attempts,
@@ -129,34 +189,80 @@ async function reclaimStaleProcessing(now: Date): Promise<number> {
               });
             }
 
-            const actionGuard: Prisma.AutomationEventWhereInput =
-              cancellationReason
-                ? {
-                    type: FOLLOW_UP_EVENT_TYPE,
-                    actionClaimedAt: null,
-                    cancellationReason,
-                  }
-                : staleAction === "sent"
-                ? {
-                    actionMessageId: event.actionMessageId,
-                    actionMessage: {
-                      deliveryStatus: { in: ["SENT", "DELIVERED", "READ"] },
-                    },
-                  }
-                : staleAction === "failed"
-                  ? {
-                      actionMessageId: event.actionMessageId,
-                      actionMessage: { deliveryStatus: "FAILED" },
-                    }
-                  : staleAction === "ambiguous"
-                    ? {
-                        actionMessageId: event.actionMessageId,
-                        actionClaimedAt: event.actionClaimedAt,
-                        ...(event.actionMessageId
-                          ? { actionMessage: { deliveryStatus: "PENDING" } }
-                          : {}),
-                      }
-                    : { actionClaimedAt: null };
+            let actionGuard: Prisma.AutomationEventWhereInput;
+            if (cancellationReason) {
+              actionGuard = {
+                type: FOLLOW_UP_EVENT_TYPE,
+                actionClaimedAt: null,
+                cancellationReason,
+              };
+            } else if (staleAction === "sent") {
+              actionGuard = {
+                actionMessageId: event.actionMessageId,
+                actionMessage: {
+                  deliveryStatus: { in: ["SENT", "DELIVERED", "READ"] },
+                },
+              };
+            } else if (staleAction === "failed") {
+              actionGuard = {
+                actionMessageId: event.actionMessageId,
+                actionMessage: { deliveryStatus: "FAILED" },
+              };
+            } else if (staleAction === "ambiguous") {
+              actionGuard = {
+                actionMessageId: event.actionMessageId,
+                actionClaimedAt: event.actionClaimedAt,
+                ...(event.actionMessageId
+                  ? { actionMessage: { deliveryStatus: "PENDING" } }
+                  : {}),
+              };
+            } else if (staleHandoffAction === "sent") {
+              actionGuard = {
+                type: HANDOFF_EVENT_TYPE,
+                actionClaimedAt: event.actionClaimedAt,
+                actionDeliveries: {
+                  some: {
+                    organizationId: event.organizationId,
+                    status: "SENT",
+                  },
+                  none: {
+                    organizationId: event.organizationId,
+                    status: { not: "SENT" },
+                  },
+                },
+              };
+            } else if (staleHandoffAction === "failed") {
+              actionGuard = {
+                type: HANDOFF_EVENT_TYPE,
+                actionClaimedAt: event.actionClaimedAt,
+                actionDeliveries: {
+                  some: {
+                    organizationId: event.organizationId,
+                    status: "FAILED",
+                  },
+                },
+              };
+            } else if (staleHandoffAction === "ambiguous") {
+              actionGuard = {
+                type: HANDOFF_EVENT_TYPE,
+                actionClaimedAt: event.actionClaimedAt,
+                actionDeliveries:
+                  event.actionDeliveries.length === 0
+                    ? { none: { organizationId: event.organizationId } }
+                    : {
+                        some: {
+                          organizationId: event.organizationId,
+                          status: "PROCESSING",
+                        },
+                        none: {
+                          organizationId: event.organizationId,
+                          status: "FAILED",
+                        },
+                      },
+              };
+            } else {
+              actionGuard = { actionClaimedAt: null };
+            }
 
             const updated = await tx.automationEvent.updateMany({
               where: {
@@ -173,7 +279,9 @@ async function reclaimStaleProcessing(now: Date): Promise<number> {
                 processedAt: decision.processedAt,
                 lastError: decision.lastError,
                 lockedAt: null,
-                ...(staleAction === "sent" ? { actionCompletedAt: now } : {}),
+                ...(staleAction === "sent" || staleHandoffAction !== null
+                  ? { actionCompletedAt: now }
+                  : {}),
               },
             });
             if (updated.count !== 1) return false;
@@ -203,7 +311,40 @@ async function reclaimStaleProcessing(now: Date): Promise<number> {
               select: { id: true, startedAt: true },
             });
             const completedWithoutError =
-              Boolean(cancellationReason) || staleAction === "sent";
+              Boolean(cancellationReason) ||
+              staleAction === "sent" ||
+              staleHandoffAction === "sent";
+            let reconciledErrorMessage: string | null = null;
+            if (!completedWithoutError) {
+              if (staleAction === "ambiguous") {
+                reconciledErrorMessage =
+                  "El resultado del envío no pudo confirmarse y no se reintentó para evitar duplicados.";
+              } else if (staleAction === "failed") {
+                reconciledErrorMessage =
+                  "El envío del seguimiento no se completó.";
+              } else if (staleHandoffAction === "ambiguous") {
+                reconciledErrorMessage =
+                  "El resultado de la alerta no pudo confirmarse y no se reintentó para evitar duplicados.";
+              } else if (staleHandoffAction === "failed") {
+                reconciledErrorMessage = "El envío de la alerta no se completó.";
+              } else {
+                reconciledErrorMessage =
+                  "No se recibió el callback dentro del plazo esperado.";
+              }
+            }
+            const reconciledResponseMeta = cancellationReason
+              ? {
+                  reconciledCancellation: true,
+                  reason: cancellationReason,
+                }
+              : staleAction === "sent"
+                ? { reconciledFromActionMessage: true }
+                : staleHandoffAction === "sent"
+                  ? {
+                      reconciledFromActionDeliveries: true,
+                      deliveryCount: event.actionDeliveries.length,
+                    }
+                  : undefined;
             for (const run of unfinishedRuns) {
               await tx.automationRun.updateMany({
                 where: {
@@ -224,23 +365,8 @@ async function reclaimStaleProcessing(now: Date): Promise<number> {
                     completedWithoutError
                       ? null
                       : decision.lastError ?? "callback_timeout",
-                  errorMessage:
-                    completedWithoutError
-                      ? null
-                      : staleAction === "ambiguous"
-                        ? "El resultado del envío no pudo confirmarse y no se reintentó para evitar duplicados."
-                        : staleAction === "failed"
-                          ? "El envío del seguimiento no se completó."
-                          : "No se recibió el callback dentro del plazo esperado.",
-                  responseMeta:
-                    cancellationReason
-                      ? {
-                          reconciledCancellation: true,
-                          reason: cancellationReason,
-                        }
-                      : staleAction === "sent"
-                      ? { reconciledFromActionMessage: true }
-                      : undefined,
+                  errorMessage: reconciledErrorMessage,
+                  responseMeta: reconciledResponseMeta,
                 },
               });
             }

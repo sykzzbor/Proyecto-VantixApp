@@ -49,6 +49,7 @@ import {
   canAcceptSuccessfulAutomationCallback,
   isCurrentAutomationCallback,
 } from "@/server/automation/callback";
+import { resolveStaleHandoffAction } from "@/server/automation/queue";
 
 const VALID_FOLLOW_UP_CONFIG = {
   ...DEFAULT_FOLLOW_UP_CONFIG,
@@ -908,7 +909,7 @@ test("callback: correlaciona el run exacto y rechaza intentos tardíos", () => {
   }
 });
 
-test("callback: un follow-up solo puede tener éxito con mensaje enviado", () => {
+test("callback: las acciones deben completarse antes de aceptar éxito", () => {
   for (const status of ["SENT", "DELIVERED", "READ"]) {
     assert.equal(
       canAcceptSuccessfulAutomationCallback({
@@ -932,7 +933,99 @@ test("callback: un follow-up solo puede tener éxito con mensaje enviado", () =>
       eventType: "conversation.handoff_requested",
       actionDeliveryStatus: null,
     }),
+    false
+  );
+  assert.equal(
+    canAcceptSuccessfulAutomationCallback({
+      eventType: "conversation.handoff_requested",
+      actionDeliveryStatus: null,
+      actionCompletedAt: new Date(),
+      handoffDeliveryStatuses: [],
+    }),
+    false
+  );
+  assert.equal(
+    canAcceptSuccessfulAutomationCallback({
+      eventType: "conversation.handoff_requested",
+      actionDeliveryStatus: null,
+      actionCompletedAt: new Date(),
+      handoffDeliveryStatuses: ["SENT", "SENT"],
+    }),
     true
+  );
+  for (const statuses of [
+    ["PROCESSING"],
+    ["SENT", "PROCESSING"],
+    ["SENT", "FAILED"],
+  ]) {
+    assert.equal(
+      canAcceptSuccessfulAutomationCallback({
+        eventType: "conversation.handoff_requested",
+        actionDeliveryStatus: null,
+        actionCompletedAt: new Date(),
+        handoffDeliveryStatuses: statuses,
+      }),
+      false
+    );
+  }
+  assert.equal(
+    canAcceptSuccessfulAutomationCallback({
+      eventType: "automation.connection_test",
+      actionDeliveryStatus: null,
+    }),
+    true
+  );
+});
+
+test("handoff: reconciliación stale nunca vuelve a enviar una acción reclamada", () => {
+  const claimed = {
+    eventType: "conversation.handoff_requested",
+    actionClaimedAt: new Date(),
+  };
+  assert.equal(
+    resolveStaleHandoffAction({ ...claimed, deliveryStatuses: ["SENT"] }),
+    "sent"
+  );
+  assert.equal(
+    resolveStaleHandoffAction({
+      ...claimed,
+      deliveryStatuses: ["SENT", "SENT"],
+    }),
+    "sent"
+  );
+  assert.equal(
+    resolveStaleHandoffAction({
+      ...claimed,
+      deliveryStatuses: ["SENT", "FAILED"],
+    }),
+    "failed"
+  );
+  assert.equal(
+    resolveStaleHandoffAction({
+      ...claimed,
+      deliveryStatuses: ["PROCESSING"],
+    }),
+    "ambiguous"
+  );
+  assert.equal(
+    resolveStaleHandoffAction({ ...claimed, deliveryStatuses: [] }),
+    "ambiguous"
+  );
+  assert.equal(
+    resolveStaleHandoffAction({
+      ...claimed,
+      actionClaimedAt: null,
+      deliveryStatuses: ["SENT"],
+    }),
+    null
+  );
+  assert.equal(
+    resolveStaleHandoffAction({
+      ...claimed,
+      eventType: "conversation.followup_due",
+      deliveryStatuses: ["SENT"],
+    }),
+    null
   );
 });
 

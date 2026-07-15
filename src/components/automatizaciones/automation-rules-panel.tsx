@@ -35,11 +35,12 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  automationRuleUpdateSchema,
   followUpRuleConfigSchema,
-  handoffRuleConfigSchema,
   renderFollowUpMessage,
   type FollowUpRuleConfig,
   type HandoffRuleConfig,
+  type ParsedHandoffRuleConfig,
 } from "@/lib/validations/automation-rules";
 import type {
   AutomationRuleView,
@@ -144,22 +145,49 @@ function HandoffRuleCard({
 }) {
   const [rule, setRule] = useState(initialRule);
   const [enabled, setEnabled] = useState(initialRule.enabled);
-  const initialConfig = handoffRuleConfigSchema.parse(initialRule.config);
+  const initialConfig = initialRule.config as ParsedHandoffRuleConfig;
   const [recipients, setRecipients] = useState<HandoffRuleConfig["recipients"]>(
     initialConfig.recipients
   );
+  const [phoneNumbers, setPhoneNumbers] = useState(
+    initialConfig.phoneNumbers.join("\n")
+  );
+  const [templateName, setTemplateName] = useState(initialConfig.templateName);
+  const [templateLanguage, setTemplateLanguage] = useState<
+    ParsedHandoffRuleConfig["templateLanguage"]
+  >(initialConfig.templateLanguage);
   const [saving, setSaving] = useState(false);
 
   async function submit() {
+    const update = automationRuleUpdateSchema.safeParse({
+      type: "HANDOFF_ALERT",
+      enabled,
+      config: {
+        recipients,
+        channel: "WHATSAPP",
+        phoneNumbers: phoneNumbers
+          .split(/[\n,]+/)
+          .map((value) => value.trim())
+          .filter(Boolean),
+        templateName,
+        templateLanguage,
+      },
+      expectedVersion: rule.version,
+    });
+    if (!update.success) {
+      toast.error(
+        update.error.issues[0]?.message ?? "Revisá la configuración del aviso."
+      );
+      return;
+    }
     setSaving(true);
     try {
-      const saved = await saveRule({
-        type: "HANDOFF_ALERT",
-        enabled,
-        config: { recipients },
-        expectedVersion: rule.version,
-      });
+      const saved = await saveRule(update.data);
+      const savedConfig = saved.config as ParsedHandoffRuleConfig;
       setRule(saved);
+      setPhoneNumbers(savedConfig.phoneNumbers.join("\n"));
+      setTemplateName(savedConfig.templateName);
+      setTemplateLanguage(savedConfig.templateLanguage);
       toast.success(enabled ? "Avisos activados" : "Avisos pausados");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No se pudo guardar la regla.");
@@ -199,7 +227,7 @@ function HandoffRuleCard({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="handoff-recipients">Destinatarios</Label>
+          <Label htmlFor="handoff-recipients">Contexto interno de la derivación</Label>
           <Select
             value={recipients}
             onValueChange={(value) =>
@@ -217,8 +245,87 @@ function HandoffRuleCard({
             </SelectContent>
           </Select>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Si el agente asignado ya no pertenece al equipo, el aviso usa propietarios y administradores como respaldo. Nunca incluye la conversación completa.
+            Define qué miembros se incluyen como contexto seguro del evento. El aviso por WhatsApp se envía únicamente a los números explícitos configurados abajo.
           </p>
+        </div>
+
+        <div className="grid gap-4 rounded-lg border p-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="handoff-channel">Canal del aviso</Label>
+            <Select value="WHATSAPP" disabled>
+              <SelectTrigger id="handoff-channel" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="WHATSAPP">WhatsApp</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="handoff-language">Idioma de la plantilla</Label>
+            <Input
+              id="handoff-language"
+              value={templateLanguage}
+              onChange={(event) => setTemplateLanguage(event.target.value)}
+              placeholder="es_AR"
+              maxLength={10}
+              autoComplete="off"
+              disabled={!canManage || saving}
+            />
+            <p className="text-xs text-muted-foreground">
+              Código aprobado en Meta, por ejemplo es_AR o pt_BR.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="handoff-phone-numbers">
+            Números que recibirán el aviso
+          </Label>
+          <Textarea
+            id="handoff-phone-numbers"
+            value={phoneNumbers}
+            onChange={(event) => setPhoneNumbers(event.target.value)}
+            placeholder={canManage ? "Un número E.164 por línea" : undefined}
+            rows={4}
+            maxLength={240}
+            disabled={!canManage || saving}
+            autoComplete="off"
+          />
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Uno por línea, en formato E.164 con signo +. Podés configurar entre 1 y 10 al activar la regla.
+            {!canManage && " Los números se muestran enmascarados por seguridad."}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="handoff-template-name">
+            Nombre de plantilla aprobada
+          </Label>
+          <Input
+            id="handoff-template-name"
+            value={templateName}
+            onChange={(event) => setTemplateName(event.target.value)}
+            placeholder={canManage ? "aviso_atencion_humana" : undefined}
+            maxLength={128}
+            autoComplete="off"
+            disabled={!canManage || saving}
+          />
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Debe coincidir con una plantilla estática ya aprobada en Meta. Usá solo minúsculas, números y guiones bajos; no se aceptan mensajes ni variables enviados por n8n.
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/5 p-3 text-xs text-muted-foreground">
+          <p className="mb-2 font-semibold uppercase tracking-wider text-emerald-300">
+            Configuración segura
+          </p>
+          <div className="grid gap-1 sm:grid-cols-2">
+            <span>Canal: <strong className="text-foreground">WhatsApp Cloud API</strong></span>
+            <span>Idioma: <strong className="text-foreground">{templateLanguage}</strong></span>
+            <span className="break-words">Plantilla: <strong className="text-foreground">{templateName || "Sin configurar"}</strong></span>
+            <span>Credenciales de Meta: <strong className="text-foreground">protegidas por VantixApp</strong></span>
+          </div>
         </div>
 
         <ExecutionSummary rule={rule} />

@@ -8,10 +8,28 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 const SIGNATURE_PATTERN = /^sha256=([a-f0-9]{64})$/i;
 
+function hmacDigest(value: string, secret: string) {
+  return createHmac("sha256", secret)
+    .update(Buffer.from(value, "utf8"))
+    .digest();
+}
+
+function matchesSignature(
+  value: string,
+  signatureHeader: string | null | undefined,
+  secret: string
+) {
+  if (!signatureHeader || !secret) return false;
+  const match = SIGNATURE_PATTERN.exec(signatureHeader.trim());
+  if (!match?.[1]) return false;
+
+  const received = Buffer.from(match[1], "hex");
+  const expected = hmacDigest(value, secret);
+  return received.length === expected.length && timingSafeEqual(received, expected);
+}
+
 export function signAutomationBody(body: string, secret: string): string {
-  const digest = createHmac("sha256", secret)
-    .update(Buffer.from(body, "utf8"))
-    .digest("hex");
+  const digest = hmacDigest(body, secret).toString("hex");
   return `sha256=${digest}`;
 }
 
@@ -20,16 +38,35 @@ export function verifyAutomationSignature(
   signatureHeader: string | null | undefined,
   secret: string
 ): boolean {
-  if (!signatureHeader || !secret) return false;
-  const match = SIGNATURE_PATTERN.exec(signatureHeader.trim());
-  if (!match?.[1]) return false;
+  return matchesSignature(body, signatureHeader, secret);
+}
 
-  const received = Buffer.from(match[1], "hex");
-  const expected = createHmac("sha256", secret)
-    .update(Buffer.from(body, "utf8"))
-    .digest();
+/**
+ * Las acciones cuyo body contiene únicamente IDs firman también el timestamp
+ * del header. Así el timestamp no puede renovarse sobre un body capturado sin
+ * conocer el secreto, mientras la verificación sigue usando el body crudo.
+ */
+export function signTimestampedAutomationBody(
+  body: string,
+  timestampHeader: string,
+  secret: string
+) {
+  const digest = hmacDigest(`${timestampHeader}.${body}`, secret).toString("hex");
+  return `sha256=${digest}`;
+}
 
-  return received.length === expected.length && timingSafeEqual(received, expected);
+export function verifyTimestampedAutomationSignature(
+  body: string,
+  timestampHeader: string | null | undefined,
+  signatureHeader: string | null | undefined,
+  secret: string
+) {
+  if (!timestampHeader) return false;
+  return matchesSignature(
+    `${timestampHeader}.${body}`,
+    signatureHeader,
+    secret
+  );
 }
 
 /**

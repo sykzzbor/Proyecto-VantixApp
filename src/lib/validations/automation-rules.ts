@@ -7,6 +7,7 @@ export const HANDOFF_RECIPIENT_OPTIONS = [
   "OWNERS_ADMINS",
   "BOTH",
 ] as const;
+export const HANDOFF_CHANNELS = ["WHATSAPP"] as const;
 export const FOLLOW_UP_DELAY_OPTIONS = [2, 6, 12, 24, 48] as const;
 export const ALLOWED_FOLLOW_UP_PLACEHOLDERS = [
   "{{customerName}}",
@@ -15,6 +16,10 @@ export const ALLOWED_FOLLOW_UP_PLACEHOLDERS = [
 
 export const DEFAULT_HANDOFF_CONFIG = {
   recipients: "BOTH" as const,
+  channel: "WHATSAPP" as const,
+  phoneNumbers: [] as string[],
+  templateName: "",
+  templateLanguage: "es_AR" as const,
 };
 
 export const DEFAULT_FOLLOW_UP_CONFIG = {
@@ -52,11 +57,68 @@ function hasOnlyAllowedPlaceholders(value: string): boolean {
   return !/{{|}}/.test(withoutKnown);
 }
 
+export const handoffPhoneNumberSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^\+[1-9]\d{7,14}$/,
+    "Ingresá un número E.164 válido con signo + y código de país."
+  );
+
+const handoffTemplateNameSchema = z
+  .string()
+  .trim()
+  .max(128, "El nombre de la plantilla no puede superar los 128 caracteres.")
+  .refine(
+    (value) => value === "" || /^[a-z0-9_]+$/.test(value),
+    "Usá únicamente minúsculas, números y guiones bajos."
+  );
+
+const handoffTemplateLanguageSchema = z
+  .string()
+  .trim()
+  .max(10, "El código de idioma no puede superar los 10 caracteres.")
+  .regex(
+    /^[a-z]{2,3}(?:_[A-Z]{2})?$/,
+    "Ingresá un código de idioma válido, por ejemplo es_AR."
+  );
+
+/**
+ * Acepta un borrador pausado e incorpora los campos nuevos a configuraciones
+ * históricas. La validación de completitud se realiza por separado para no
+ * obligar a inventar destinatarios ni plantillas al migrar reglas existentes.
+ */
 export const handoffRuleConfigSchema = z
   .object({
     recipients: z.enum(HANDOFF_RECIPIENT_OPTIONS),
+    channel: z.literal("WHATSAPP").default("WHATSAPP"),
+    phoneNumbers: z
+      .array(handoffPhoneNumberSchema)
+      .max(10, "Podés configurar como máximo 10 números.")
+      .refine((numbers) => new Set(numbers).size === numbers.length, {
+        message: "Los números destinatarios no pueden repetirse.",
+      })
+      .default([]),
+    templateName: handoffTemplateNameSchema.default(""),
+    templateLanguage: handoffTemplateLanguageSchema.default("es_AR"),
   })
   .strict();
+
+export const completeHandoffRuleConfigSchema = handoffRuleConfigSchema
+  .refine((config) => config.phoneNumbers.length >= 1, {
+    message: "Agregá al menos un número destinatario.",
+    path: ["phoneNumbers"],
+  })
+  .refine((config) => config.templateName.length > 0, {
+    message: "Ingresá el nombre de una plantilla aprobada.",
+    path: ["templateName"],
+  });
+
+export function isCompleteHandoffConfig(
+  config: unknown
+): boolean {
+  return completeHandoffRuleConfigSchema.safeParse(config).success;
+}
 
 export const followUpRuleConfigSchema = z
   .object({
@@ -125,22 +187,38 @@ const followUpUpdateSchema = z
   })
   .strict();
 
-export const automationRuleUpdateSchema = z.discriminatedUnion("type", [
-  handoffUpdateSchema,
-  followUpUpdateSchema,
-]);
+export const automationRuleUpdateSchema = z
+  .discriminatedUnion("type", [handoffUpdateSchema, followUpUpdateSchema])
+  .superRefine((rule, ctx) => {
+    if (
+      rule.type === "HANDOFF_ALERT" &&
+      rule.enabled &&
+      !isCompleteHandoffConfig(rule.config)
+    ) {
+      const result = completeHandoffRuleConfigSchema.safeParse(rule.config);
+      const issue = result.success ? null : result.error.issues[0];
+      ctx.addIssue({
+        code: "custom",
+        message:
+          issue?.message ??
+          "Completá los destinatarios y la plantilla antes de activar la regla.",
+        path: ["config", ...(issue?.path ?? [])],
+      });
+    }
+  });
 
 export const automationRuleTypeSchema = z.enum(AUTOMATION_RULE_TYPES);
 
-export type HandoffRuleConfig = z.infer<typeof handoffRuleConfigSchema>;
+export type HandoffRuleConfig = z.input<typeof handoffRuleConfigSchema>;
+export type ParsedHandoffRuleConfig = z.output<typeof handoffRuleConfigSchema>;
 export type FollowUpRuleConfig = z.infer<typeof followUpRuleConfigSchema>;
-export type AutomationRuleUpdate = z.infer<typeof automationRuleUpdateSchema>;
+export type AutomationRuleUpdate = z.input<typeof automationRuleUpdateSchema>;
 export type AutomationRuleTypeValue = z.infer<typeof automationRuleTypeSchema>;
 
 export function parseAutomationRuleConfig(
   type: AutomationRuleTypeValue,
   config: unknown
-): HandoffRuleConfig | FollowUpRuleConfig {
+): ParsedHandoffRuleConfig | FollowUpRuleConfig {
   return type === "HANDOFF_ALERT"
     ? handoffRuleConfigSchema.parse(config)
     : followUpRuleConfigSchema.parse(config);
