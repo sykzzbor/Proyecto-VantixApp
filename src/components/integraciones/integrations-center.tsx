@@ -39,6 +39,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { WhatsappIcon } from "@/components/whatsapp/whatsapp-icon";
+import { ManualWhatsappConnectionDialog } from "@/components/integraciones/manual-whatsapp-connection-dialog";
 import { cn } from "@/lib/utils";
 import type {
   IntegrationsCenterView,
@@ -343,6 +344,9 @@ function WhatsappCard({
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const status = WHATSAPP_STATUS[data.status];
   const StatusIcon = status.icon;
+  const webhookReady =
+    data.diagnostics.steps.find((step) => step.code === "webhook")?.ready ??
+    false;
 
   const cancelOpenAttempt = useCallback((force = false) => {
     if (!attemptOpenRef.current && !force) return Promise.resolve();
@@ -606,6 +610,10 @@ function WhatsappCard({
             label="Conectado desde"
             value={formatDate(data.integration?.connectedAt ?? null)}
           />
+          <Detail
+            label="Webhook"
+            value={webhookReady ? "Activo" : "Pendiente"}
+          />
         </dl>
 
         {data.lastError && (
@@ -625,6 +633,14 @@ function WhatsappCard({
       <CardFooter className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {canManage ? (
           <>
+            <ManualWhatsappConnectionDialog
+              onConnected={() => router.refresh()}
+              triggerLabel={
+                data.status === "connected"
+                  ? "Reconectar"
+                  : "Conectar manualmente"
+              }
+            />
             {(shouldConnect || data.status === "meta_configuration_pending") && (
               <Button
                 type="button"

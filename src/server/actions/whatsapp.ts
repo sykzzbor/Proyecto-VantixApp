@@ -15,9 +15,12 @@ import { checkRateLimit } from "@/server/rate-limit";
 import {
   CredentialsEncryptionError,
   decryptAccessToken,
-  encryptAccessToken,
 } from "@/server/whatsapp/crypto";
 import { resolveCurrentWhatsappIntegration } from "@/server/whatsapp/current-integration";
+import {
+  connectManualWhatsapp,
+  ManualWhatsappConnectionError,
+} from "@/server/whatsapp/manual-connection";
 import {
   MetaApiError,
   testWhatsappConnection,
@@ -59,132 +62,18 @@ export async function saveWhatsappIntegration(
   try {
     const { user, org, role } = await getOrgContext();
     requirePermission(role, "whatsapp.manage");
-    checkConnectionRateLimit(org.id, user.id);
     const data = whatsappIntegrationConfigSchema.parse(input);
-
-    let remote: Awaited<ReturnType<typeof testWhatsappConnection>>;
-    try {
-      remote = await testWhatsappConnection({
-        phoneNumberId: data.phoneNumberId,
-        accessToken: data.accessToken,
-      });
-    } catch (error) {
-      await recordAudit({
-        organizationId: org.id,
-        userId: user.id,
-        action: "whatsapp.prueba_conexion",
-        entityType: "whatsapp_integration",
-        details: { resultado: "error" },
-      });
-      throw metaActionError(error);
-    }
-
-    const encryptedAccessToken = encryptAccessToken(data.accessToken);
-    const now = new Date();
-    let integration;
-    try {
-      integration = await prisma.$transaction(
-        async (tx) => {
-          const matchingNumber = await tx.whatsappIntegration.findUnique({
-            where: { phoneNumberId: data.phoneNumberId },
-            select: {
-              id: true,
-              organizationId: true,
-              connectedAt: true,
-            },
-          });
-          if (matchingNumber && matchingNumber.organizationId !== org.id) {
-            throw new ActionError(
-              "Ese Phone Number ID ya está vinculado a otra integración."
-            );
-          }
-          const integrationData = {
-            wabaId: data.wabaId,
-            phoneNumberId: data.phoneNumberId,
-            displayPhoneNumber: remote.displayPhoneNumber,
-            verifiedName: remote.verifiedName,
-            encryptedAccessToken,
-            connectionMethod: "MANUAL" as const,
-            businessId: null,
-            tokenExpiresAt: null,
-            grantedScopes: [] as string[],
-            lastSyncedAt: now,
-            webhookSubscribedAt: null,
-            status: "CONNECTED" as const,
-            connectedAt: matchingNumber?.connectedAt ?? now,
-            lastErrorCode: null,
-            lastError: null,
-          };
-          const saved = matchingNumber
-            ? await tx.whatsappIntegration.update({
-                where: { id: matchingNumber.id },
-                data: integrationData,
-                select: { id: true },
-              })
-            : await tx.whatsappIntegration.create({
-                data: { organizationId: org.id, ...integrationData },
-                select: { id: true },
-              });
-
-          const previousConnections = await tx.whatsappIntegration.findMany({
-            where: {
-              organizationId: org.id,
-              id: { not: saved.id },
-              status: { not: "DISCONNECTED" },
-            },
-            select: { id: true },
-          });
-          if (previousConnections.length > 0) {
-            await tx.whatsappIntegration.updateMany({
-              where: {
-                organizationId: org.id,
-                id: { in: previousConnections.map(({ id }) => id) },
-              },
-              data: { status: "DISCONNECTED" },
-            });
-            for (const previous of previousConnections) {
-              await cancelPendingFollowUpsTx(tx, {
-                organizationId: org.id,
-                integrationId: previous.id,
-                reason: "integration_disabled",
-                now,
-              });
-            }
-          }
-          return saved;
-        },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-      );
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
-        throw new ActionError(
-          "Ese Phone Number ID ya está vinculado a otra integración."
-        );
-      }
-      throw error;
-    }
-
-    await recordAudit({
+    await connectManualWhatsapp({
       organizationId: org.id,
       userId: user.id,
-      action: "whatsapp.prueba_conexion",
-      entityType: "whatsapp_integration",
-      entityId: integration.id,
-      details: { resultado: "ok" },
-    });
-    await recordAudit({
-      organizationId: org.id,
-      userId: user.id,
-      action: "whatsapp.conectado",
-      entityType: "whatsapp_integration",
-      entityId: integration.id,
+      ...data,
     });
     revalidateWhatsapp();
     return { ok: true };
   } catch (error) {
+    if (error instanceof ManualWhatsappConnectionError) {
+      return toActionFailure(new ActionError(error.message));
+    }
     return toActionFailure(error);
   }
 }

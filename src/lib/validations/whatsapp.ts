@@ -24,7 +24,7 @@ export const whatsappIntegrationConfigSchema = z.object({
   wabaId: whatsappMetaIdSchema,
   phoneNumberId: whatsappPhoneNumberIdSchema,
   accessToken: whatsappAccessTokenSchema,
-});
+}).strict();
 
 // Alias explicito para consumidores que nombren el formulario como configuracion.
 export const whatsappConfigurationSchema = whatsappIntegrationConfigSchema;

@@ -250,6 +250,20 @@ export type MetaEmbeddedSignupAsset = {
   verifiedName: string;
 };
 
+type MetaWhatsappPhone = {
+  id: string;
+  displayPhoneNumber: string;
+  verifiedName: string;
+};
+
+type MetaWhatsappPhonePage = {
+  phones: MetaWhatsappPhone[];
+  nextCursor: string | null;
+};
+
+const MAX_MANUAL_PHONE_PAGES = 10;
+const MAX_PHONE_PAGE_SIZE = 100;
+
 function validStringList(value: unknown, maxItems = 50): string[] {
   if (!Array.isArray(value) || value.length > maxItems) return [];
   const result = value
@@ -404,6 +418,109 @@ export async function inspectMetaEmbeddedSignupToken(
   return { scopes, wabaIds, expiresAt };
 }
 
+async function resolveMetaWabaBusiness(input: {
+  accessToken: string;
+  wabaId: string;
+}): Promise<{ wabaId: string; businessId: string }> {
+  const wabaId = assertMetaId(input.wabaId);
+  const wabaQuery = new URLSearchParams({ fields: "id,owner_business_info" });
+  const waba = await requestMeta({
+    path: `${wabaId}?${wabaQuery.toString()}`,
+    accessToken: input.accessToken,
+  });
+  const owner = isRecord(waba) && isRecord(waba.owner_business_info)
+    ? waba.owner_business_info
+    : null;
+  if (
+    !isRecord(waba) ||
+    waba.id !== wabaId ||
+    !owner ||
+    typeof owner.id !== "string" ||
+    !META_ID_PATTERN.test(owner.id)
+  ) {
+    throw new MetaApiError({
+      code: "invalid_response",
+      safeMessage: "Meta no confirmó la cuenta comercial de WhatsApp.",
+    });
+  }
+
+  return { wabaId, businessId: owner.id };
+}
+
+function parseMetaWhatsappPhone(value: unknown): MetaWhatsappPhone | null {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    !META_ID_PATTERN.test(value.id) ||
+    typeof value.display_phone_number !== "string" ||
+    !value.display_phone_number.trim() ||
+    typeof value.verified_name !== "string" ||
+    !value.verified_name.trim()
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    displayPhoneNumber: value.display_phone_number.trim(),
+    verifiedName: value.verified_name.trim(),
+  };
+}
+
+async function readMetaWhatsappPhonePage(input: {
+  accessToken: string;
+  wabaId: string;
+  limit: number;
+  after?: string;
+}): Promise<MetaWhatsappPhonePage> {
+  const phoneQuery = new URLSearchParams({
+    fields: "id,display_phone_number,verified_name",
+    limit: String(input.limit),
+  });
+  if (input.after) phoneQuery.set("after", input.after);
+
+  const phonesPayload = await requestMeta({
+    path: `${input.wabaId}/phone_numbers?${phoneQuery.toString()}`,
+    accessToken: input.accessToken,
+  });
+  const rawPhones = isRecord(phonesPayload) && Array.isArray(phonesPayload.data)
+    ? phonesPayload.data
+    : [];
+  const phones = rawPhones.map(parseMetaWhatsappPhone);
+  if (phones.some((phone) => phone === null)) {
+    throw new MetaApiError({
+      code: "invalid_response",
+      safeMessage: "Meta devolvió un número de WhatsApp no válido.",
+    });
+  }
+  const rawCursor =
+    isRecord(phonesPayload) &&
+    isRecord(phonesPayload.paging) &&
+    isRecord(phonesPayload.paging.cursors) &&
+    typeof phonesPayload.paging.cursors.after === "string"
+      ? phonesPayload.paging.cursors.after
+      : null;
+  const hasNext =
+    isRecord(phonesPayload) &&
+    isRecord(phonesPayload.paging) &&
+    typeof phonesPayload.paging.next === "string";
+  const nextCursor =
+    hasNext && rawCursor && rawCursor.length <= 1024 && !/[\u0000-\u001f]/.test(rawCursor)
+      ? rawCursor
+      : null;
+
+  if (hasNext && !nextCursor) {
+    throw new MetaApiError({
+      code: "invalid_response",
+      safeMessage: "Meta devolvió una paginación no válida.",
+    });
+  }
+
+  return {
+    phones: phones as MetaWhatsappPhone[],
+    nextCursor,
+  };
+}
+
 /** Obtiene los activos desde Meta. Falla cerrado ante cero o múltiples números. */
 export async function resolveMetaEmbeddedSignupAsset(input: {
   accessToken: string;
@@ -477,6 +594,46 @@ export async function resolveMetaEmbeddedSignupAsset(input: {
     displayPhoneNumber: phone.display_phone_number.trim(),
     verifiedName: phone.verified_name.trim(),
   };
+}
+
+/**
+ * Resuelve un número manual únicamente si Meta lo enumera dentro de la WABA
+ * indicada. Nunca confía en nombres ni teléfonos enviados por el navegador.
+ */
+export async function resolveMetaManualWhatsappAsset(input: {
+  accessToken: string;
+  wabaId: string;
+  phoneNumberId: string;
+}): Promise<MetaEmbeddedSignupAsset> {
+  const waba = await resolveMetaWabaBusiness(input);
+  const expectedPhoneNumberId = assertMetaId(input.phoneNumberId);
+  let after: string | undefined;
+
+  for (let pageNumber = 0; pageNumber < MAX_MANUAL_PHONE_PAGES; pageNumber++) {
+    const page = await readMetaWhatsappPhonePage({
+      accessToken: input.accessToken,
+      wabaId: waba.wabaId,
+      limit: MAX_PHONE_PAGE_SIZE,
+      after,
+    });
+    const phone = page.phones.find(({ id }) => id === expectedPhoneNumberId);
+    if (phone) {
+      return {
+        wabaId: waba.wabaId,
+        businessId: waba.businessId,
+        phoneNumberId: phone.id,
+        displayPhoneNumber: phone.displayPhoneNumber,
+        verifiedName: phone.verifiedName,
+      };
+    }
+    if (!page.nextCursor) break;
+    after = page.nextCursor;
+  }
+
+  throw new MetaApiError({
+    code: "invalid_request",
+    safeMessage: "El Phone Number ID no pertenece a la WABA indicada.",
+  });
 }
 
 export async function subscribeMetaAppToWaba(input: {

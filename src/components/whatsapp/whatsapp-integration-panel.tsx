@@ -278,11 +278,6 @@ export function WhatsappIntegrationPanel({
               label="Última actualización"
               value={integration?.updatedAtLabel}
             />
-            <DetailItem
-              label="Access token"
-              value={integration?.maskedAccessToken ?? "No guardado"}
-              mono
-            />
           </dl>
 
           {integration?.lastError && (

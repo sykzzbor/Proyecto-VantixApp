@@ -14,7 +14,6 @@ export type WhatsappIntegrationView = {
   phoneNumberId: string;
   displayPhoneNumber: string;
   verifiedName: string;
-  maskedAccessToken: string;
   connectedAtLabel: string | null;
   lastWebhookAtLabel: string | null;
   updatedAtLabel: string;
@@ -50,7 +49,6 @@ export async function getWhatsappIntegrationView(
     phoneNumberId: integration.phoneNumberId,
     displayPhoneNumber: integration.displayPhoneNumber,
     verifiedName: integration.verifiedName,
-    maskedAccessToken: "••••••••••••••••",
     connectedAtLabel: integration.connectedAt
       ? formatDateTime(integration.connectedAt)
       : null,
