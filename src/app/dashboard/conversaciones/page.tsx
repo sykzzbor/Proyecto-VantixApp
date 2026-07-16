@@ -57,10 +57,10 @@ export default async function ConversacionesPage(
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-[calc(100dvh-7rem)] min-h-[30rem] overflow-hidden rounded-xl border border-border bg-card shadow-[0_24px_60px_-45px_rgba(0,0,0,0.95)] lg:h-[calc(100svh-8rem)]">
+      <div className="flex h-[calc(100dvh-6rem)] min-h-0 overflow-hidden rounded-xl border border-border/90 bg-card shadow-[0_24px_70px_-48px_rgba(0,0,0,0.95)] lg:h-[calc(100svh-8rem)] lg:min-h-[34rem]">
         <div
           className={cn(
-            "w-full flex-col bg-sidebar/45 lg:flex lg:w-[22rem] lg:shrink-0 lg:border-r lg:border-border",
+            "w-full flex-col bg-sidebar/45 lg:flex lg:w-[20rem] lg:shrink-0 lg:border-r lg:border-border xl:w-[21rem]",
             detail ? "hidden lg:flex" : "flex"
           )}
         >

@@ -11,16 +11,14 @@ import { loginSchema, type LoginInput } from "@/lib/validations/auth";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FieldError } from "@/components/forms/field-error";
 import { FormAlert } from "@/components/forms/form-alert";
 import { SubmitButton } from "@/components/forms/submit-button";
+import { AuthCardHeader } from "@/components/auth/auth-card-header";
 
 export function LoginForm({ callbackURL }: { callbackURL: string }) {
   const router = useRouter();
@@ -49,13 +47,12 @@ export function LoginForm({ callbackURL }: { callbackURL: string }) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">Iniciar sesión</CardTitle>
-        <CardDescription>
-          Ingresá a tu cuenta para gestionar tu negocio.
-        </CardDescription>
-      </CardHeader>
+    <Card className="border-border/80 bg-card/95 shadow-[0_28px_70px_-42px_rgba(0,0,0,0.95)]">
+      <AuthCardHeader
+        eyebrow="Espacio de trabajo"
+        title="Iniciar sesión"
+        description="Ingresá a tu cuenta para gestionar tu operación."
+      />
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
         <CardContent className="space-y-4">
           <FormAlert message={formError} />
@@ -66,6 +63,7 @@ export function LoginForm({ callbackURL }: { callbackURL: string }) {
               type="email"
               autoComplete="email"
               placeholder="nombre@empresa.com"
+              aria-invalid={Boolean(errors.email)}
               {...register("email")}
             />
             <FieldError message={errors.email?.message} />
@@ -84,6 +82,8 @@ export function LoginForm({ callbackURL }: { callbackURL: string }) {
               id="password"
               type="password"
               autoComplete="current-password"
+              placeholder="Tu contraseña"
+              aria-invalid={Boolean(errors.password)}
               {...register("password")}
             />
             <FieldError message={errors.password?.message} />

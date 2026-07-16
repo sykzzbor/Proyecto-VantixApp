@@ -96,6 +96,7 @@ export function FaqFormDialog({
             <Input
               id="faq-question"
               placeholder="¿Cuáles son los horarios de atención?"
+              aria-invalid={Boolean(errors.question)}
               {...register("question")}
             />
             <FieldError message={errors.question?.message} />
@@ -107,6 +108,7 @@ export function FaqFormDialog({
               id="faq-answer"
               rows={4}
               placeholder="La respuesta exacta que debe dar el agente."
+              aria-invalid={Boolean(errors.answer)}
               {...register("answer")}
             />
             <FieldError message={errors.answer?.message} />
@@ -123,6 +125,7 @@ export function FaqFormDialog({
               id="faq-category"
               list="faq-categories"
               placeholder="Horarios"
+              aria-invalid={Boolean(errors.category)}
               {...register("category")}
             />
             <datalist id="faq-categories">
@@ -133,7 +136,7 @@ export function FaqFormDialog({
             <FieldError message={errors.category?.message} />
           </div>
 
-          <div className="flex items-center justify-between rounded-md border px-3 py-2.5">
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-border/80 bg-muted/30 px-3.5 py-3">
             <div>
               <Label htmlFor="faq-active">Pregunta activa</Label>
               <p className="text-xs text-muted-foreground">

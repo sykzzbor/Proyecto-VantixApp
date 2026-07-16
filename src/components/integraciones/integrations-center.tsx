@@ -580,54 +580,57 @@ function WhatsappCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
-        <dl className="grid gap-4 sm:grid-cols-2">
-          <Detail
-            label="Proveedor"
-            value={
-              data.integration?.provider === "YCLOUD"
-                ? "YCloud"
-                : data.integration
-                  ? "Meta Cloud API"
-                  : "No definido"
-            }
-          />
-          <Detail
-            label="Número"
-            value={data.integration?.maskedPhoneNumber ?? "No conectado"}
-          />
-          <Detail
-            label="Nombre verificado"
-            value={data.integration?.verifiedName ?? "No disponible"}
-          />
-          <Detail
-            label="Método"
-            value={
-              data.integration?.connectionMethod === "EMBEDDED_SIGNUP"
-                ? "Conexión guiada"
-                : data.integration?.connectionMethod === "COEXISTENCE"
-                  ? "Coexistence"
-                : data.integration
-                  ? "Manual"
-                  : "No definido"
-            }
-          />
-          <Detail
-            label="Última sincronización"
-            value={formatDate(data.integration?.lastSyncedAt ?? null)}
-          />
-          <Detail
-            label="Último webhook"
-            value={formatDate(data.integration?.lastWebhookAt ?? null)}
-          />
-          <Detail
-            label="Conectado desde"
-            value={formatDate(data.integration?.connectedAt ?? null)}
-          />
-          <Detail
-            label="Webhook"
-            value={webhookReady ? "Activo" : "Pendiente"}
-          />
-        </dl>
+        {data.integration ? (
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <Detail
+              label="Proveedor"
+              value={
+                data.integration.provider === "YCLOUD"
+                  ? "YCloud"
+                  : "Meta Cloud API"
+              }
+            />
+            <Detail
+              label="Número"
+              value={data.integration.maskedPhoneNumber ?? "No disponible"}
+            />
+            <Detail
+              label="Nombre verificado"
+              value={data.integration.verifiedName ?? "No disponible"}
+            />
+            <Detail
+              label="Método"
+              value={
+                data.integration.connectionMethod === "EMBEDDED_SIGNUP"
+                  ? "Conexión guiada"
+                  : data.integration.connectionMethod === "COEXISTENCE"
+                    ? "Coexistence"
+                    : "Manual"
+              }
+            />
+            <Detail
+              label="Última sincronización"
+              value={formatDate(data.integration.lastSyncedAt ?? null)}
+            />
+            <Detail
+              label="Último webhook"
+              value={formatDate(data.integration.lastWebhookAt ?? null)}
+            />
+            <Detail
+              label="Conectado desde"
+              value={formatDate(data.integration.connectedAt ?? null)}
+            />
+            <Detail
+              label="Webhook"
+              value={webhookReady ? "Activo" : "Pendiente"}
+            />
+          </dl>
+        ) : (
+          <p className="rounded-lg border border-border/70 bg-background/40 p-3 text-sm text-muted-foreground">
+            Tu número todavía no está conectado. Cuando lo conectes, acá vas a
+            ver el proveedor, el número y la actividad del canal.
+          </p>
+        )}
 
         {data.lastError && (
           <div className="flex gap-2 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">
@@ -939,28 +942,35 @@ function N8nCard({
           )}
         </div>
 
-        <dl className="grid gap-4 sm:grid-cols-2">
-          <Detail
-            label="Última conexión"
-            value={formatDate(data.lastConnectionAt)}
-          />
-          <Detail
-            label="Último evento enviado"
-            value={formatDate(data.lastEventSentAt)}
-          />
-          <Detail
-            label="Último callback"
-            value={formatDate(data.lastCallbackAt)}
-          />
-          <Detail
-            label="Workflows"
-            value={data.workflowsPublished ? "Publicados" : "Pendientes de publicar"}
-          />
-          <Detail
-            label="Router y callback"
-            value={data.connectionTestVerified ? "Verificados" : "Pendientes de probar"}
-          />
-        </dl>
+        {data.lastConnectionAt || data.lastEventSentAt || data.lastCallbackAt ? (
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <Detail
+              label="Última conexión"
+              value={formatDate(data.lastConnectionAt)}
+            />
+            <Detail
+              label="Último evento enviado"
+              value={formatDate(data.lastEventSentAt)}
+            />
+            <Detail
+              label="Último callback"
+              value={formatDate(data.lastCallbackAt)}
+            />
+            <Detail
+              label="Workflows"
+              value={data.workflowsPublished ? "Publicados" : "Pendientes de publicar"}
+            />
+            <Detail
+              label="Router y callback"
+              value={data.connectionTestVerified ? "Verificados" : "Pendientes de probar"}
+            />
+          </dl>
+        ) : (
+          <p className="rounded-lg border border-border/70 bg-background/40 p-3 text-sm text-muted-foreground">
+            Todavía no hubo actividad con n8n. Cuando la conexión esté activa,
+            acá vas a ver los últimos eventos y callbacks.
+          </p>
+        )}
 
         {data.lastError && (
           <div className="flex gap-2 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">

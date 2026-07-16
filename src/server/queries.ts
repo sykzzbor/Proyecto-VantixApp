@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import type { AgentTone, InvitationStatus, MemberRole } from "@/generated/prisma/enums";
+import type {
+  AgentTone,
+  InvitationStatus,
+  MemberRole,
+  WhatsappIntegrationStatus,
+} from "@/generated/prisma/enums";
 import {
   formatCurrency,
   formatDate,
@@ -310,6 +315,12 @@ function extractDetailLabel(details: Prisma.JsonValue | null): string | null {
 // Resumen del dashboard
 // ============================================================
 
+export type DashboardWhatsapp = {
+  status: WhatsappIntegrationStatus;
+  providerLabel: string;
+  displayPhoneNumber: string;
+} | null;
+
 export type DashboardSummary = {
   productsTotal: number;
   productsActive: number;
@@ -321,6 +332,18 @@ export type DashboardSummary = {
   agent: { enabled: boolean; assistantName: string; tone: AgentTone } | null;
   businessComplete: boolean;
   recentActivity: AuditRow[];
+  /* Estado operativo (solo lecturas agregadas por organización). */
+  conversationsOpen: number;
+  conversationsPending: number;
+  conversationsHuman: number;
+  unreadTotal: number;
+  whatsapp: DashboardWhatsapp;
+  knowledgeReady: number;
+};
+
+const WHATSAPP_PROVIDER_LABELS: Record<string, string> = {
+  YCLOUD: "YCloud",
+  META_CLOUD: "Meta Cloud API",
 };
 
 export async function getDashboardSummary(
@@ -337,6 +360,12 @@ export async function getDashboardSummary(
     agentSettings,
     businessProfile,
     recentActivity,
+    conversationsOpen,
+    conversationsPending,
+    conversationsHuman,
+    unreadAggregate,
+    whatsappIntegration,
+    knowledgeReady,
   ] = await Promise.all([
     prisma.product.count({ where: { organizationId } }),
     prisma.product.count({ where: { organizationId, active: true } }),
@@ -348,6 +377,31 @@ export async function getDashboardSummary(
     prisma.agentSettings.findUnique({ where: { organizationId } }),
     prisma.businessProfile.findUnique({ where: { organizationId } }),
     getAuditLogs(organizationId, 8),
+    prisma.conversation.count({
+      where: { organizationId, status: "OPEN" },
+    }),
+    prisma.conversation.count({
+      where: { organizationId, status: "PENDING" },
+    }),
+    prisma.conversation.count({
+      where: {
+        organizationId,
+        status: { not: "CLOSED" },
+        handlingMode: "HUMAN",
+      },
+    }),
+    prisma.conversation.aggregate({
+      where: { organizationId, status: { not: "CLOSED" } },
+      _sum: { unreadCount: true },
+    }),
+    prisma.whatsappIntegration.findFirst({
+      where: { organizationId, status: { not: "DISCONNECTED" } },
+      orderBy: { updatedAt: "desc" },
+      select: { status: true, provider: true, displayPhoneNumber: true },
+    }),
+    prisma.knowledgeDocument.count({
+      where: { organizationId, status: "READY", enabled: true },
+    }),
   ]);
 
   const businessComplete = Boolean(
@@ -374,5 +428,19 @@ export async function getDashboardSummary(
       : null,
     businessComplete,
     recentActivity,
+    conversationsOpen,
+    conversationsPending,
+    conversationsHuman,
+    unreadTotal: unreadAggregate._sum.unreadCount ?? 0,
+    whatsapp: whatsappIntegration
+      ? {
+          status: whatsappIntegration.status,
+          providerLabel:
+            WHATSAPP_PROVIDER_LABELS[whatsappIntegration.provider] ??
+            "WhatsApp",
+          displayPhoneNumber: whatsappIntegration.displayPhoneNumber,
+        }
+      : null,
+    knowledgeReady,
   };
 }

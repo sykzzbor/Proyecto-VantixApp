@@ -5,7 +5,6 @@ import {
   MessageCircleQuestion,
   MoreHorizontal,
   Plus,
-  Search,
   SearchX,
   X,
 } from "lucide-react";
@@ -15,6 +14,8 @@ import type { FaqRow } from "@/server/queries";
 import { ActiveBadge } from "@/components/dashboard/active-badge";
 import { ConfirmDeleteDialog } from "@/components/dashboard/confirm-delete-dialog";
 import { EmptyState } from "@/components/dashboard/empty-state";
+import { EntityToolbar } from "@/components/dashboard/entity-toolbar";
+import { ReadOnlyNotice } from "@/components/dashboard/read-only-notice";
 import { useTableFilters } from "@/components/dashboard/use-table-filters";
 import { FaqFormDialog } from "@/components/preguntas/faq-form-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +27,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -66,6 +66,7 @@ export function FaqsView({
 
   const hasFilters = Boolean(filters.q || filters.category || filters.status);
   const showActions = canWrite || canDelete;
+  const activeCount = faqs.filter((faq) => faq.active).length;
 
   function openCreate() {
     setEditing(null);
@@ -98,26 +99,26 @@ export function FaqsView({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
-        <div className="relative w-full sm:max-w-64">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Buscar preguntas…"
-            className="pl-8"
-            defaultValue={filters.q}
-            onChange={(event) => setSearch(event.target.value)}
-            aria-label="Buscar preguntas"
-          />
-        </div>
-        {categories.length > 0 && (
+      {!canWrite && (
+        <ReadOnlyNotice message="Podés consultar las respuestas frecuentes, pero tu rol no permite modificarlas." />
+      )}
+
+      <EntityToolbar
+        searchLabel="Buscar preguntas"
+        searchPlaceholder="Buscar preguntas…"
+        defaultSearch={filters.q}
+        onSearchChange={setSearch}
+        summary={`${faqs.length} ${faqs.length === 1 ? "pregunta visible" : "preguntas visibles"} · ${activeCount} activas`}
+        filters={
+          <>
+            {categories.length > 0 && (
           <Select
             value={filters.category || "todas"}
             onValueChange={(value) =>
               setParam("categoria", value === "todas" ? null : value)
             }
           >
-            <SelectTrigger className="w-full sm:w-44" aria-label="Filtrar por categoría">
+            <SelectTrigger className="w-full lg:w-44" aria-label="Filtrar por categoría">
               <SelectValue placeholder="Categoría" />
             </SelectTrigger>
             <SelectContent>
@@ -129,14 +130,14 @@ export function FaqsView({
               ))}
             </SelectContent>
           </Select>
-        )}
-        <Select
+            )}
+            <Select
           value={filters.status || "todos"}
           onValueChange={(value) =>
             setParam("estado", value === "todos" ? null : value)
           }
         >
-          <SelectTrigger className="w-full sm:w-36" aria-label="Filtrar por estado">
+          <SelectTrigger className="w-full lg:w-36" aria-label="Filtrar por estado">
             <SelectValue placeholder="Estado" />
           </SelectTrigger>
           <SelectContent>
@@ -144,20 +145,26 @@ export function FaqsView({
             <SelectItem value="activos">Activas</SelectItem>
             <SelectItem value="inactivos">Inactivas</SelectItem>
           </SelectContent>
-        </Select>
-        {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={clearAll} className="w-full sm:w-auto">
-            <X className="size-4" />
-            Limpiar
-          </Button>
-        )}
-        {canWrite && (
-          <Button onClick={openCreate} className="w-full sm:ml-auto sm:w-auto">
-            <Plus className="size-4" />
-            Nueva pregunta
-          </Button>
-        )}
-      </div>
+            </Select>
+          </>
+        }
+        actions={
+          <>
+            {hasFilters && (
+              <Button variant="ghost" size="sm" onClick={clearAll} className="w-full lg:w-auto">
+                <X className="size-4" />
+                Limpiar
+              </Button>
+            )}
+            {canWrite && (
+              <Button onClick={openCreate} className="w-full lg:w-auto">
+                <Plus className="size-4" />
+                Nueva pregunta
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {faqs.length === 0 ? (
         hasFilters ? (
@@ -185,7 +192,55 @@ export function FaqsView({
           </EmptyState>
         )
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <>
+        <div className="grid gap-3 xl:hidden">
+          {faqs.map((faq) => (
+            <article key={faq.id} className="rounded-xl border border-border/85 bg-card p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-semibold leading-snug">{faq.question}</h3>
+                    <ActiveBadge active={faq.active} activeLabel="Activa" inactiveLabel="Inactiva" />
+                  </div>
+                  <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted-foreground">
+                    {faq.answer}
+                  </p>
+                </div>
+                {showActions && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label={`Acciones para la pregunta ${faq.question}`}>
+                        <MoreHorizontal className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {canWrite && (
+                        <>
+                          <DropdownMenuItem onSelect={() => { setEditing(faq); setFormOpen(true); }}>Editar</DropdownMenuItem>
+                          <DropdownMenuItem disabled={isPending} onSelect={() => handleToggle(faq)}>
+                            {faq.active ? "Desactivar" : "Activar"}
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      {canWrite && canDelete && <DropdownMenuSeparator />}
+                      {canDelete && (
+                        <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(faq)}>
+                          Eliminar
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-3 text-xs text-muted-foreground">
+                <span>{faq.category ?? "Sin categoría"}</span>
+                <span>Actualizada {faq.updatedAtLabel}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <div className="hidden overflow-hidden rounded-xl border border-border bg-card xl:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -281,6 +336,7 @@ export function FaqsView({
             </TableBody>
           </Table>
         </div>
+        </>
       )}
 
       <FaqFormDialog

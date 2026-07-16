@@ -66,12 +66,12 @@ export function ConversationList({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-16 items-center justify-between gap-3 border-b border-border bg-sidebar/65 px-4 py-3">
+      <div className="flex min-h-[4.5rem] items-center justify-between gap-3 border-b border-border bg-sidebar/75 px-4 py-3">
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold tracking-tight text-foreground">
+          <h2 className="truncate text-base font-semibold tracking-[-0.02em] text-foreground">
             Conversaciones
           </h2>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
+          <p className="mt-0.5 text-xs text-muted-foreground" aria-live="polite">
             {items.length} {items.length === 1 ? "conversación" : "conversaciones"}
           </p>
         </div>
@@ -79,13 +79,13 @@ export function ConversationList({
       </div>
 
       {/* Buscador y filtros */}
-      <div className="space-y-2.5 border-b border-border bg-sidebar/35 p-3">
+      <div className="space-y-2.5 border-b border-border bg-sidebar/45 p-3">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
             type="search"
             placeholder="Buscar nombre, teléfono o mensaje…"
-            className="pl-8"
+            className="pl-9"
             defaultValue={filters.q}
             onChange={(event) => setSearch(event.target.value)}
             aria-label="Buscar conversaciones"
@@ -155,36 +155,37 @@ export function ConversationList({
             </p>
           </div>
         ) : (
-          <ul>
+          <ul className="divide-y divide-border/65">
             {items.map((item) => (
               <li key={item.id}>
                 <Link
                   href={hrefFor(item.id)}
                   aria-label={`Abrir conversación con ${item.customerName}`}
-                  aria-current={item.id === selectedId ? "true" : undefined}
+                  aria-current={item.id === selectedId ? "page" : undefined}
                   className={cn(
-                    "relative flex gap-3 border-b border-border/65 px-3.5 py-3 transition-colors hover:bg-accent/50 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50",
+                    "relative flex min-h-[6.5rem] gap-3 px-3.5 py-3.5 transition-[background-color,box-shadow] hover:bg-accent/45 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50",
+                    item.unreadCount > 0 && "bg-primary/[0.035]",
                     item.id === selectedId &&
-                      "bg-primary/[0.11] shadow-[inset_3px_0_0_var(--primary)]"
+                      "bg-primary/[0.12] shadow-[inset_3px_0_0_var(--primary)]"
                   )}
                 >
-                  <Avatar className="mt-0.5 size-9 shrink-0">
-                    <AvatarFallback className="border border-primary/15 bg-primary/10 text-sm font-semibold text-[#9cb7ff]">
+                  <Avatar className="mt-0.5 size-10 shrink-0">
+                    <AvatarFallback className="border border-primary/15 bg-primary/10 text-sm font-semibold text-[#a9beff]">
                       {initial(item.customerName)}
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
+                    <div className="flex items-start justify-between gap-2">
                       <p
                         className={cn(
-                          "truncate text-sm",
+                          "truncate text-sm leading-5",
                           item.unreadCount > 0 ? "font-semibold" : "font-medium"
                         )}
                       >
                         {item.customerName}
                       </p>
                       {item.lastActivityLabel && (
-                        <span className="shrink-0 text-[11px] text-muted-foreground">
+                        <span className="max-w-24 shrink-0 truncate pt-0.5 text-[10px] text-muted-foreground">
                           {item.lastActivityLabel}
                         </span>
                       )}
@@ -192,7 +193,7 @@ export function ConversationList({
                     <div className="mt-0.5 flex items-center gap-2">
                       <p
                         className={cn(
-                          "flex-1 truncate text-xs",
+                          "flex-1 truncate text-xs leading-5",
                           item.unreadCount > 0
                             ? "font-medium text-foreground"
                             : "text-muted-foreground"
@@ -209,8 +210,8 @@ export function ConversationList({
                         </span>
                       )}
                     </div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <Badge variant="outline" className="gap-1 px-1.5 py-0 text-[10px] font-normal">
+                    <div className="mt-1.5 flex min-w-0 items-center gap-1.5 overflow-hidden">
+                      <span className="inline-flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
                         <span
                           aria-hidden
                           className={cn(
@@ -219,10 +220,10 @@ export function ConversationList({
                           )}
                         />
                         {STATUS_LABEL[item.status]}
-                      </Badge>
+                      </span>
                       <Badge
                         variant="secondary"
-                        className="gap-1 px-1.5 py-0 text-[10px] font-normal"
+                        className="shrink-0 gap-1 px-1.5 py-0 text-[10px] font-normal"
                       >
                         {item.channel === "whatsapp" && (
                           <WhatsappIcon
@@ -232,16 +233,8 @@ export function ConversationList({
                         )}
                         {channelLabel(item.channel)}
                       </Badge>
-                      {item.channel === "whatsapp" && item.customerPhone && (
-                        <span
-                          className="max-w-28 truncate text-[10px] text-muted-foreground"
-                          title={item.customerPhone}
-                        >
-                          {item.customerPhone}
-                        </span>
-                      )}
                       <span
-                        className="flex items-center gap-1 text-[10px] text-muted-foreground"
+                        className="flex shrink-0 items-center gap-1 rounded-full border border-border/70 px-1.5 py-0.5 text-[10px] text-muted-foreground"
                         title={
                           item.handlingMode === "ai"
                             ? "Atendida por la IA"
@@ -255,11 +248,9 @@ export function ConversationList({
                         )}
                         {item.handlingMode === "ai" ? "IA" : "Humano"}
                       </span>
-                      {item.assignedName && (
-                        <span className="truncate text-[10px] text-muted-foreground">
-                          · {item.assignedName}
-                        </span>
-                      )}
+                      <span className="min-w-0 truncate text-[10px] text-muted-foreground">
+                        {item.assignedName ?? item.customerPhone ?? "Sin asignar"}
+                      </span>
                     </div>
                   </div>
                 </Link>

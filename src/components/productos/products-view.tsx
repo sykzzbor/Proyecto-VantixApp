@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { MoreHorizontal, Package, Plus, Search, SearchX, X } from "lucide-react";
+import { MoreHorizontal, Package, Plus, SearchX, X } from "lucide-react";
 import { toast } from "sonner";
 import { deleteProduct, toggleProductActive } from "@/server/actions/products";
 import type { ProductRow } from "@/server/queries";
 import { ActiveBadge } from "@/components/dashboard/active-badge";
 import { ConfirmDeleteDialog } from "@/components/dashboard/confirm-delete-dialog";
 import { EmptyState } from "@/components/dashboard/empty-state";
+import { EntityToolbar } from "@/components/dashboard/entity-toolbar";
+import { ReadOnlyNotice } from "@/components/dashboard/read-only-notice";
 import { useTableFilters } from "@/components/dashboard/use-table-filters";
 import { ProductFormDialog } from "@/components/productos/product-form-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +21,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -59,6 +60,7 @@ export function ProductsView({
 
   const hasFilters = Boolean(filters.q || filters.category || filters.status);
   const showActions = canWrite || canDelete;
+  const activeCount = products.filter((product) => product.active).length;
 
   function openCreate() {
     setEditing(null);
@@ -101,26 +103,26 @@ export function ProductsView({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
-        <div className="relative w-full sm:max-w-64">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Buscar productos…"
-            className="pl-8"
-            defaultValue={filters.q}
-            onChange={(event) => setSearch(event.target.value)}
-            aria-label="Buscar productos"
-          />
-        </div>
-        {categories.length > 0 && (
+      {!canWrite && (
+        <ReadOnlyNotice message="Podés consultar el catálogo, pero tu rol no permite crear ni editar productos." />
+      )}
+
+      <EntityToolbar
+        searchLabel="Buscar productos"
+        searchPlaceholder="Buscar productos…"
+        defaultSearch={filters.q}
+        onSearchChange={setSearch}
+        summary={`${products.length} ${products.length === 1 ? "producto visible" : "productos visibles"} · ${activeCount} activos`}
+        filters={
+          <>
+            {categories.length > 0 && (
           <Select
             value={filters.category || "todas"}
             onValueChange={(value) =>
               setParam("categoria", value === "todas" ? null : value)
             }
           >
-            <SelectTrigger className="w-full sm:w-44" aria-label="Filtrar por categoría">
+            <SelectTrigger className="w-full lg:w-44" aria-label="Filtrar por categoría">
               <SelectValue placeholder="Categoría" />
             </SelectTrigger>
             <SelectContent>
@@ -132,14 +134,14 @@ export function ProductsView({
               ))}
             </SelectContent>
           </Select>
-        )}
-        <Select
+            )}
+            <Select
           value={filters.status || "todos"}
           onValueChange={(value) =>
             setParam("estado", value === "todos" ? null : value)
           }
         >
-          <SelectTrigger className="w-full sm:w-36" aria-label="Filtrar por estado">
+          <SelectTrigger className="w-full lg:w-36" aria-label="Filtrar por estado">
             <SelectValue placeholder="Estado" />
           </SelectTrigger>
           <SelectContent>
@@ -147,20 +149,26 @@ export function ProductsView({
             <SelectItem value="activos">Activos</SelectItem>
             <SelectItem value="inactivos">Inactivos</SelectItem>
           </SelectContent>
-        </Select>
-        {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={clearAll} className="w-full sm:w-auto">
-            <X className="size-4" />
-            Limpiar
-          </Button>
-        )}
-        {canWrite && (
-          <Button onClick={openCreate} className="w-full sm:ml-auto sm:w-auto">
-            <Plus className="size-4" />
-            Nuevo producto
-          </Button>
-        )}
-      </div>
+            </Select>
+          </>
+        }
+        actions={
+          <>
+            {hasFilters && (
+              <Button variant="ghost" size="sm" onClick={clearAll} className="w-full lg:w-auto">
+                <X className="size-4" />
+                Limpiar
+              </Button>
+            )}
+            {canWrite && (
+              <Button onClick={openCreate} className="w-full lg:w-auto">
+                <Plus className="size-4" />
+                Nuevo producto
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {products.length === 0 ? (
         hasFilters ? (
@@ -188,7 +196,76 @@ export function ProductsView({
           </EmptyState>
         )
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <>
+        <div className="grid gap-3 xl:hidden">
+          {products.map((product) => (
+            <article
+              key={product.id}
+              className="rounded-xl border border-border/85 bg-card p-4 shadow-[0_14px_38px_-34px_rgba(0,0,0,0.95)]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-semibold leading-snug">{product.name}</h3>
+                    <ActiveBadge active={product.active} />
+                  </div>
+                  {product.description && (
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                      {product.description}
+                    </p>
+                  )}
+                </div>
+                {showActions && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label={`Acciones para ${product.name}`}>
+                        <MoreHorizontal className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {canWrite && (
+                        <>
+                          <DropdownMenuItem onSelect={() => openEdit(product)}>Editar</DropdownMenuItem>
+                          <DropdownMenuItem disabled={isPending} onSelect={() => handleToggle(product)}>
+                            {product.active ? "Desactivar" : "Activar"}
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      {canWrite && canDelete && <DropdownMenuSeparator />}
+                      {canDelete && (
+                        <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(product)}>
+                          Eliminar
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+              <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-border/70 pt-3 text-xs">
+                <div>
+                  <dt className="text-muted-foreground">Precio</dt>
+                  <dd className="mt-1 text-sm font-semibold tabular-nums">{product.priceLabel}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Disponibilidad</dt>
+                  <dd className={product.stock === 0 ? "mt-1 text-sm font-medium text-destructive" : "mt-1 text-sm font-medium"}>
+                    {product.stock === 0 ? "Sin stock" : `${product.stock} unidades`}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Categoría</dt>
+                  <dd className="mt-1 truncate">{product.category ?? "Sin categoría"}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Actualizado</dt>
+                  <dd className="mt-1">{product.updatedAtLabel}</dd>
+                </div>
+              </dl>
+            </article>
+          ))}
+        </div>
+
+        <div className="hidden overflow-hidden rounded-xl border border-border bg-card xl:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -293,6 +370,7 @@ export function ProductsView({
             </TableBody>
           </Table>
         </div>
+        </>
       )}
 
       <ProductFormDialog

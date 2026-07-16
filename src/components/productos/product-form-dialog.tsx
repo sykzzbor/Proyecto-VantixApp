@@ -98,6 +98,7 @@ export function ProductFormDialog({
             <Input
               id="product-name"
               placeholder="Shampoo reparador 500 ml"
+              aria-invalid={Boolean(errors.name)}
               {...register("name")}
             />
             <FieldError message={errors.name?.message} />
@@ -114,12 +115,13 @@ export function ProductFormDialog({
               id="product-description"
               rows={3}
               placeholder="Detalles que el agente puede usar al responder."
+              aria-invalid={Boolean(errors.description)}
               {...register("description")}
             />
             <FieldError message={errors.description?.message} />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="product-price">Precio</Label>
               <Input
@@ -128,6 +130,7 @@ export function ProductFormDialog({
                 min="0"
                 step="0.01"
                 inputMode="decimal"
+                aria-invalid={Boolean(errors.price)}
                 {...register("price", { valueAsNumber: true })}
               />
               <FieldError message={errors.price?.message} />
@@ -140,6 +143,7 @@ export function ProductFormDialog({
                 min="0"
                 step="1"
                 inputMode="numeric"
+                aria-invalid={Boolean(errors.stock)}
                 {...register("stock", { valueAsNumber: true })}
               />
               <FieldError message={errors.stock?.message} />
@@ -157,6 +161,7 @@ export function ProductFormDialog({
               id="product-category"
               list="product-categories"
               placeholder="Cuidado capilar"
+              aria-invalid={Boolean(errors.category)}
               {...register("category")}
             />
             <datalist id="product-categories">
@@ -167,7 +172,7 @@ export function ProductFormDialog({
             <FieldError message={errors.category?.message} />
           </div>
 
-          <div className="flex items-center justify-between rounded-md border px-3 py-2.5">
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-border/80 bg-muted/30 px-3.5 py-3">
             <div>
               <Label htmlFor="product-active">Producto activo</Label>
               <p className="text-xs text-muted-foreground">

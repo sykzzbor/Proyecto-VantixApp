@@ -36,6 +36,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FieldError } from "@/components/forms/field-error";
 import { SubmitButton } from "@/components/forms/submit-button";
+import { ReadOnlyNotice } from "@/components/dashboard/read-only-notice";
 
 type OrganizationSettingsProps = {
   orgName: string;
@@ -89,6 +90,9 @@ export function OrganizationSettings({
 
   return (
     <div className="space-y-4">
+      {!canUpdate && (
+        <ReadOnlyNotice message="Podés consultar la organización, pero tu rol no permite cambiar su configuración." />
+      )}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Organización</CardTitle>

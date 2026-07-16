@@ -256,9 +256,10 @@ export function ConversationThread({
   const groups = groupByDay(messages);
 
   return (
-    <div className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-card">
+    <div className="flex min-h-0 min-w-0 w-full flex-1 overflow-hidden bg-card">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {/* Encabezado del hilo */}
-      <div className="flex min-h-16 items-center gap-2 border-b border-border bg-card/95 px-3 py-2.5 md:px-4">
+      <div className="flex min-h-[4.5rem] items-center gap-2 border-b border-border bg-card/95 px-3 py-2.5 md:px-4">
         <Button
           asChild
           variant="ghost"
@@ -271,14 +272,14 @@ export function ConversationThread({
           </Link>
         </Button>
 
-        <Avatar className="hidden size-9 sm:flex">
+        <Avatar className="hidden size-10 sm:flex">
           <AvatarFallback className="border border-primary/15 bg-primary/10 text-xs font-semibold text-[#9cb7ff]">
             {customerName.charAt(0).toUpperCase()}
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
-            <p className="truncate text-sm font-semibold">{customerName}</p>
+            <p className="truncate text-sm font-semibold tracking-[-0.01em]">{customerName}</p>
             <span className="hidden shrink-0 text-[10px] text-muted-foreground sm:inline">
               {messageCountLabel}
             </span>
@@ -383,24 +384,26 @@ export function ConversationThread({
           )}
 
           {/* Información del cliente en pantallas angostas */}
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                title="Ver información del cliente"
-                aria-label="Ver información del cliente"
-              >
-                <Info className="size-4" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="w-full max-w-sm overflow-y-auto p-0">
-              <SheetHeader className="border-b px-4 py-3 text-left">
-                <SheetTitle className="text-base">Cliente</SheetTitle>
-              </SheetHeader>
-              <CustomerPanel detail={detail} canEdit={canEditCustomer} />
-            </SheetContent>
-          </Sheet>
+          <div className="min-[1400px]:hidden">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="Ver información del cliente"
+                  aria-label="Ver información del cliente"
+                >
+                  <Info className="size-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-full max-w-sm overflow-y-auto p-0">
+                <SheetHeader className="border-b px-4 py-3 text-left">
+                  <SheetTitle className="text-base">Cliente</SheetTitle>
+                </SheetHeader>
+                <CustomerPanel detail={detail} canEdit={canEditCustomer} />
+              </SheetContent>
+            </Sheet>
+          </div>
 
           {canManage && (
             <DropdownMenu>
@@ -486,7 +489,7 @@ export function ConversationThread({
 
       {/* Estado del canal y de las respuestas automáticas */}
       {isWhatsapp && detail.whatsappIntegrationStatus !== "connected" && (
-        <div className="flex items-start gap-2 border-b bg-destructive/5 px-4 py-2 text-xs text-destructive">
+        <div className="flex items-start gap-2 border-b border-destructive/15 bg-destructive/[0.06] px-4 py-2.5 text-xs text-destructive">
           <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <p>
             {detail.whatsappIntegrationStatus === "error"
@@ -499,7 +502,7 @@ export function ConversationThread({
       {isWhatsapp &&
         detail.whatsappIntegrationStatus === "connected" &&
         !autoReplyEnabled && (
-          <div className="flex items-start gap-2 border-b bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          <div className="flex items-start gap-2 border-b border-amber-500/15 bg-amber-500/[0.07] px-4 py-2.5 text-xs text-amber-200">
             <Bot className="mt-0.5 size-3.5 shrink-0" aria-hidden />
             <p>
               Las respuestas automáticas están desactivadas. Los mensajes nuevos
@@ -510,7 +513,7 @@ export function ConversationThread({
 
       {/* Indicador de atención humana */}
       {isHuman && (
-        <div className="flex items-start gap-2 border-b bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+        <div className="flex items-start gap-2 border-b border-amber-500/15 bg-amber-500/[0.07] px-4 py-2.5 text-xs text-amber-200">
           <UserRound className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <p>
             Atención humana
@@ -531,7 +534,7 @@ export function ConversationThread({
       )}
 
       {/* Mensajes */}
-      <div ref={scrollRef} className="conversation-canvas min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5">
+      <div ref={scrollRef} className="conversation-canvas min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5">
         {messages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-sm text-muted-foreground">
@@ -539,12 +542,12 @@ export function ConversationThread({
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="mx-auto w-full max-w-4xl space-y-5">
             {groups.map((group) => (
               <div key={group.dateLabel} className="space-y-3">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 py-1">
                   <div className="h-px flex-1 bg-border" />
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="rounded-full border border-border/70 bg-card/75 px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
                     {group.dateLabel}
                   </span>
                   <div className="h-px flex-1 bg-border" />
@@ -554,7 +557,7 @@ export function ConversationThread({
                     return (
                       <p
                         key={message.id}
-                        className="mx-auto w-fit rounded-full border border-border bg-muted/60 px-2.5 py-1 text-center text-[11px] text-muted-foreground"
+                        className="mx-auto w-fit max-w-[90%] rounded-full border border-border bg-muted/70 px-3 py-1.5 text-center text-[11px] leading-relaxed text-muted-foreground"
                       >
                         {message.content} · {message.timeLabel}
                       </p>
@@ -572,7 +575,7 @@ export function ConversationThread({
                         fromCustomer ? "items-start" : "items-end"
                       )}
                     >
-                      <span className="mb-0.5 flex items-center gap-1 px-1 text-[10px] text-muted-foreground">
+                      <span className="mb-1 flex items-center gap-1 px-1 text-[10px] text-muted-foreground">
                         {message.senderType === "ai" && (
                           <Bot className="size-3" aria-hidden />
                         )}
@@ -583,17 +586,17 @@ export function ConversationThread({
                       </span>
                       <div
                         className={cn(
-                          "max-w-[88%] whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm sm:max-w-[72%]",
-                          fromCustomer && "rounded-bl-sm border border-border bg-[#202633]",
+                          "max-w-[90%] whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm sm:max-w-[76%]",
+                          fromCustomer && "rounded-bl-md border border-border/90 bg-[#202633]",
                           !fromCustomer &&
                             failed &&
-                            "rounded-br-sm border border-destructive/40 bg-destructive/5 text-foreground",
+                            "rounded-br-md border border-destructive/40 bg-destructive/[0.07] text-foreground",
                           !failed &&
                             message.senderType === "ai" &&
-                            "rounded-br-sm border border-primary/20 bg-primary/10 text-secondary-foreground",
+                            "rounded-br-md border border-primary/20 bg-primary/[0.11] text-secondary-foreground",
                           !failed &&
                             message.senderType === "human" &&
-                            "rounded-br-sm bg-primary text-primary-foreground"
+                            "rounded-br-md bg-primary text-primary-foreground shadow-[0_10px_28px_-18px_rgba(79,124,255,0.95)]"
                         )}
                       >
                         {message.content}
@@ -646,7 +649,7 @@ export function ConversationThread({
 
       {/* Zona de escritura */}
       {isClosed ? (
-        <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/55 px-4 py-3">
+        <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/55 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <CircleAlert className="size-4" aria-hidden />
             La conversación está cerrada.
@@ -668,13 +671,13 @@ export function ConversationThread({
           )}
         </div>
       ) : !canRespond ? (
-        <div className="border-t border-border bg-muted/55 px-4 py-3">
+        <div className="border-t border-border bg-muted/55 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <p className="text-sm text-muted-foreground">
             Tu rol es de solo lectura: no podés responder conversaciones.
           </p>
         </div>
       ) : !isHuman ? (
-        <div className="flex flex-col items-start justify-between gap-3 border-t border-border bg-primary/[0.045] px-4 py-3 sm:flex-row sm:items-center">
+        <div className="flex flex-col items-start justify-between gap-3 border-t border-border bg-primary/[0.045] px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row sm:items-center">
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Bot className="size-4" aria-hidden />
             La IA está a cargo. Para responder vos, tomá la conversación.
@@ -695,7 +698,7 @@ export function ConversationThread({
         </div>
       ) : (
         <form
-          className="flex flex-col gap-2 border-t border-border bg-card p-3"
+          className="flex flex-col gap-2 border-t border-border bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
           onSubmit={(event) => {
             event.preventDefault();
             send();
@@ -708,46 +711,58 @@ export function ConversationThread({
               Enter para enviar · Shift + Enter para nueva línea
             </span>
           </div>
-          <div className="flex items-end gap-2">
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            disabled={sending}
-            maxLength={MAX_HUMAN_MESSAGE_LENGTH}
-            rows={1}
-            placeholder={`Responder como ${currentUserName}…`}
-            className="max-h-[140px] min-h-10 flex-1 resize-none"
-            onChange={(event) => {
-              setInput(event.target.value);
-              autoresize();
-            }}
-            onKeyDown={(event) => {
-              if (
-                event.key === "Enter" &&
-                !event.shiftKey &&
-                !event.nativeEvent.isComposing
-              ) {
-                event.preventDefault();
-                send();
-              }
-            }}
-            aria-label="Respuesta para el cliente"
-          />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={sending || input.trim().length === 0}
-            aria-label="Enviar respuesta"
-          >
-            {sending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <SendHorizonal className="size-4" />
-            )}
-          </Button>
+          <div className="flex items-end gap-2 rounded-xl border border-input bg-muted/25 p-1.5 focus-within:border-primary/60 focus-within:ring-3 focus-within:ring-primary/15">
+            <Textarea
+              ref={textareaRef}
+              value={input}
+              disabled={sending}
+              maxLength={MAX_HUMAN_MESSAGE_LENGTH}
+              rows={1}
+              placeholder={`Responder como ${currentUserName}…`}
+              className="max-h-[140px] min-h-9 flex-1 resize-none border-0 bg-transparent px-2 py-2 shadow-none focus-visible:bg-transparent focus-visible:ring-0"
+              onChange={(event) => {
+                setInput(event.target.value);
+                autoresize();
+              }}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.shiftKey &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  event.preventDefault();
+                  send();
+                }
+              }}
+              aria-label="Respuesta para el cliente"
+            />
+            <Button
+              type="submit"
+              size="icon"
+              className="size-9"
+              disabled={sending || input.trim().length === 0}
+              aria-label="Enviar respuesta"
+            >
+              {sending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <SendHorizonal className="size-4" />
+              )}
+            </Button>
           </div>
         </form>
       )}
+      </div>
+
+      <aside className="hidden w-[17rem] shrink-0 overflow-y-auto border-l border-border bg-sidebar/35 min-[1400px]:block">
+        <div className="sticky top-0 z-10 border-b border-border bg-card/95 px-4 py-4 backdrop-blur">
+          <p className="text-sm font-semibold">Cliente</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Contexto y datos de contacto
+          </p>
+        </div>
+        <CustomerPanel detail={detail} canEdit={canEditCustomer} />
+      </aside>
     </div>
   );
 }

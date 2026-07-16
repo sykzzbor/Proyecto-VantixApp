@@ -14,16 +14,14 @@ import {
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FieldError } from "@/components/forms/field-error";
 import { FormAlert } from "@/components/forms/form-alert";
 import { SubmitButton } from "@/components/forms/submit-button";
+import { AuthCardHeader } from "@/components/auth/auth-card-header";
 
 export function ResetPasswordForm({ token }: { token: string }) {
   const router = useRouter();
@@ -52,13 +50,12 @@ export function ResetPasswordForm({ token }: { token: string }) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">Nueva contraseña</CardTitle>
-        <CardDescription>
-          Elegí una contraseña nueva para tu cuenta.
-        </CardDescription>
-      </CardHeader>
+    <Card className="border-border/80 bg-card/95 shadow-[0_28px_70px_-42px_rgba(0,0,0,0.95)]">
+      <AuthCardHeader
+        eyebrow="Seguridad de la cuenta"
+        title="Nueva contraseña"
+        description="Elegí una contraseña nueva para tu cuenta."
+      />
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
         <CardContent className="space-y-4">
           <FormAlert message={formError} />
@@ -68,6 +65,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
               id="password"
               type="password"
               autoComplete="new-password"
+              placeholder="Mínimo 8 caracteres"
+              aria-invalid={Boolean(errors.password)}
               {...register("password")}
             />
             <FieldError message={errors.password?.message} />
@@ -78,6 +77,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
               id="confirmPassword"
               type="password"
               autoComplete="new-password"
+              placeholder="Repetí la contraseña"
+              aria-invalid={Boolean(errors.confirmPassword)}
               {...register("confirmPassword")}
             />
             <FieldError message={errors.confirmPassword?.message} />

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { Copy, MoreHorizontal, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import type { MemberRole } from "@/generated/prisma/enums";
-import { ROLE_LABELS, assignableRoles } from "@/lib/permissions";
+import { ROLE_DESCRIPTIONS, ROLE_LABELS, assignableRoles } from "@/lib/permissions";
 import {
   removeMember,
   revokeInvitation,
@@ -341,6 +341,29 @@ export function TeamView({
           </CardContent>
         </Card>
       )}
+
+      {/* Explicación de roles: qué puede hacer cada uno, sin jerga técnica. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Qué puede hacer cada rol</CardTitle>
+          <CardDescription>
+            Elegí el rol según lo que la persona necesita hacer en el panel.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {(["OWNER", "ADMIN", "AGENT", "VIEWER"] as const).map((role) => (
+            <div
+              key={role}
+              className="rounded-lg border border-border/70 bg-background/40 p-3"
+            >
+              <p className="text-sm font-semibold">{ROLE_LABELS[role]}</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {ROLE_DESCRIPTIONS[role]}
+              </p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       <InviteMemberDialog
         open={inviteOpen}

@@ -98,6 +98,29 @@ function UsageStat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function DetailStat({
+  icon: Icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground/70" aria-hidden />
+      <div className="min-w-0">
+        <p className="truncate text-xs text-muted-foreground">{label}</p>
+        <p className="text-base font-semibold tabular-nums">{value}</p>
+        {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+      </div>
+    </div>
+  );
+}
+
 export function MetricsView({
   data,
   definitions,
@@ -178,94 +201,87 @@ export function MetricsView({
         )}
       </div>
 
-      {/* Conversaciones */}
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-muted-foreground">
-          Conversaciones
-        </h3>
+      {/* Indicadores principales del período */}
+      <section aria-label="Indicadores principales">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             icon={Inbox}
-            label="Recibidas"
+            label="Conversaciones recibidas"
             value={formatNumber(totals.conversationsReceived)}
-          />
-          <StatCard
-            icon={MessageSquare}
-            label="Activas"
-            value={formatNumber(totals.active)}
-          />
-          <StatCard
-            icon={Clock}
-            label="Pendientes"
-            value={formatNumber(totals.pending)}
-          />
-          <StatCard
-            icon={CircleCheckBig}
-            label="Cerradas"
-            value={formatNumber(totals.closed)}
-          />
-        </div>
-      </section>
-
-      {/* Mensajes y atención */}
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-muted-foreground">
-          Mensajes y atención
-        </h3>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            icon={Users}
-            label="Mensajes de clientes"
-            value={formatNumber(totals.customerMessages)}
+            hint={`${formatNumber(totals.pending)} pendientes ahora`}
           />
           <StatCard
             icon={Bot}
-            label="Respuestas de Claude"
-            value={formatNumber(totals.aiReplies)}
-            hint={`${totals.aiSharePct}% del total atendido`}
+            label="Atendido por la IA"
+            value={`${totals.aiSharePct}%`}
+            hint={`${formatNumber(totals.aiReplies)} respuestas de Claude`}
           />
           <StatCard
-            icon={Users}
-            label="Respuestas humanas"
-            value={formatNumber(totals.humanReplies)}
-            hint={`${totals.humanSharePct}% del total atendido`}
+            icon={Timer}
+            label="Primera respuesta (prom.)"
+            value={formatSeconds(totals.avgFirstResponseSeconds)}
+            hint="Del primer mensaje a la primera respuesta"
           />
           <StatCard
             icon={ArrowUpRight}
             label="Derivaciones a humano"
             value={formatNumber(totals.handoffs)}
+            hint={`${formatNumber(totals.humanReplies)} respuestas humanas`}
           />
         </div>
       </section>
 
-      {/* Experiencia */}
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-muted-foreground">
-          Experiencia y clientes
-        </h3>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            icon={Timer}
-            label="Primera respuesta (prom.)"
-            value={formatSeconds(totals.avgFirstResponseSeconds)}
+      {/* Detalle del período (compacto, misma información sin repetir tarjetas) */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold">
+            Detalle del período
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+          <DetailStat
+            icon={MessageSquare}
+            label="Activas"
+            value={formatNumber(totals.active)}
           />
-          <StatCard
+          <DetailStat
             icon={CircleCheckBig}
-            label="Resolución (prom.)"
-            value={formatSeconds(totals.avgResolutionSeconds)}
+            label="Cerradas"
+            value={formatNumber(totals.closed)}
           />
-          <StatCard
+          <DetailStat
             icon={TriangleAlert}
             label="Sin respuesta"
             value={formatNumber(totals.unanswered)}
           />
-          <StatCard
+          <DetailStat
             icon={UserPlus}
             label="Clientes nuevos"
             value={formatNumber(totals.newCustomers)}
           />
-        </div>
-      </section>
+          <DetailStat
+            icon={Users}
+            label="Mensajes de clientes"
+            value={formatNumber(totals.customerMessages)}
+          />
+          <DetailStat
+            icon={Users}
+            label="Respuestas humanas"
+            value={formatNumber(totals.humanReplies)}
+            hint={`${totals.humanSharePct}% del atendido`}
+          />
+          <DetailStat
+            icon={CircleCheckBig}
+            label="Resolución (prom.)"
+            value={formatSeconds(totals.avgResolutionSeconds)}
+          />
+          <DetailStat
+            icon={Clock}
+            label="Pendientes"
+            value={formatNumber(totals.pending)}
+          />
+        </CardContent>
+      </Card>
 
       {/* Gráficos */}
       <section className="grid gap-4 lg:grid-cols-2">

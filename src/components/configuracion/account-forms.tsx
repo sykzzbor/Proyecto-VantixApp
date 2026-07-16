@@ -56,7 +56,12 @@ export function ProfileNameForm({ currentName }: { currentName: string }) {
     >
       <div className="flex-1 space-y-2">
         <Label htmlFor="account-name">Nombre</Label>
-        <Input id="account-name" autoComplete="name" {...register("name")} />
+        <Input
+          id="account-name"
+          autoComplete="name"
+          aria-invalid={Boolean(errors.name)}
+          {...register("name")}
+        />
         <FieldError message={errors.name?.message} />
       </div>
       <SubmitButton
@@ -101,13 +106,15 @@ export function ChangePasswordForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4">
         <div className="space-y-2">
           <Label htmlFor="current-password">Contraseña actual</Label>
           <Input
             id="current-password"
             type="password"
             autoComplete="current-password"
+            placeholder="Tu contraseña actual"
+            aria-invalid={Boolean(errors.currentPassword)}
             {...register("currentPassword")}
           />
           <FieldError message={errors.currentPassword?.message} />
@@ -118,6 +125,8 @@ export function ChangePasswordForm() {
             id="new-password"
             type="password"
             autoComplete="new-password"
+            placeholder="Mínimo 8 caracteres"
+            aria-invalid={Boolean(errors.newPassword)}
             {...register("newPassword")}
           />
           <FieldError message={errors.newPassword?.message} />
@@ -128,6 +137,8 @@ export function ChangePasswordForm() {
             id="confirm-password"
             type="password"
             autoComplete="new-password"
+            placeholder="Repetí la contraseña"
+            aria-invalid={Boolean(errors.confirmPassword)}
             {...register("confirmPassword")}
           />
           <FieldError message={errors.confirmPassword?.message} />

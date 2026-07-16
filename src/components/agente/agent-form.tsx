@@ -1,8 +1,17 @@
 "use client";
 
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Info } from "lucide-react";
+import {
+  Bot,
+  CircleCheckBig,
+  CircleDashed,
+  MessagesSquare,
+  Power,
+  Route,
+  ShieldCheck,
+  UserRound,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AgentTone } from "@/generated/prisma/enums";
 import {
@@ -15,6 +24,7 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -31,13 +41,16 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { FieldError } from "@/components/forms/field-error";
 import { SubmitButton } from "@/components/forms/submit-button";
+import { FormSection } from "@/components/dashboard/form-section";
+import { ReadOnlyNotice } from "@/components/dashboard/read-only-notice";
 
 type AgentFormProps = {
   defaults: AgentSettingsInput;
   canEdit: boolean;
+  configured: boolean;
 };
 
-export function AgentForm({ defaults, canEdit }: AgentFormProps) {
+export function AgentForm({ defaults, canEdit, configured }: AgentFormProps) {
   const {
     register,
     handleSubmit,
@@ -60,26 +73,22 @@ export function AgentForm({ defaults, canEdit }: AgentFormProps) {
   }
 
   const disabled = !canEdit;
+  const enabled = useWatch({ control, name: "enabled" });
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
-      <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/[0.055] px-3.5 py-3 text-sm leading-relaxed text-muted-foreground">
-        <Info className="mt-0.5 size-4 shrink-0 text-[#8eacff]" aria-hidden />
-        <p>
-          En esta etapa la inteligencia artificial todavía no está conectada.
-          Lo que configures acá queda guardado y listo para cuando se integre
-          el agente.
-        </p>
-      </div>
+      {!canEdit && (
+        <ReadOnlyNotice message="Podés revisar y probar el agente, pero tu rol no permite cambiar su configuración." />
+      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Identidad del asistente</CardTitle>
-          <CardDescription>
-            Cómo se presenta y en qué tono le habla a tus clientes.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_19rem]">
+        <div className="space-y-4">
+          <FormSection
+            icon={UserRound}
+            title="Identidad"
+            description="Cómo se presenta y qué tono mantiene durante la conversación."
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="agent-name">Nombre del asistente</Label>
             <Input
@@ -117,17 +126,15 @@ export function AgentForm({ defaults, canEdit }: AgentFormProps) {
             />
             <FieldError message={errors.tone?.message} />
           </div>
-        </CardContent>
-      </Card>
+            </div>
+          </FormSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Mensajes</CardTitle>
-          <CardDescription>
-            Los textos exactos que va a usar el asistente en cada situación.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          <FormSection
+            icon={MessagesSquare}
+            title="Respuestas base"
+            description="Los mensajes que abren la conversación y cubren una consulta sin respuesta."
+          >
+            <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="agent-welcome">Mensaje de bienvenida</Label>
             <Textarea
@@ -151,13 +158,17 @@ export function AgentForm({ defaults, canEdit }: AgentFormProps) {
             />
             <FieldError message={errors.fallbackMessage?.message} />
           </div>
+            </div>
+          </FormSection>
 
-          <div className="space-y-2">
+          <FormSection
+            icon={Route}
+            title="Derivación humana"
+            description="Indicá cuándo el agente debe dejar la conversación en manos del equipo."
+          >
+            <div className="space-y-2">
             <Label htmlFor="agent-handoff">
-              Reglas de derivación{" "}
-              <span className="font-normal text-muted-foreground">
-                (opcional)
-              </span>
+              Criterios de derivación <span className="font-normal text-muted-foreground">(opcional)</span>
             </Label>
             <Textarea
               id="agent-handoff"
@@ -168,42 +179,84 @@ export function AgentForm({ defaults, canEdit }: AgentFormProps) {
             />
             <FieldError message={errors.handoffRules?.message} />
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="flex items-center justify-between gap-4">
-          <div>
-            <Label htmlFor="agent-enabled" className="text-sm font-medium">
-              Agente habilitado
-            </Label>
-            <p className="text-sm text-muted-foreground">
-              Cuando se integre la IA, el asistente va a responder solo si está
-              habilitado.
-            </p>
-          </div>
-          <Controller
-            control={control}
-            name="enabled"
-            render={({ field }) => (
-              <Switch
-                id="agent-enabled"
-                checked={field.value}
-                onCheckedChange={field.onChange}
-                disabled={disabled}
-              />
-            )}
-          />
-        </CardContent>
-      </Card>
-
-      {canEdit && (
-        <div className="flex justify-end">
-          <SubmitButton loading={isSubmitting} disabled={!isDirty}>
-            Guardar configuración
-          </SubmitButton>
+          </FormSection>
         </div>
-      )}
+
+        <aside className="space-y-4 xl:sticky xl:top-20">
+          <Card>
+            <CardHeader>
+              <div className="flex size-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
+                <Power className="size-4 text-[#8eacff]" aria-hidden />
+              </div>
+              <CardTitle className="mt-2 text-base">Estado operativo</CardTitle>
+              <CardDescription>
+                Controlá si el agente puede responder conversaciones nuevas.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between gap-4 rounded-lg border border-border/75 bg-background/35 p-3">
+                <div>
+                  <Label htmlFor="agent-enabled" className="text-sm font-medium">
+                    Respuestas automáticas
+                  </Label>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {enabled ? "Activadas" : "Pausadas"}
+                  </p>
+                </div>
+                <Controller
+                  control={control}
+                  name="enabled"
+                  render={({ field }) => (
+                    <Switch
+                      id="agent-enabled"
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      disabled={disabled}
+                    />
+                  )}
+                />
+              </div>
+              <div className="flex items-start gap-2.5 text-sm text-muted-foreground">
+                {configured ? (
+                  <CircleCheckBig className="mt-0.5 size-4 shrink-0 text-emerald-400" aria-hidden />
+                ) : (
+                  <CircleDashed className="mt-0.5 size-4 shrink-0 text-amber-300" aria-hidden />
+                )}
+                <p>
+                  {configured
+                    ? "El proveedor de IA está disponible para las pruebas y respuestas."
+                    : "La configuración del proveedor de IA todavía no está completa."}
+                </p>
+              </div>
+            </CardContent>
+            {canEdit && (
+              <CardFooter>
+                <SubmitButton loading={isSubmitting} disabled={!isDirty} className="w-full">
+                  Guardar configuración
+                </SubmitButton>
+              </CardFooter>
+            )}
+          </Card>
+
+          <Card size="sm">
+            <CardContent className="space-y-3">
+              <div className="flex items-start gap-2.5">
+                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#8eacff]" aria-hidden />
+                <div>
+                  <p className="text-sm font-medium">Control seguro</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    El agente usa únicamente la información habilitada del negocio y deriva cuando se cumplen estas reglas.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Bot className="size-3.5" aria-hidden />
+                Probalo antes de atender clientes reales.
+              </div>
+            </CardContent>
+          </Card>
+        </aside>
+      </div>
     </form>
   );
 }

@@ -95,6 +95,7 @@ export function ServiceFormDialog({
             <Input
               id="service-name"
               placeholder="Corte y peinado"
+              aria-invalid={Boolean(errors.name)}
               {...register("name")}
             />
             <FieldError message={errors.name?.message} />
@@ -111,12 +112,13 @@ export function ServiceFormDialog({
               id="service-description"
               rows={3}
               placeholder="Qué incluye el servicio."
+              aria-invalid={Boolean(errors.description)}
               {...register("description")}
             />
             <FieldError message={errors.description?.message} />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="service-price">Precio</Label>
               <Input
@@ -125,6 +127,7 @@ export function ServiceFormDialog({
                 min="0"
                 step="0.01"
                 inputMode="decimal"
+                aria-invalid={Boolean(errors.price)}
                 {...register("price", { valueAsNumber: true })}
               />
               <FieldError message={errors.price?.message} />
@@ -137,13 +140,14 @@ export function ServiceFormDialog({
                 min="5"
                 step="5"
                 inputMode="numeric"
+                aria-invalid={Boolean(errors.durationMinutes)}
                 {...register("durationMinutes", { valueAsNumber: true })}
               />
               <FieldError message={errors.durationMinutes?.message} />
             </div>
           </div>
 
-          <div className="flex items-center justify-between rounded-md border px-3 py-2.5">
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-border/80 bg-muted/30 px-3.5 py-3">
             <div>
               <Label htmlFor="service-active">Servicio activo</Label>
               <p className="text-xs text-muted-foreground">

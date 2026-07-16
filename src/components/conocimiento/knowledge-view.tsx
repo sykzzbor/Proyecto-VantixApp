@@ -12,7 +12,6 @@ import {
   Plus,
   RefreshCw,
   Repeat,
-  Search,
   SearchX,
   Tag,
   Trash2,
@@ -27,6 +26,8 @@ import {
 import type { KnowledgeDocumentRow } from "@/server/knowledge/queries";
 import { ConfirmDeleteDialog } from "@/components/dashboard/confirm-delete-dialog";
 import { EmptyState } from "@/components/dashboard/empty-state";
+import { EntityToolbar } from "@/components/dashboard/entity-toolbar";
+import { ReadOnlyNotice } from "@/components/dashboard/read-only-notice";
 import { useTableFilters } from "@/components/dashboard/use-table-filters";
 import {
   CategoryDocumentDialog,
@@ -45,7 +46,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -122,6 +122,16 @@ export function KnowledgeView({
     (document) =>
       document.status === "PROCESSING" || document.status === "UPLOADED"
   );
+  const readyCount = documents.filter(
+    (document) => document.status === "READY" && document.enabled
+  ).length;
+  const processingCount = documents.filter(
+    (document) => document.status === "PROCESSING" || document.status === "UPLOADED"
+  ).length;
+  const failedCount = documents.filter((document) => document.status === "FAILED").length;
+  const inactiveCount = documents.filter(
+    (document) => document.status === "DISABLED" || !document.enabled
+  ).length;
 
   // Auto-refresco moderado mientras haya documentos procesándose.
   useEffect(() => {
@@ -238,38 +248,62 @@ export function KnowledgeView({
         </div>
       )}
 
-      {/* Toolbar */}
-      <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
-        <div className="relative w-full sm:max-w-64">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Buscar documentos…"
-            className="pl-8"
-            defaultValue={filters.q}
-            onChange={(event) => setSearch(event.target.value)}
-            aria-label="Buscar documentos"
-          />
-        </div>
-        <Select
-          value={filters.status || "todos"}
-          onValueChange={(value) =>
-            setParam("estado", value === "todos" ? null : value)
-          }
+      {!canManage && (
+        <ReadOnlyNotice message="Podés consultar el conocimiento disponible, pero tu rol no permite subir ni modificar documentos." />
+      )}
+
+      {documents.length > 0 && (
+        <section
+          aria-label="Estado de los documentos visibles"
+          className="grid grid-cols-2 overflow-hidden rounded-xl border border-border/80 bg-card/45 sm:grid-cols-4"
         >
-          <SelectTrigger className="w-full sm:w-44" aria-label="Filtrar por estado">
-            <SelectValue placeholder="Estado" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos los estados</SelectItem>
-            {KNOWLEDGE_STATUSES.map((status) => (
-              <SelectItem key={status} value={status}>
-                {STATUS_LABEL[status]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {categories.length > 0 && (
+          {[
+            ["Listos para la IA", readyCount, "text-emerald-300"],
+            ["Procesando", processingCount, "text-sky-300"],
+            ["Con error", failedCount, "text-destructive"],
+            ["Desactivados", inactiveCount, "text-muted-foreground"],
+          ].map(([label, value, color], index) => (
+            <div
+              key={String(label)}
+              className={`px-4 py-3 ${index % 2 === 0 ? "border-r" : ""} ${index < 2 ? "border-b sm:border-b-0" : ""} sm:border-r sm:last:border-r-0`}
+            >
+              <p className="text-xs text-muted-foreground">{label}</p>
+              <p className={`mt-1 text-xl font-semibold tabular-nums ${color}`}>
+                {value}
+              </p>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {/* Toolbar */}
+      <EntityToolbar
+        searchLabel="Buscar documentos"
+        searchPlaceholder="Buscar documentos…"
+        defaultSearch={filters.q}
+        onSearchChange={setSearch}
+        summary={`${documents.length} ${documents.length === 1 ? "documento visible" : "documentos visibles"}`}
+        filters={
+          <>
+            <Select
+              value={filters.status || "todos"}
+              onValueChange={(value) =>
+                setParam("estado", value === "todos" ? null : value)
+              }
+            >
+              <SelectTrigger className="w-full lg:w-44" aria-label="Filtrar por estado">
+                <SelectValue placeholder="Estado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos los estados</SelectItem>
+                {KNOWLEDGE_STATUSES.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {STATUS_LABEL[status]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {categories.length > 0 && (
           <Select
             value={filters.category || "todas"}
             onValueChange={(value) =>
@@ -277,7 +311,7 @@ export function KnowledgeView({
             }
           >
             <SelectTrigger
-              className="w-full sm:w-44"
+              className="w-full lg:w-44"
               aria-label="Filtrar por categoría"
             >
               <SelectValue placeholder="Categoría" />
@@ -291,28 +325,26 @@ export function KnowledgeView({
               ))}
             </SelectContent>
           </Select>
-        )}
-        {hasFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={clearAll}
-            className="w-full sm:w-auto"
-          >
-            <X className="size-4" />
-            Limpiar
-          </Button>
-        )}
-        {canManage && (
-          <Button
-            onClick={() => openUpload(null)}
-            className="w-full sm:ml-auto sm:w-auto"
-          >
-            <Plus className="size-4" />
-            Subir documento
-          </Button>
-        )}
-      </div>
+            )}
+          </>
+        }
+        actions={
+          <>
+            {hasFilters && (
+              <Button variant="ghost" size="sm" onClick={clearAll} className="w-full lg:w-auto">
+                <X className="size-4" />
+                Limpiar
+              </Button>
+            )}
+            {canManage && (
+              <Button onClick={() => openUpload(null)} className="w-full lg:w-auto">
+                <Plus className="size-4" />
+                Subir documento
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {/* Lista */}
       {documents.length === 0 ? (
@@ -330,15 +362,12 @@ export function KnowledgeView({
           <EmptyState
             icon={BookOpen}
             title="Todavía no hay documentos"
-            description="Subí manuales, políticas o catálogos para que el agente pueda responder con información confirmada."
-          >
-            {canManage && (
-              <Button onClick={() => openUpload(null)}>
-                <Plus className="size-4" />
-                Subir documento
-              </Button>
-            )}
-          </EmptyState>
+            description={
+              canManage
+                ? "Subí o arrastrá un PDF con texto, DOCX o TXT. La IA solo usa el contenido cuando queda listo."
+                : "Cuando haya documentos listos, vas a poder consultar qué información usa la IA."
+            }
+          />
         )
       ) : (
         <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
@@ -363,7 +392,7 @@ export function KnowledgeView({
                           variant="outline"
                           className="gap-1 border-primary/20 bg-primary/10 text-[11px] font-normal text-[#8eacff]"
                         >
-                          Disponible para el agente
+                        La IA lo usa
                         </Badge>
                       )}
                     </div>

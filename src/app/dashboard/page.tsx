@@ -2,17 +2,21 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowRight,
+  BookOpen,
   Bot,
   Briefcase,
+  CircleAlert,
+  Inbox,
   MessageCircleQuestion,
+  MessagesSquare,
   Package,
-  Store,
+  UserRound,
   Users,
 } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { ActiveBadge } from "@/components/dashboard/active-badge";
-import { Badge } from "@/components/ui/badge";
+import { WhatsappIcon } from "@/components/whatsapp/whatsapp-icon";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -23,7 +27,7 @@ import {
 } from "@/components/ui/card";
 import { AGENT_TONE_LABELS } from "@/lib/validations/agent";
 import { requireOrgContext } from "@/server/context";
-import { getDashboardSummary } from "@/server/queries";
+import { getDashboardSummary, type DashboardSummary } from "@/server/queries";
 
 export const metadata: Metadata = {
   title: "Resumen",
@@ -69,95 +73,262 @@ const ACTION_LABELS: Record<string, string> = {
   "equipo.rol_actualizado": "cambió el rol de",
   "equipo.miembro_eliminado": "quitó del equipo a",
   "equipo.miembro_agregado": "se unió al equipo",
+  "whatsapp.mensaje_enviado": "envió un mensaje por WhatsApp",
+  "whatsapp.envio_fallido": "tuvo un fallo de envío por WhatsApp",
+  "whatsapp.ycloud_connected": "conectó WhatsApp mediante YCloud",
+  "knowledge.document_uploaded": "subió un documento de conocimiento",
+  "knowledge.document_deleted": "eliminó un documento de conocimiento",
+  "automation.test_emitted": "generó un evento de prueba de automatización",
 };
+
+type SetupNotice = {
+  key: string;
+  title: string;
+  description: string;
+  href: string;
+  cta: string;
+};
+
+/** Avisos de configuración pendiente, calculados solo con datos reales. */
+function buildSetupNotices(summary: DashboardSummary): SetupNotice[] {
+  const notices: SetupNotice[] = [];
+  if (!summary.agent || !summary.agent.enabled) {
+    notices.push({
+      key: "agente",
+      title: summary.agent
+        ? "El agente está desactivado"
+        : "El agente todavía no fue configurado",
+      description:
+        "Mientras esté apagado, nadie responde automáticamente las consultas.",
+      href: "/dashboard/agente",
+      cta: "Activar agente",
+    });
+  }
+  if (!summary.whatsapp) {
+    notices.push({
+      key: "whatsapp",
+      title: "WhatsApp no está conectado",
+      description:
+        "Conectá tu número para recibir y responder consultas reales.",
+      href: "/dashboard/integraciones",
+      cta: "Conectar WhatsApp",
+    });
+  } else if (summary.whatsapp.status === "ERROR") {
+    notices.push({
+      key: "whatsapp-error",
+      title: "La conexión de WhatsApp requiere atención",
+      description: "Revisá la integración para restablecer el canal.",
+      href: "/dashboard/integraciones",
+      cta: "Revisar integración",
+    });
+  }
+  if (!summary.businessComplete) {
+    notices.push({
+      key: "negocio",
+      title: "Completá el perfil de tu negocio",
+      description:
+        "La descripción, el teléfono y la dirección ayudan al agente a responder mejor.",
+      href: "/dashboard/negocio",
+      cta: "Completar datos",
+    });
+  }
+  if (
+    summary.productsActive + summary.servicesActive + summary.faqsActive ===
+      0 &&
+    summary.knowledgeReady === 0
+  ) {
+    notices.push({
+      key: "catalogo",
+      title: "El agente todavía no tiene información para responder",
+      description:
+        "Cargá productos, servicios, preguntas frecuentes o documentos.",
+      href: "/dashboard/productos",
+      cta: "Cargar catálogo",
+    });
+  }
+  return notices;
+}
+
+function CatalogLink({
+  href,
+  icon: Icon,
+  label,
+  value,
+  hint,
+}: {
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: number;
+  hint: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-colors hover:border-border hover:bg-secondary/40 focus-visible:ring-2 focus-visible:ring-ring/40"
+    >
+      <Icon className="size-4 shrink-0 text-muted-foreground group-hover:text-[#8eacff]" aria-hidden />
+      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground group-hover:text-foreground">
+        {label}
+      </span>
+      <span className="text-sm font-semibold tabular-nums">{value}</span>
+      <span className="hidden text-xs text-muted-foreground sm:inline">{hint}</span>
+    </Link>
+  );
+}
 
 export default async function DashboardPage() {
   const { user, org } = await requireOrgContext();
   const summary = await getDashboardSummary(org.id);
+  const notices = buildSetupNotices(summary);
+  const firstName = user.name.trim().split(/\s+/)[0] || user.name;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-7">
       <PageHeader
-        title={`Hola, ${user.name.split(" ")[0]}`}
+        title={`Hola, ${firstName}`}
         description={`Este es el estado actual de ${org.name}.`}
-      />
+      >
+        <Button asChild size="sm">
+          <Link href="/dashboard/conversaciones">
+            Ir a conversaciones
+            <ArrowRight className="size-4" />
+          </Link>
+        </Button>
+      </PageHeader>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          icon={Package}
-          label="Productos"
-          value={String(summary.productsTotal)}
-          hint={`${summary.productsActive} activos`}
-        />
-        <StatCard
-          icon={Briefcase}
-          label="Servicios"
-          value={String(summary.servicesTotal)}
-          hint={`${summary.servicesActive} activos`}
-        />
-        <StatCard
-          icon={MessageCircleQuestion}
-          label="Preguntas frecuentes"
-          value={String(summary.faqsTotal)}
-          hint={`${summary.faqsActive} activas`}
-        />
-        <StatCard
-          icon={Users}
-          label="Equipo"
-          value={String(summary.membersCount)}
-          hint={summary.membersCount === 1 ? "miembro" : "miembros"}
-        />
-      </div>
+      {/* Avisos reales de configuración pendiente */}
+      {notices.length > 0 && (
+        <div className="space-y-2" aria-label="Configuración pendiente">
+          {notices.map((notice) => (
+            <div
+              key={notice.key}
+              className="flex flex-col gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="flex min-w-0 items-start gap-3">
+                <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-300" aria-hidden />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{notice.title}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {notice.description}
+                  </p>
+                </div>
+              </div>
+              <Button asChild variant="outline" size="sm" className="shrink-0 sm:ml-4">
+                <Link href={notice.href}>
+                  {notice.cta}
+                  <ArrowRight className="size-4" />
+                </Link>
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Indicadores operativos principales */}
+      <section aria-label="Estado de la operación" className="space-y-3">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          Operación
+        </h3>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            icon={Inbox}
+            label="Conversaciones abiertas"
+            value={String(summary.conversationsOpen)}
+            hint={
+              summary.unreadTotal > 0
+                ? `${summary.unreadTotal} sin leer`
+                : "Al día"
+            }
+          />
+          <StatCard
+            icon={MessagesSquare}
+            label="Pendientes"
+            value={String(summary.conversationsPending)}
+            hint="Esperan una respuesta"
+          />
+          <StatCard
+            icon={UserRound}
+            label="En atención humana"
+            value={String(summary.conversationsHuman)}
+            hint="Derivadas del agente"
+          />
+          <StatCard
+            icon={Bot}
+            label="Agente"
+            value={summary.agent?.enabled ? "Activo" : "Apagado"}
+            hint={summary.agent?.assistantName ?? "Sin configurar"}
+          />
+        </div>
+      </section>
 
       <div className="grid gap-5 lg:grid-cols-3">
+        {/* Canales y agente */}
         <Card className="lg:col-span-1">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Bot className="size-4 text-[#8eacff]" />
-              Agente IA
-            </CardTitle>
-            <CardDescription>
-              Configuración del asistente de tu negocio.
-            </CardDescription>
+            <CardTitle className="text-base">Canales</CardTitle>
+            <CardDescription>Cómo entran las consultas hoy.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {summary.agent ? (
-              <>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Estado</span>
-                  <ActiveBadge
-                    active={summary.agent.enabled}
-                    activeLabel="Activado"
-                    inactiveLabel="Desactivado"
-                  />
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/40 px-3 py-2.5">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <WhatsappIcon className="size-4 shrink-0 text-emerald-400" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">WhatsApp</p>
+                  {summary.whatsapp ? (
+                    <p className="truncate text-xs text-muted-foreground">
+                      {summary.whatsapp.displayPhoneNumber} ·{" "}
+                      {summary.whatsapp.providerLabel}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Sin conectar
+                    </p>
+                  )}
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Nombre</span>
-                  <span className="text-sm font-medium">
-                    {summary.agent.assistantName}
-                  </span>
+              </div>
+              <ActiveBadge
+                active={summary.whatsapp?.status === "CONNECTED"}
+                activeLabel="Conectado"
+                inactiveLabel={
+                  summary.whatsapp?.status === "ERROR" ? "Con error" : "Inactivo"
+                }
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/40 px-3 py-2.5">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <Bot className="size-4 shrink-0 text-[#8eacff]" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">
+                    {summary.agent?.assistantName ?? "Agente IA"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {summary.agent
+                      ? `Tono ${AGENT_TONE_LABELS[summary.agent.tone].toLowerCase()}`
+                      : "Sin configurar"}
+                  </p>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Tono</span>
-                  <Badge variant="secondary" className="font-normal">
-                    {AGENT_TONE_LABELS[summary.agent.tone]}
-                  </Badge>
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                El agente todavía no fue configurado.
-              </p>
-            )}
-            <Button asChild variant="outline" size="sm" className="w-full">
-              <Link href="/dashboard/agente">
-                Configurar agente
-                <ArrowRight className="size-4" />
-              </Link>
-            </Button>
+              </div>
+              <ActiveBadge
+                active={Boolean(summary.agent?.enabled)}
+                activeLabel="Activado"
+                inactiveLabel="Desactivado"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link href="/dashboard/agente">Probar agente</Link>
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/dashboard/integraciones">Integraciones</Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
+        {/* Actividad reciente */}
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">Actividad reciente</CardTitle>
@@ -202,32 +373,52 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      {!summary.businessComplete && (
-        <Card className="border-primary/25 bg-primary/[0.045]">
-          <CardContent className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-            <div className="flex items-start gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
-                <Store className="size-4.5 text-[#8eacff]" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">
-                  Completá el perfil de tu negocio
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  La descripción, el teléfono y la dirección ayudan al agente a
-                  responder mejor.
-                </p>
-              </div>
-            </div>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/dashboard/negocio">
-                Completar datos
-                <ArrowRight className="size-4" />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+      {/* Resumen del negocio (secundario, compacto) */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Tu negocio</CardTitle>
+          <CardDescription>
+            La información con la que responde el agente.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-1 sm:grid-cols-2 xl:grid-cols-5">
+          <CatalogLink
+            href="/dashboard/productos"
+            icon={Package}
+            label="Productos"
+            value={summary.productsTotal}
+            hint={`${summary.productsActive} activos`}
+          />
+          <CatalogLink
+            href="/dashboard/servicios"
+            icon={Briefcase}
+            label="Servicios"
+            value={summary.servicesTotal}
+            hint={`${summary.servicesActive} activos`}
+          />
+          <CatalogLink
+            href="/dashboard/preguntas"
+            icon={MessageCircleQuestion}
+            label="Preguntas"
+            value={summary.faqsTotal}
+            hint={`${summary.faqsActive} activas`}
+          />
+          <CatalogLink
+            href="/dashboard/conocimiento"
+            icon={BookOpen}
+            label="Documentos"
+            value={summary.knowledgeReady}
+            hint="listos para la IA"
+          />
+          <CatalogLink
+            href="/dashboard/equipo"
+            icon={Users}
+            label="Equipo"
+            value={summary.membersCount}
+            hint={summary.membersCount === 1 ? "miembro" : "miembros"}
+          />
+        </CardContent>
+      </Card>
     </div>
   );
 }

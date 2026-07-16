@@ -307,22 +307,52 @@ export function AutomationDashboard({
             </p>
           </div>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <ConfigIndicator configured={infrastructure.endpointConfigured} label="Endpoint" />
-          <ConfigIndicator configured={infrastructure.outboundSignatureConfigured} label="Firma de salida" />
-          <ConfigIndicator configured={infrastructure.callbackConfigured} label="Firma de callback" />
-          <ConfigIndicator configured={infrastructure.dispatcherConfigured} label="Dispatcher" />
-          <ConfigIndicator configured={infrastructure.workflowsPublished} label="Workflows" configuredLabel="Publicados" />
-          <ConfigIndicator configured={infrastructure.probeVerified} label="Router y callback" configuredLabel="Verificados" />
-          {infrastructure.readinessMissingCategories.length > 0 && (
-            <p className="rounded-lg border border-amber-400/20 bg-amber-400/10 p-3 text-xs text-amber-200 md:col-span-2 lg:col-span-4">
-              Falta completar: {infrastructure.readinessMissingCategories.map((category) => ({ endpoint: "endpoint", outbound_signature: "firma de salida", callback_signature: "firma de callback", dispatcher: "dispatcher", workflows: "workflows por publicar", connection_test: "prueba de router y callback" })[category]).join(", ")}.
+        <CardContent className="space-y-3">
+          {/* Resumen para negocio: qué falta, sin vocabulario técnico arriba. */}
+          {infrastructure.readinessMissingCategories.length > 0 ? (
+            <p className="rounded-lg border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-200">
+              La conexión con n8n todavía no está lista:{" "}
+              {infrastructure.readinessMissingCategories.length}{" "}
+              {infrastructure.readinessMissingCategories.length === 1
+                ? "paso pendiente"
+                : "pasos pendientes"}
+              . El detalle técnico está más abajo.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              La preparación técnica está completa.
             </p>
           )}
-          <div className="text-xs text-muted-foreground md:col-span-2">{infrastructure.mockMode ? "Último evento procesado" : "Último evento enviado"}: <span className="text-foreground">{formatDateTime(infrastructure.mockMode ? infrastructure.lastProcessedAt : infrastructure.lastEventSentAt)}</span></div>
-          <div className="text-xs text-muted-foreground md:col-span-2">Último callback recibido: <span className="text-foreground">{formatDateTime(infrastructure.lastCallbackAt)}</span></div>
-          <div className="text-xs text-muted-foreground md:col-span-2">Última ejecución exitosa: <span className="text-foreground">{formatDateTime(infrastructure.lastSuccessfulRunAt)}</span></div>
-          {infrastructure.lastError && <p className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs text-red-200 md:col-span-2 lg:col-span-4">Último error: {infrastructure.lastError}</p>}
+          {infrastructure.lastError && (
+            <p className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs text-red-200">
+              Último error: {infrastructure.lastError}
+            </p>
+          )}
+
+          {/* Detalle técnico plegado: no compite con la configuración de negocio. */}
+          <details className="group rounded-lg border border-border/70 bg-background/40">
+            <summary className="cursor-pointer select-none px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+              Detalle técnico de la conexión
+            </summary>
+            <div className="grid gap-3 border-t border-border/70 p-3 md:grid-cols-2 lg:grid-cols-3">
+              <ConfigIndicator configured={infrastructure.endpointConfigured} label="Endpoint" />
+              <ConfigIndicator configured={infrastructure.outboundSignatureConfigured} label="Firma de salida" />
+              <ConfigIndicator configured={infrastructure.callbackConfigured} label="Firma de callback" />
+              <ConfigIndicator configured={infrastructure.dispatcherConfigured} label="Dispatcher" />
+              <ConfigIndicator configured={infrastructure.workflowsPublished} label="Workflows" configuredLabel="Publicados" />
+              <ConfigIndicator configured={infrastructure.probeVerified} label="Router y callback" configuredLabel="Verificados" />
+              {infrastructure.readinessMissingCategories.length > 0 && (
+                <p className="text-xs text-amber-200/90 md:col-span-2 lg:col-span-3">
+                  Falta completar: {infrastructure.readinessMissingCategories.map((category) => ({ endpoint: "endpoint", outbound_signature: "firma de salida", callback_signature: "firma de callback", dispatcher: "dispatcher", workflows: "workflows por publicar", connection_test: "prueba de router y callback" })[category]).join(", ")}.
+                </p>
+              )}
+              <div className="text-xs text-muted-foreground md:col-span-2 lg:col-span-3">
+                {infrastructure.mockMode ? "Último evento procesado" : "Último evento enviado"}: <span className="text-foreground">{formatDateTime(infrastructure.mockMode ? infrastructure.lastProcessedAt : infrastructure.lastEventSentAt)}</span>
+                {" · "}Último callback: <span className="text-foreground">{formatDateTime(infrastructure.lastCallbackAt)}</span>
+                {" · "}Última ejecución exitosa: <span className="text-foreground">{formatDateTime(infrastructure.lastSuccessfulRunAt)}</span>
+              </div>
+            </div>
+          </details>
         </CardContent>
       </Card>
 

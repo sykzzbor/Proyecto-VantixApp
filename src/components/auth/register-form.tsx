@@ -12,16 +12,14 @@ import { createOrganization } from "@/server/actions/organization";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FieldError } from "@/components/forms/field-error";
 import { FormAlert } from "@/components/forms/form-alert";
 import { SubmitButton } from "@/components/forms/submit-button";
+import { AuthCardHeader } from "@/components/auth/auth-card-header";
 
 export function RegisterForm({
   invitationToken,
@@ -75,15 +73,16 @@ export function RegisterForm({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">Crear cuenta</CardTitle>
-        <CardDescription>
-          {invited
+    <Card className="border-border/80 bg-card/95 shadow-[0_28px_70px_-42px_rgba(0,0,0,0.95)]">
+      <AuthCardHeader
+        eyebrow={invited ? "Invitación de equipo" : "Nuevo espacio de trabajo"}
+        title="Crear cuenta"
+        description={
+          invited
             ? "Creá tu cuenta para unirte al equipo que te invitó."
-            : "Registrá tu negocio y empezá a gestionarlo en minutos."}
-        </CardDescription>
-      </CardHeader>
+            : "Registrá tu negocio y prepará tu espacio de trabajo."
+        }
+      />
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
         <CardContent className="space-y-4">
           <FormAlert message={formError} />
@@ -93,6 +92,7 @@ export function RegisterForm({
               id="name"
               autoComplete="name"
               placeholder="Ana García"
+              aria-invalid={Boolean(errors.name)}
               {...register("name")}
             />
             <FieldError message={errors.name?.message} />
@@ -104,6 +104,7 @@ export function RegisterForm({
                 id="businessName"
                 autoComplete="organization"
                 placeholder="Estética Aurora"
+                aria-invalid={Boolean(errors.businessName)}
                 {...register("businessName")}
               />
               <FieldError message={errors.businessName?.message} />
@@ -116,6 +117,7 @@ export function RegisterForm({
               type="email"
               autoComplete="email"
               placeholder="nombre@empresa.com"
+              aria-invalid={Boolean(errors.email)}
               {...register("email")}
             />
             <FieldError message={errors.email?.message} />
@@ -126,6 +128,8 @@ export function RegisterForm({
               id="password"
               type="password"
               autoComplete="new-password"
+              placeholder="Mínimo 8 caracteres"
+              aria-invalid={Boolean(errors.password)}
               {...register("password")}
             />
             <FieldError message={errors.password?.message} />

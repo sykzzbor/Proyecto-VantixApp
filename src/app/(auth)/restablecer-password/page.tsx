@@ -4,11 +4,9 @@ import { ResetPasswordForm } from "@/components/auth/reset-password-form";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardDescription,
   CardFooter,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
+import { AuthCardHeader } from "@/components/auth/auth-card-header";
 
 export const metadata: Metadata = {
   title: "Restablecer contraseña",
@@ -24,14 +22,12 @@ export default async function ResetPasswordPage(
 
   if (!token || hasError) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-xl">Enlace no válido</CardTitle>
-          <CardDescription>
-            El enlace para restablecer la contraseña expiró o no es válido.
-            Pedí uno nuevo desde la página de recuperación.
-          </CardDescription>
-        </CardHeader>
+      <Card className="border-border/80 bg-card/95">
+        <AuthCardHeader
+          eyebrow="Recuperación de acceso"
+          title="Enlace no válido"
+          description="El enlace para restablecer la contraseña expiró o no es válido. Pedí uno nuevo desde la página de recuperación."
+        />
         <CardFooter>
           <Button asChild variant="outline">
             <Link href="/recuperar-password">Pedir un enlace nuevo</Link>

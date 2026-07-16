@@ -6,8 +6,10 @@ export default function Loading() {
     <div className="space-y-6">
       <PageHeaderSkeleton />
       <Skeleton className="h-9 w-64" />
-      <Skeleton className="h-72 rounded-xl" />
-      <Skeleton className="h-56 rounded-xl" />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Skeleton className="h-72 rounded-xl" />
+        <Skeleton className="h-[30rem] rounded-xl" />
+      </div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { KeyRound, ScrollText, UserRound } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import {
   ChangePasswordForm,
@@ -43,11 +44,11 @@ export default async function ConfiguracionPage() {
     <div className="space-y-6">
       <PageHeader
         title="Configuración"
-        description="Tu cuenta, la organización y el registro de actividad."
+        description="Administrá tu cuenta, el espacio de trabajo y la actividad de la organización."
       />
 
       <Tabs defaultValue="cuenta" className="space-y-4">
-        <TabsList>
+        <TabsList className="w-full justify-start overflow-x-auto sm:w-fit">
           <TabsTrigger value="cuenta">Cuenta</TabsTrigger>
           <TabsTrigger value="organizacion">Organización</TabsTrigger>
           {canReadAudit && (
@@ -55,10 +56,13 @@ export default async function ConfiguracionPage() {
           )}
         </TabsList>
 
-        <TabsContent value="cuenta" className="space-y-4">
+        <TabsContent value="cuenta" className="grid items-start gap-4 lg:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Perfil</CardTitle>
+              <div className="flex size-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
+                <UserRound className="size-4 text-[#8eacff]" aria-hidden />
+              </div>
+              <CardTitle className="mt-2 text-base">Perfil</CardTitle>
               <CardDescription>
                 Tu nombre y el email con el que iniciás sesión.
               </CardDescription>
@@ -82,7 +86,10 @@ export default async function ConfiguracionPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Contraseña</CardTitle>
+              <div className="flex size-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
+                <KeyRound className="size-4 text-[#8eacff]" aria-hidden />
+              </div>
+              <CardTitle className="mt-2 text-base">Contraseña</CardTitle>
               <CardDescription>
                 Actualizá la contraseña de tu cuenta. Se van a cerrar las demás
                 sesiones abiertas.
@@ -106,9 +113,10 @@ export default async function ConfiguracionPage() {
           <TabsContent value="actividad">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">
-                  Registro de actividad
-                </CardTitle>
+                <div className="flex size-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
+                  <ScrollText className="size-4 text-[#8eacff]" aria-hidden />
+                </div>
+                <CardTitle className="mt-2 text-base">Registro de actividad</CardTitle>
                 <CardDescription>
                   Las últimas {auditLogs.length} acciones importantes
                   registradas en la organización.
@@ -120,7 +128,20 @@ export default async function ConfiguracionPage() {
                     Todavía no hay actividad registrada.
                   </p>
                 ) : (
-                  <div className="overflow-x-auto rounded-xl border border-border bg-card">
+                  <>
+                  <div className="space-y-2 md:hidden">
+                    {auditLogs.map((log) => (
+                      <article key={log.id} className="rounded-lg border border-border/75 bg-background/35 p-3">
+                        <div className="space-y-1">
+                          <p className="break-words font-mono text-xs text-foreground">{log.action}</p>
+                          <span className="block text-[10px] text-muted-foreground">{log.dateLabel}</span>
+                        </div>
+                        <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{log.details ?? "Sin detalle adicional"}</p>
+                        <p className="mt-2 text-xs font-medium">{log.userName ?? "Sistema"}</p>
+                      </article>
+                    ))}
+                  </div>
+                  <div className="hidden overflow-hidden rounded-xl border border-border bg-card md:block">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -150,6 +171,7 @@ export default async function ConfiguracionPage() {
                       </TableBody>
                     </Table>
                   </div>
+                  </>
                 )}
               </CardContent>
             </Card>

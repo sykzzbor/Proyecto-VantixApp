@@ -155,7 +155,7 @@ export function TestChat({
   }
 
   return (
-    <Card className="flex h-[min(680px,calc(100dvh-15rem))] min-h-[34rem] flex-col gap-0 overflow-hidden p-0">
+    <Card className="flex h-[calc(100dvh-20rem)] min-h-[28rem] flex-col gap-0 overflow-hidden p-0 sm:h-[min(700px,calc(100dvh-15rem))] sm:min-h-[32rem]">
       {/* Encabezado */}
       <div className="flex min-h-16 items-center gap-3 border-b border-border bg-card/95 px-4 py-3">
         <div className="flex size-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
@@ -194,9 +194,8 @@ export function TestChat({
         <div className="flex items-start gap-2 border-b bg-amber-50 px-4 py-2.5 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
           <p>
-            Las respuestas automáticas están en modo demo o no hay un proveedor
-            real configurado. El chat no llamará a OpenAI hasta habilitarlo en el
-            servidor.
+            Las respuestas automáticas están en modo demo o falta completar el
+            proveedor de IA. La prueba falla de forma segura hasta que esté listo.
           </p>
         </div>
       )}
@@ -211,7 +210,7 @@ export function TestChat({
       )}
 
       {/* Mensajes */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-background/25 px-3 py-4 sm:px-5">
+      <div ref={scrollRef} className="conversation-canvas flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5">
         {messages.length === 0 && !sending ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <div className="flex size-12 items-center justify-center rounded-xl border border-primary/15 bg-primary/10">

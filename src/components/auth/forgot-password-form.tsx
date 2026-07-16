@@ -13,15 +13,13 @@ import {
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FieldError } from "@/components/forms/field-error";
 import { SubmitButton } from "@/components/forms/submit-button";
+import { AuthCardHeader } from "@/components/auth/auth-card-header";
 
 export function ForgotPasswordForm() {
   const [sent, setSent] = useState(false);
@@ -45,17 +43,17 @@ export function ForgotPasswordForm() {
 
   if (sent) {
     return (
-      <Card>
-        <CardHeader>
-          <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-muted">
+      <Card className="border-border/80 bg-card/95">
+        <AuthCardHeader
+          eyebrow="Recuperación de acceso"
+          title="Revisá tu correo"
+          description="Si existe una cuenta con ese email, te enviamos un enlace para restablecer la contraseña. El enlace vence en 1 hora."
+          icon={
+            <div className="mb-3 flex size-10 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
             <MailCheck className="size-5 text-muted-foreground" aria-hidden />
           </div>
-          <CardTitle className="text-xl">Revisá tu correo</CardTitle>
-          <CardDescription>
-            Si existe una cuenta con ese email, te enviamos un enlace para
-            restablecer la contraseña. El enlace vence en 1 hora.
-          </CardDescription>
-        </CardHeader>
+          }
+        />
         <CardContent>
           <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
             Nota de esta etapa: el envío de emails todavía no está integrado.
@@ -75,14 +73,12 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">Recuperar contraseña</CardTitle>
-        <CardDescription>
-          Ingresá el email de tu cuenta y te enviaremos un enlace para crear
-          una contraseña nueva.
-        </CardDescription>
-      </CardHeader>
+    <Card className="border-border/80 bg-card/95 shadow-[0_28px_70px_-42px_rgba(0,0,0,0.95)]">
+      <AuthCardHeader
+        eyebrow="Recuperación de acceso"
+        title="Recuperar contraseña"
+        description="Ingresá el email de tu cuenta y te enviaremos un enlace para crear una contraseña nueva."
+      />
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
         <CardContent className="space-y-4">
           <div className="space-y-2">
@@ -92,6 +88,7 @@ export function ForgotPasswordForm() {
               type="email"
               autoComplete="email"
               placeholder="nombre@empresa.com"
+              aria-invalid={Boolean(errors.email)}
               {...register("email")}
             />
             <FieldError message={errors.email?.message} />

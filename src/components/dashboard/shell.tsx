@@ -3,9 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, CircleHelp, Menu, Sparkles } from "lucide-react";
+import { ChevronRight, Menu } from "lucide-react";
 import type { MemberRole } from "@/generated/prisma/enums";
-import { NAV_ITEMS, isNavItemActive } from "@/lib/navigation";
+import { NAV_GROUPS, NAV_ITEMS, isNavItemActive } from "@/lib/navigation";
 import { ROLE_LABELS } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { VantixLogo } from "@/components/brand/vantix-logo";
@@ -34,51 +34,44 @@ function NavLinks({
   onNavigate?: () => void;
 }) {
   return (
-    <nav className="flex flex-col gap-1" aria-label="Navegación principal">
-      {NAV_ITEMS.map((item) => {
-        const active = isNavItemActive(item, pathname);
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            aria-current={active ? "page" : undefined}
-            className={cn(
-              "relative flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-[color,background-color,box-shadow] focus-visible:ring-2 focus-visible:ring-sidebar-ring/40",
-              active
-                ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_3px_0_0_var(--sidebar-primary)]"
-                : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
-            )}
-          >
-            <Icon className="size-4 shrink-0" aria-hidden />
-            {item.label}
-          </Link>
-        );
-      })}
+    <nav className="flex flex-col gap-4" aria-label="Navegación principal">
+      {NAV_GROUPS.map((group) => (
+        <div key={group.label}>
+          <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+            {group.label}
+          </p>
+          <div className="flex flex-col gap-0.5">
+            {group.items.map((item) => {
+              const active = isNavItemActive(item, pathname);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onNavigate}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "relative flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-[color,background-color,box-shadow] focus-visible:ring-2 focus-visible:ring-sidebar-ring/40",
+                    active
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_3px_0_0_var(--sidebar-primary)]"
+                      : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+                  )}
+                >
+                  <Icon
+                    className={cn(
+                      "size-4 shrink-0",
+                      active ? "text-[#8eacff]" : "text-muted-foreground/80"
+                    )}
+                    aria-hidden
+                  />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </nav>
-  );
-}
-
-function PendingLink({
-  label,
-  icon: Icon,
-}: {
-  label: string;
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-}) {
-  return (
-    <div
-      className="flex min-h-9 items-center gap-3 rounded-lg px-3 text-[13px] text-muted-foreground/75"
-      aria-label={`${label}. Próximamente`}
-      title="Próximamente"
-    >
-      <Icon className="size-4 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      <span className="rounded border border-sidebar-border bg-black/15 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-muted-foreground">
-        Pronto
-      </span>
-    </div>
   );
 }
 
@@ -88,22 +81,16 @@ function SidebarFooter({
   role,
 }: Pick<DashboardShellProps, "orgName" | "user" | "role">) {
   return (
-    <div className="space-y-3 border-t border-sidebar-border bg-black/10 p-3">
-      <div className="space-y-0.5" aria-label="Recursos">
-        <PendingLink label="Centro de ayuda" icon={CircleHelp} />
-        <PendingLink label="Novedades" icon={Sparkles} />
-      </div>
-      <div className="space-y-2 border-t border-sidebar-border pt-3">
-        <p className="truncate px-2 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-          {orgName}
-        </p>
-        <UserMenu
-          name={user.name}
-          email={user.email}
-          roleLabel={ROLE_LABELS[role]}
-          placement="sidebar"
-        />
-      </div>
+    <div className="space-y-2 border-t border-sidebar-border bg-black/10 p-3">
+      <p className="truncate px-2 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+        {orgName}
+      </p>
+      <UserMenu
+        name={user.name}
+        email={user.email}
+        roleLabel={ROLE_LABELS[role]}
+        placement="sidebar"
+      />
     </div>
   );
 }

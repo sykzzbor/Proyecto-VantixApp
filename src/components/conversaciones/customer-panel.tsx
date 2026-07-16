@@ -13,7 +13,6 @@ import type { ConversationDetail } from "@/server/inbox";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { FieldError } from "@/components/forms/field-error";
 import { SubmitButton } from "@/components/forms/submit-button";
@@ -69,11 +68,16 @@ export function CustomerPanel({
   }
 
   return (
-    <div className="space-y-5 p-4.5">
+    <div className="space-y-4 p-4">
       {/* Datos de la conversación */}
-      <div className="space-y-2.5">
-        <h3 className="text-sm font-semibold tracking-tight">Conversación</h3>
-        <dl className="space-y-1.5 text-sm">
+      <section className="space-y-3 rounded-xl border border-border/75 bg-card/70 p-3.5">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Contexto
+          </p>
+          <h3 className="mt-1 text-sm font-semibold tracking-tight">Conversación</h3>
+        </div>
+        <dl className="space-y-2 text-xs">
           <div className="flex items-center justify-between gap-2">
             <dt className="text-muted-foreground">Canal</dt>
             <dd>
@@ -94,35 +98,38 @@ export function CustomerPanel({
           </div>
           <div className="flex items-center justify-between gap-2">
             <dt className="text-muted-foreground">Estado</dt>
-            <dd>{STATUS_LABEL[detail.status]}</dd>
+            <dd className="font-medium text-foreground">{STATUS_LABEL[detail.status]}</dd>
           </div>
           <div className="flex items-center justify-between gap-2">
             <dt className="text-muted-foreground">Atención</dt>
-            <dd>{detail.handlingMode === "ai" ? "IA activa" : "Humana"}</dd>
+            <dd className="font-medium text-foreground">
+              {detail.handlingMode === "ai" ? "IA activa" : "Humana"}
+            </dd>
           </div>
           <div className="flex items-center justify-between gap-2">
             <dt className="text-muted-foreground">Primera conversación</dt>
-            <dd>{detail.createdAtLabel}</dd>
+            <dd className="text-right text-foreground">{detail.createdAtLabel}</dd>
           </div>
           <div className="flex items-center justify-between gap-2">
             <dt className="text-muted-foreground">Última actividad</dt>
-            <dd className="text-right">{detail.lastActivityLabel ?? "—"}</dd>
+            <dd className="text-right text-foreground">{detail.lastActivityLabel ?? "—"}</dd>
           </div>
           <div className="flex items-center justify-between gap-2">
             <dt className="text-muted-foreground">Responsable</dt>
-            <dd className="text-right">
+            <dd className="max-w-32 truncate text-right text-foreground" title={detail.assigned?.name ?? "Sin asignar"}>
               {detail.assigned?.name ?? "Sin asignar"}
             </dd>
           </div>
         </dl>
-      </div>
-
-      <Separator />
+      </section>
 
       {/* Datos del cliente */}
-      <div className="space-y-3">
+      <section className="space-y-3 rounded-xl border border-border/75 bg-card/70 p-3.5">
         <div>
-          <h3 className="text-sm font-semibold tracking-tight">Cliente</h3>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Perfil
+          </p>
+          <h3 className="mt-1 text-sm font-semibold tracking-tight">Datos del cliente</h3>
           {!detail.customer && (
             <p className="mt-1 text-xs text-muted-foreground">
               {canEdit
@@ -190,25 +197,25 @@ export function CustomerPanel({
           <dl className="space-y-1.5 text-sm">
             <div className="flex items-center justify-between gap-2">
               <dt className="text-muted-foreground">Nombre</dt>
-              <dd>{detail.customer?.name ?? "Cliente de prueba"}</dd>
+              <dd className="max-w-36 truncate text-right">{detail.customer?.name ?? "Cliente de prueba"}</dd>
             </div>
             <div className="flex items-center justify-between gap-2">
               <dt className="text-muted-foreground">Teléfono</dt>
-              <dd>{detail.customer?.phone ?? "—"}</dd>
+              <dd className="max-w-36 break-all text-right">{detail.customer?.phone ?? "—"}</dd>
             </div>
             <div className="flex items-center justify-between gap-2">
               <dt className="text-muted-foreground">Email</dt>
-              <dd className="truncate">{detail.customer?.email ?? "—"}</dd>
+              <dd className="max-w-36 truncate text-right" title={detail.customer?.email ?? undefined}>{detail.customer?.email ?? "—"}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Notas</dt>
-              <dd className="mt-1 whitespace-pre-wrap">
+              <dd className="mt-1 whitespace-pre-wrap break-words text-foreground">
                 {detail.customer?.notes ?? "—"}
               </dd>
             </div>
           </dl>
         )}
-      </div>
+      </section>
     </div>
   );
 }
