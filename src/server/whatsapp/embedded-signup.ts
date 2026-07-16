@@ -21,6 +21,10 @@ import {
   subscribeMetaAppToWaba,
   testWhatsappConnection,
 } from "@/server/whatsapp/meta-client";
+import {
+  resolveYCloudWhatsappAsset,
+  YCloudApiError,
+} from "@/server/whatsapp/ycloud-client";
 
 export const EMBEDDED_SIGNUP_COOKIE = "vantix_whatsapp_signup";
 export const EMBEDDED_SIGNUP_MAX_BODY_BYTES = 8 * 1024;
@@ -61,7 +65,8 @@ export type SafeWhatsappIntegrationView = {
     | "action_required"
     | "disconnected"
     | "error";
-  connectionMethod: "MANUAL" | "EMBEDDED_SIGNUP";
+  provider: "META_CLOUD" | "YCLOUD";
+  connectionMethod: "MANUAL" | "EMBEDDED_SIGNUP" | "COEXISTENCE";
   maskedPhoneNumber: string;
   verifiedName: string;
   connectedAt: string | null;
@@ -83,6 +88,7 @@ type EmbeddedDependencies = {
   subscribeWaba: typeof subscribeMetaAppToWaba;
   isSubscribed: typeof isMetaAppSubscribedToWaba;
   testConnection: typeof testWhatsappConnection;
+  resolveYCloudAsset: typeof resolveYCloudWhatsappAsset;
   encryptToken: typeof encryptAccessToken;
   decryptToken: typeof decryptAccessToken;
   now: () => Date;
@@ -95,6 +101,7 @@ const defaultDependencies: EmbeddedDependencies = {
   subscribeWaba: subscribeMetaAppToWaba,
   isSubscribed: isMetaAppSubscribedToWaba,
   testConnection: testWhatsappConnection,
+  resolveYCloudAsset: resolveYCloudWhatsappAsset,
   encryptToken: encryptAccessToken,
   decryptToken: decryptAccessToken,
   now: () => new Date(),
@@ -157,7 +164,8 @@ function safeView(input: {
     | "ACTION_REQUIRED"
     | "DISCONNECTED"
     | "ERROR";
-  connectionMethod: "MANUAL" | "EMBEDDED_SIGNUP";
+  provider: "META_CLOUD" | "YCLOUD";
+  connectionMethod: "MANUAL" | "EMBEDDED_SIGNUP" | "COEXISTENCE";
   displayPhoneNumber: string;
   verifiedName: string;
   connectedAt: Date | null;
@@ -167,6 +175,7 @@ function safeView(input: {
 }): SafeWhatsappIntegrationView {
   return {
     status: input.status.toLowerCase() as SafeWhatsappIntegrationView["status"],
+    provider: input.provider,
     connectionMethod: input.connectionMethod,
     maskedPhoneNumber: maskWhatsappPhone(input.displayPhoneNumber),
     verifiedName: input.verifiedName,
@@ -179,6 +188,7 @@ function safeView(input: {
 
 const SAFE_INTEGRATION_SELECT = {
   status: true,
+  provider: true,
   connectionMethod: true,
   displayPhoneNumber: true,
   verifiedName: true,
@@ -379,6 +389,13 @@ function embeddedFailure(error: unknown): WhatsappEmbeddedSignupError {
       error.retryable ? 503 : 400
     );
   }
+  if (error instanceof YCloudApiError) {
+    return new WhatsappEmbeddedSignupError(
+      "connection_unavailable",
+      error.safeMessage,
+      error.retryable ? 503 : 400
+    );
+  }
   return new WhatsappEmbeddedSignupError(
     "connection_unavailable",
     "No se pudo completar la conexión con Meta.",
@@ -570,7 +587,7 @@ export async function completeEmbeddedSignup(
                 id: conflicting.id,
                 organizationId: input.organizationId,
               },
-              select: { id: true, connectedAt: true },
+              select: { id: true, provider: true, connectedAt: true },
             })
           : null;
         const data = {
@@ -579,6 +596,8 @@ export async function completeEmbeddedSignup(
           displayPhoneNumber: asset.displayPhoneNumber,
           verifiedName: asset.verifiedName,
           encryptedAccessToken,
+          provider: "META_CLOUD" as const,
+          providerPhoneNumber: null,
           connectionMethod: "EMBEDDED_SIGNUP" as const,
           businessId: asset.businessId,
           tokenExpiresAt,
@@ -587,6 +606,8 @@ export async function completeEmbeddedSignup(
           connectedAt: current?.connectedAt ?? now,
           lastSyncedAt: now,
           webhookSubscribedAt: now,
+          lastWebhookAt:
+            current?.provider === "META_CLOUD" ? undefined : null,
           lastErrorCode: null,
           lastError: null,
         };
@@ -702,6 +723,8 @@ async function getStoredIntegration(organizationId: string) {
       phoneNumberId: true,
       businessId: true,
       encryptedAccessToken: true,
+      provider: true,
+      providerPhoneNumber: true,
       connectionMethod: true,
       status: true,
       connectedAt: true,
@@ -720,6 +743,8 @@ function storedConfigurationSnapshot(
     connectionMethod: integration.connectionMethod,
     businessId: integration.businessId,
     encryptedAccessToken: integration.encryptedAccessToken,
+    provider: integration.provider,
+    providerPhoneNumber: integration.providerPhoneNumber,
     lastSyncedAt: integration.lastSyncedAt,
   };
 }
@@ -732,6 +757,31 @@ async function verifyStoredConnection(
   const accessToken = dependencies.decryptToken(
     integration.encryptedAccessToken
   );
+  if (integration.provider === "YCLOUD") {
+    const phoneNumber =
+      integration.providerPhoneNumber?.trim() || integration.phoneNumberId;
+    const remote = await dependencies.resolveYCloudAsset({
+      phoneNumber,
+      apiKey: accessToken,
+    });
+    if (
+      remote.phoneNumberId !== integration.phoneNumberId ||
+      remote.wabaId !== integration.wabaId
+    ) {
+      throw new WhatsappEmbeddedSignupError(
+        "connection_unavailable",
+        "YCloud devolvió un canal distinto del conectado."
+      );
+    }
+    return {
+      accessToken,
+      displayPhoneNumber: remote.displayPhoneNumber,
+      verifiedName: remote.verifiedName,
+      scopes: [] as string[],
+      expiresAt: null as Date | null,
+      webhookSubscribed: null as boolean | null,
+    };
+  }
   if (integration.connectionMethod === "MANUAL") {
     const remote = await dependencies.testConnection({
       phoneNumberId: integration.phoneNumberId,

@@ -363,7 +363,10 @@ test("WhatsApp no crea jobs de IA cuando handling_mode es humano", async () => {
   const integration: ResolvedWhatsappIntegration = {
     id: "integration-a",
     organizationId: "org-a",
+    provider: "META_CLOUD",
+    wabaId: "waba-a",
     phoneNumberId: "phone-a",
+    providerPhoneNumber: null,
     displayPhoneNumber: "+5491100000000",
     encryptedAccessToken: "encrypted",
     status: "CONNECTED",

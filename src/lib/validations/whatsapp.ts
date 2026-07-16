@@ -33,6 +33,27 @@ export type WhatsappIntegrationConfigInput = z.infer<
   typeof whatsappIntegrationConfigSchema
 >;
 
+export const ycloudApiKeySchema = z
+  .string()
+  .trim()
+  .min(20, "La API key de YCloud no es válida.")
+  .max(4096, "La API key de YCloud no es válida.");
+
+export const ycloudPhoneNumberSchema = z
+  .string()
+  .trim()
+  .regex(/^\+[1-9]\d{7,14}$/, "Ingresá el número en formato E.164, por ejemplo +5493515550000.");
+
+/** El WABA ID y el Phone Number ID se obtienen exclusivamente desde YCloud. */
+export const ycloudConnectionSchema = z
+  .object({
+    apiKey: ycloudApiKeySchema,
+    phoneNumber: ycloudPhoneNumberSchema,
+  })
+  .strict();
+
+export type YCloudConnectionInput = z.infer<typeof ycloudConnectionSchema>;
+
 export const whatsappSimulatorMessageSchema = z.object({
   name: z
     .string()

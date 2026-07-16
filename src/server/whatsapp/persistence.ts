@@ -48,11 +48,14 @@ export async function resolveWhatsappIntegration(
   phoneNumberId: string
 ): Promise<ResolvedWhatsappIntegration | null> {
   const integration = await prisma.whatsappIntegration.findFirst({
-    where: { phoneNumberId },
+    where: { phoneNumberId, provider: "META_CLOUD" },
     select: {
       id: true,
       organizationId: true,
+      provider: true,
+      wabaId: true,
       phoneNumberId: true,
+      providerPhoneNumber: true,
       displayPhoneNumber: true,
       encryptedAccessToken: true,
       status: true,
@@ -61,11 +64,56 @@ export async function resolveWhatsappIntegration(
   return integration;
 }
 
-async function findDuplicate(externalMessageId: string) {
-  return prisma.message.findUnique({
-    where: { externalMessageId },
+export async function resolveYCloudIntegration(input: {
+  phoneNumber: string;
+  wabaId: string;
+}): Promise<ResolvedWhatsappIntegration | null> {
+  let phoneNumber: string;
+  try {
+    phoneNumber = normalizeWhatsappPhone(input.phoneNumber);
+  } catch {
+    return null;
+  }
+  return prisma.whatsappIntegration.findFirst({
+    where: {
+      provider: "YCLOUD",
+      providerPhoneNumber: phoneNumber,
+      wabaId: input.wabaId,
+    },
+    select: {
+      id: true,
+      organizationId: true,
+      provider: true,
+      wabaId: true,
+      phoneNumberId: true,
+      providerPhoneNumber: true,
+      displayPhoneNumber: true,
+      encryptedAccessToken: true,
+      status: true,
+    },
+  });
+}
+
+async function findDuplicate(event: WhatsappInboundEvent) {
+  return prisma.message.findFirst({
+    where: {
+      OR: [
+        { externalMessageId: event.externalMessageId },
+        ...(event.whatsappMessageId
+          ? [{ whatsappMessageId: event.whatsappMessageId }]
+          : []),
+      ],
+    },
     select: { id: true, conversationId: true },
   });
+}
+
+function parseInboundTimestamp(value: string | null): Date {
+  if (!value) return new Date();
+  const numeric = /^\d+(?:\.\d+)?$/.test(value)
+    ? new Date(Number(value) * 1000)
+    : new Date(value);
+  return Number.isNaN(numeric.getTime()) ? new Date() : numeric;
 }
 
 /**
@@ -143,12 +191,7 @@ export async function persistIncomingWhatsappMessage(
             });
           }
 
-          const createdAt = event.timestamp
-            ? new Date(Number(event.timestamp) * 1000)
-            : new Date();
-          const safeCreatedAt = Number.isNaN(createdAt.getTime())
-            ? new Date()
-            : createdAt;
+          const safeCreatedAt = parseInboundTimestamp(event.timestamp);
           const ingestedAt = new Date();
 
           const message = await tx.message.create({
@@ -158,6 +201,7 @@ export async function persistIncomingWhatsappMessage(
               senderType: "CUSTOMER",
               content: event.content,
               externalMessageId: event.externalMessageId,
+              whatsappMessageId: event.whatsappMessageId ?? null,
               metadata: event.metadata as Prisma.InputJsonObject,
               createdAt: safeCreatedAt,
               ingestedAt,
@@ -202,7 +246,7 @@ export async function persistIncomingWhatsappMessage(
       );
     } catch (error) {
       if (isPrismaCode(error, "P2002")) {
-        const duplicate = await findDuplicate(event.externalMessageId);
+        const duplicate = await findDuplicate(event);
         if (duplicate) {
           return {
             duplicate: true,
@@ -287,14 +331,37 @@ export async function applyWhatsappStatus(
   const message = await prisma.message.findFirst({
     where: {
       organizationId,
-      externalMessageId: event.externalMessageId,
+      OR: [
+        { externalMessageId: event.externalMessageId },
+        ...(event.whatsappMessageId
+          ? [{ whatsappMessageId: event.whatsappMessageId }]
+          : []),
+        ...(event.internalMessageId ? [{ id: event.internalMessageId }] : []),
+      ],
     },
-    select: { id: true, deliveryStatus: true },
+    select: { id: true, deliveryStatus: true, whatsappMessageId: true },
   });
   if (!message) return { found: false };
 
   const next = nextDeliveryStatus(message.deliveryStatus, event.deliveryStatus);
   if (next === message.deliveryStatus) {
+    if (event.whatsappMessageId && !message.whatsappMessageId) {
+      const enriched = await prisma.message.updateMany({
+        where: {
+          id: message.id,
+          organizationId,
+          whatsappMessageId: null,
+        },
+        data: { whatsappMessageId: event.whatsappMessageId },
+      });
+      return {
+        found: true,
+        changed: enriched.count === 1,
+        organizationId,
+        messageId: message.id,
+        deliveryStatus: next,
+      };
+    }
     return {
       found: true,
       changed: false,
@@ -314,6 +381,9 @@ export async function applyWhatsappStatus(
       deliveryStatus: next,
       errorCode: next === "FAILED" ? event.errorCode : null,
       errorMessage: next === "FAILED" ? event.errorMessage : null,
+      ...(event.whatsappMessageId && !message.whatsappMessageId
+        ? { whatsappMessageId: event.whatsappMessageId }
+        : {}),
     },
   });
 

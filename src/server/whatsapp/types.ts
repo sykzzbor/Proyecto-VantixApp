@@ -20,8 +20,12 @@ export type WhatsappDeliveryStatus =
 
 export type WhatsappInboundEvent = {
   kind: "message";
+  provider?: "META_CLOUD" | "YCLOUD";
+  webhookEventId?: string;
+  wabaId?: string;
   phoneNumberId: string;
   externalMessageId: string;
+  whatsappMessageId?: string | null;
   from: string;
   customerName: string;
   timestamp: string | null;
@@ -32,8 +36,13 @@ export type WhatsappInboundEvent = {
 
 export type WhatsappStatusEvent = {
   kind: "status";
+  provider?: "META_CLOUD" | "YCLOUD";
+  webhookEventId?: string;
+  wabaId?: string;
   phoneNumberId: string;
   externalMessageId: string;
+  whatsappMessageId?: string | null;
+  internalMessageId?: string | null;
   timestamp: string | null;
   deliveryStatus: Exclude<WhatsappDeliveryStatus, "PENDING">;
   errorCode: string | null;
@@ -47,7 +56,10 @@ export type WhatsappWebhookEvent =
 export type ResolvedWhatsappIntegration = {
   id: string;
   organizationId: string;
+  provider: "META_CLOUD" | "YCLOUD";
+  wabaId: string;
   phoneNumberId: string;
+  providerPhoneNumber: string | null;
   displayPhoneNumber: string;
   encryptedAccessToken: string;
   status:

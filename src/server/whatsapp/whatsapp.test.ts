@@ -314,7 +314,10 @@ test("ingest usa tenant resuelto, ignora desconocidos y duplicados y aplica stat
   const integration: ResolvedWhatsappIntegration = {
     id: "integration-1",
     organizationId: "organization-1",
+    provider: "META_CLOUD",
+    wabaId: "waba-1",
     phoneNumberId: FAKE_PHONE_NUMBER_ID,
+    providerPhoneNumber: null,
     displayPhoneNumber: "+54 9 11 1234-5678",
     encryptedAccessToken: "encrypted-placeholder",
     status: "CONNECTED",
@@ -420,7 +423,10 @@ test("webhook desconectado conserva estados pero no ingresa mensajes", async () 
   const integration: ResolvedWhatsappIntegration = {
     id: "integration-disabled",
     organizationId: "organization-disabled",
+    provider: "META_CLOUD",
+    wabaId: "waba-disabled",
     phoneNumberId: "phone-disabled",
+    providerPhoneNumber: null,
     displayPhoneNumber: "+1 202-555-0199",
     encryptedAccessToken: "encrypted-placeholder",
     status: "DISCONNECTED",

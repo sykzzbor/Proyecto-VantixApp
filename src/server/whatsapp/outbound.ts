@@ -11,6 +11,10 @@ import {
   MetaApiError,
   sendWhatsappTextMessage,
 } from "@/server/whatsapp/meta-client";
+import {
+  sendYCloudTextMessage,
+  YCloudApiError,
+} from "@/server/whatsapp/ycloud-client";
 
 export class WhatsappOutboundValidationError extends Error {
   constructor(message: string) {
@@ -27,6 +31,12 @@ function safeFailure(error: unknown) {
   if (error instanceof MetaApiError) {
     return {
       code: error.metaCode ?? error.code,
+      message: error.safeMessage,
+    };
+  }
+  if (error instanceof YCloudApiError) {
+    return {
+      code: error.code,
       message: error.safeMessage,
     };
   }
@@ -79,6 +89,7 @@ export async function sendWhatsappConversationMessage(input: {
         select: {
           id: true,
           organizationId: true,
+          provider: true,
           phoneNumberId: true,
           encryptedAccessToken: true,
           status: true,
@@ -121,6 +132,7 @@ export async function sendWhatsappConversationMessage(input: {
     deliveryStatus: "PENDING",
     metadata: {
       source: "whatsapp",
+      provider: integration.provider.toLowerCase(),
       ...(input.retryOfMessageId
         ? { retryOfMessageId: input.retryOfMessageId }
         : {}),
@@ -168,7 +180,10 @@ export async function deliverPreparedWhatsappMessage(input: {
           whatsappIntegration: {
             select: {
               organizationId: true,
+              provider: true,
+              wabaId: true,
               phoneNumberId: true,
+              providerPhoneNumber: true,
               encryptedAccessToken: true,
               status: true,
             },
@@ -203,15 +218,52 @@ export async function deliverPreparedWhatsappMessage(input: {
     );
   }
 
-  let sent: Awaited<ReturnType<typeof sendWhatsappTextMessage>>;
+  if (integration.provider === "YCLOUD" && !integration.providerPhoneNumber) {
+    throw new WhatsappOutboundValidationError(
+      "La configuración de YCloud requiere revisión."
+    );
+  }
+
+  const claimed = await prisma.message.updateMany({
+    where: {
+      id: prepared.id,
+      organizationId: input.organizationId,
+      deliveryStatus: "PENDING",
+      deliveryClaimedAt: null,
+    },
+    data: { deliveryClaimedAt: new Date() },
+  });
+  if (claimed.count !== 1) {
+    throw new WhatsappOutboundValidationError(
+      "El mensaje ya está siendo procesado."
+    );
+  }
+
+  let sent: {
+    messageId: string;
+    whatsappMessageId: string | null;
+  };
   try {
     const accessToken = decryptAccessToken(integration.encryptedAccessToken);
-    sent = await sendWhatsappTextMessage({
-      phoneNumberId: integration.phoneNumberId,
-      accessToken,
-      to: prepared.conversation.customer.phone,
-      text: prepared.content,
-    });
+    sent =
+      integration.provider === "YCLOUD"
+        ? await sendYCloudTextMessage({
+            apiKey: accessToken,
+            from: integration.providerPhoneNumber!,
+            to: prepared.conversation.customer.phone,
+            text: prepared.content,
+            externalId: prepared.id,
+            expectedWabaId: integration.wabaId,
+          })
+        : {
+            ...(await sendWhatsappTextMessage({
+              phoneNumberId: integration.phoneNumberId,
+              accessToken,
+              to: prepared.conversation.customer.phone,
+              text: prepared.content,
+            })),
+            whatsappMessageId: null,
+          };
   } catch (error) {
     const failure = safeFailure(error);
     const message = await prisma.message.update({
@@ -239,6 +291,7 @@ export async function deliverPreparedWhatsappMessage(input: {
     where: { id: prepared.id },
     data: {
       externalMessageId: sent.messageId,
+      whatsappMessageId: sent.whatsappMessageId,
       deliveryStatus: "SENT",
       errorCode: null,
       errorMessage: null,

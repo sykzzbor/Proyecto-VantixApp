@@ -25,6 +25,10 @@ import {
   MetaApiError,
   testWhatsappConnection,
 } from "@/server/whatsapp/meta-client";
+import {
+  resolveYCloudWhatsappAsset,
+  YCloudApiError,
+} from "@/server/whatsapp/ycloud-client";
 
 const INTEGRATION_PATH = "/dashboard/integraciones";
 const CONNECTION_TEST_LIMIT = 5;
@@ -50,6 +54,7 @@ function checkConnectionRateLimit(organizationId: string, userId: string) {
 
 function metaActionError(error: unknown): ActionError {
   if (error instanceof MetaApiError) return new ActionError(error.safeMessage);
+  if (error instanceof YCloudApiError) return new ActionError(error.safeMessage);
   if (error instanceof CredentialsEncryptionError) {
     return new ActionError("No se pudo usar la configuración segura de WhatsApp.");
   }
@@ -101,10 +106,27 @@ export async function testStoredWhatsappConnection(): Promise<ActionResult> {
     let remote;
     try {
       const accessToken = decryptAccessToken(integration.encryptedAccessToken);
-      remote = await testWhatsappConnection({
-        phoneNumberId: integration.phoneNumberId,
-        accessToken,
-      });
+      if (integration.provider === "YCLOUD") {
+        if (!integration.providerPhoneNumber) {
+          throw new ActionError("La configuración de YCloud requiere revisión.");
+        }
+        const ycloud = await resolveYCloudWhatsappAsset({
+          phoneNumber: integration.providerPhoneNumber,
+          apiKey: accessToken,
+        });
+        if (
+          ycloud.phoneNumberId !== integration.phoneNumberId ||
+          ycloud.wabaId !== integration.wabaId
+        ) {
+          throw new ActionError("YCloud devolvió un canal distinto del conectado.");
+        }
+        remote = ycloud;
+      } else {
+        remote = await testWhatsappConnection({
+          phoneNumberId: integration.phoneNumberId,
+          accessToken,
+        });
+      }
     } catch (error) {
       const safe = metaActionError(error);
       const failureApplied = await prisma.$transaction(
@@ -123,6 +145,8 @@ export async function testStoredWhatsappConnection(): Promise<ActionResult> {
               connectionMethod: integration.connectionMethod,
               businessId: integration.businessId,
               encryptedAccessToken: integration.encryptedAccessToken,
+              provider: integration.provider,
+              providerPhoneNumber: integration.providerPhoneNumber,
               lastSyncedAt: integration.lastSyncedAt,
             },
             data: {
@@ -179,6 +203,8 @@ export async function testStoredWhatsappConnection(): Promise<ActionResult> {
             connectionMethod: integration.connectionMethod,
             businessId: integration.businessId,
             encryptedAccessToken: integration.encryptedAccessToken,
+            provider: integration.provider,
+            providerPhoneNumber: integration.providerPhoneNumber,
             lastSyncedAt: integration.lastSyncedAt,
           },
           data: {

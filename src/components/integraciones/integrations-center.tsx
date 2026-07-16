@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/card";
 import { WhatsappIcon } from "@/components/whatsapp/whatsapp-icon";
 import { ManualWhatsappConnectionDialog } from "@/components/integraciones/manual-whatsapp-connection-dialog";
+import { YCloudConnectionDialog } from "@/components/integraciones/ycloud-connection-dialog";
 import { cn } from "@/lib/utils";
 import type {
   IntegrationsCenterView,
@@ -581,6 +582,16 @@ function WhatsappCard({
       <CardContent className="space-y-5">
         <dl className="grid gap-4 sm:grid-cols-2">
           <Detail
+            label="Proveedor"
+            value={
+              data.integration?.provider === "YCLOUD"
+                ? "YCloud"
+                : data.integration
+                  ? "Meta Cloud API"
+                  : "No definido"
+            }
+          />
+          <Detail
             label="Número"
             value={data.integration?.maskedPhoneNumber ?? "No conectado"}
           />
@@ -593,6 +604,8 @@ function WhatsappCard({
             value={
               data.integration?.connectionMethod === "EMBEDDED_SIGNUP"
                 ? "Conexión guiada"
+                : data.integration?.connectionMethod === "COEXISTENCE"
+                  ? "Coexistence"
                 : data.integration
                   ? "Manual"
                   : "No definido"
@@ -636,9 +649,18 @@ function WhatsappCard({
             <ManualWhatsappConnectionDialog
               onConnected={() => router.refresh()}
               triggerLabel={
-                data.status === "connected"
+                data.status === "connected" &&
+                data.integration?.provider === "META_CLOUD"
                   ? "Reconectar"
                   : "Conectar manualmente"
+              }
+            />
+            <YCloudConnectionDialog
+              onConnected={() => router.refresh()}
+              triggerLabel={
+                data.integration?.provider === "YCLOUD"
+                  ? "Reconectar YCloud"
+                  : "Conectar con YCloud"
               }
             />
             {(shouldConnect || data.status === "meta_configuration_pending") && (

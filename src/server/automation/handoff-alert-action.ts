@@ -339,6 +339,7 @@ async function claimHandoffAlertAction(
       where: {
         organizationId: input.organizationId,
         status: "CONNECTED",
+        provider: "META_CLOUD",
         ...(conversation.whatsappIntegrationId
           ? { id: conversation.whatsappIntegrationId }
           : {}),

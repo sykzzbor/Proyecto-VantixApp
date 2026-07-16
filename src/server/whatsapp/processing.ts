@@ -56,18 +56,25 @@ export async function ingestWhatsappWebhookEvents(
   const touched = new Set<string>();
   const jobs: WhatsappAutomationJob[] = [];
 
-  async function integrationFor(phoneNumberId: string) {
-    if (integrations.has(phoneNumberId)) {
-      return integrations.get(phoneNumberId) ?? null;
+  async function integrationFor(event: WhatsappWebhookEvent) {
+    const cacheKey = `${event.provider ?? "META_CLOUD"}:${event.phoneNumberId}:${event.wabaId ?? ""}`;
+    if (integrations.has(cacheKey)) {
+      return integrations.get(cacheKey) ?? null;
     }
-    const integration = await deps.resolveIntegration(phoneNumberId);
-    integrations.set(phoneNumberId, integration);
-    if (!integration) deps.onUnknownNumber(phoneNumberId);
+    const resolved = await deps.resolveIntegration(event.phoneNumberId);
+    const integration =
+      resolved &&
+      (!event.provider || resolved.provider === event.provider) &&
+      (!event.wabaId || resolved.wabaId === event.wabaId)
+        ? resolved
+        : null;
+    integrations.set(cacheKey, integration);
+    if (!integration) deps.onUnknownNumber(event.phoneNumberId);
     return integration;
   }
 
   for (const event of events) {
-    const integration = await integrationFor(event.phoneNumberId);
+    const integration = await integrationFor(event);
     if (!integration) continue;
     touched.add(integration.id);
 

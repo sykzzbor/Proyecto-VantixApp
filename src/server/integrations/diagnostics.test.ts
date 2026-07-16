@@ -4,6 +4,7 @@ import { can } from "@/lib/permissions";
 import {
   buildN8nDiagnostic,
   buildWhatsappDiagnostic,
+  buildYCloudDiagnostic,
 } from "@/server/integrations/diagnostics";
 import { getMetaEmbeddedSignupPublicConfiguration } from "@/server/whatsapp/config";
 
@@ -68,6 +69,21 @@ test("Centro de Integraciones: permisos y diagnósticos seguros", async (t) => {
       result.steps.filter((step) => !step.ready).map((step) => step.code),
       ["outbound_signature", "dispatcher", "workflows", "connection_test"]
     );
+  });
+
+  await t.test("YCloud distingue canal validado de webhook todavía pendiente", () => {
+    const result = buildYCloudDiagnostic({
+      credentials: true,
+      numberConnected: true,
+      webhook: false,
+    });
+    assert.equal(result.state, "pending");
+    assert.equal(result.missingCount, 1);
+    assert.deepEqual(
+      result.steps.filter((step) => !step.ready).map((step) => step.code),
+      ["webhook"]
+    );
+    assert.doesNotMatch(JSON.stringify(result), /API key|YCLOUD_WEBHOOK_SECRET/);
   });
 
   await t.test(

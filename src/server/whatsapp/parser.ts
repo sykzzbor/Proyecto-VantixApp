@@ -215,6 +215,7 @@ function toInboundEvent(
 
   return {
     kind: "message",
+    provider: "META_CLOUD",
     phoneNumberId,
     externalMessageId: message.id,
     from: contact?.wa_id ?? message.from,
@@ -246,6 +247,7 @@ function toStatusEvent(
 
   return {
     kind: "status",
+    provider: "META_CLOUD",
     phoneNumberId,
     externalMessageId: status.id,
     timestamp: status.timestamp ?? null,

@@ -3,7 +3,8 @@ import { isIP } from "node:net";
 const GRAPH_API_VERSION_PATTERN = /^v\d{1,3}\.\d{1,2}$/;
 const META_PUBLIC_ID_PATTERN = /^\d{5,32}$/;
 const ENCRYPTION_KEY_PATTERN = /^(?:[a-fA-F0-9]{64}|[A-Za-z0-9+/]{43}=?)$/;
-const WEBHOOK_PATH = "/api/webhooks/whatsapp";
+const META_WEBHOOK_PATH = "/api/webhooks/whatsapp";
+const YCLOUD_WEBHOOK_PATH = "/api/webhooks/ycloud";
 
 export const META_REQUEST_TIMEOUT_MS = 10_000;
 
@@ -82,6 +83,14 @@ export function getWhatsappVerifyToken(): string {
 
 export function getMetaAppSecret(): string {
   const secret = requireServerEnv("META_APP_SECRET");
+  if (secret.length < 16 || secret.length > 512) {
+    throw new WhatsappConfigurationError();
+  }
+  return secret;
+}
+
+export function getYCloudWebhookSecret(): string {
+  const secret = requireServerEnv("YCLOUD_WEBHOOK_SECRET");
   if (secret.length < 16 || secret.length > 512) {
     throw new WhatsappConfigurationError();
   }
@@ -179,6 +188,16 @@ export function isWhatsappWebhookRuntimeConfigured(): boolean {
   }
 }
 
+export function isYCloudWebhookRuntimeConfigured(): boolean {
+  try {
+    getYCloudWebhookSecret();
+    getYCloudWebhookUrl();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function isWhatsappDevMode(): boolean {
   return (
     process.env.NODE_ENV !== "production" &&
@@ -186,12 +205,12 @@ export function isWhatsappDevMode(): boolean {
   );
 }
 
-export function getWhatsappWebhookUrl(): string {
+function getPublicWebhookUrl(path: string): string {
   const baseUrl = process.env.BETTER_AUTH_URL?.trim();
   if (!baseUrl) throw new WhatsappConfigurationError();
 
   try {
-    const url = new URL(WEBHOOK_PATH, baseUrl);
+    const url = new URL(path, baseUrl);
     const localDevelopmentHttp =
       process.env.NODE_ENV !== "production" &&
       url.protocol === "http:" &&
@@ -211,4 +230,12 @@ export function getWhatsappWebhookUrl(): string {
       "La URL publica de la aplicacion no es valida."
     );
   }
+}
+
+export function getWhatsappWebhookUrl(): string {
+  return getPublicWebhookUrl(META_WEBHOOK_PATH);
+}
+
+export function getYCloudWebhookUrl(): string {
+  return getPublicWebhookUrl(YCLOUD_WEBHOOK_PATH);
 }

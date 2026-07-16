@@ -3,6 +3,7 @@ import { getAutomationInfrastructureStatus } from "@/server/automation/dashboard
 import { sanitizeAutomationMessage } from "@/server/automation/sanitization";
 import {
   getMetaEmbeddedSignupPublicConfiguration,
+  isYCloudWebhookRuntimeConfigured,
   isWhatsappWebhookRuntimeConfigured,
 } from "@/server/whatsapp/config";
 import { resolveCurrentWhatsappIntegration } from "@/server/whatsapp/current-integration";
@@ -41,7 +42,8 @@ export type IntegrationsCenterView = {
     resumeAvailable: boolean;
     lastError: string | null;
     integration: null | {
-      connectionMethod: "MANUAL" | "EMBEDDED_SIGNUP";
+      provider: "META_CLOUD" | "YCLOUD";
+      connectionMethod: "MANUAL" | "EMBEDDED_SIGNUP" | "COEXISTENCE";
       maskedPhoneNumber: string;
       verifiedName: string;
       connectedAt: string | null;
@@ -146,6 +148,44 @@ export function buildWhatsappDiagnostic(input: {
       description: input.webhook
         ? "La recepción de eventos está preparada."
         : "La recepción de eventos todavía no está preparada.",
+      ready: input.webhook,
+    },
+  ];
+  return buildDiagnostic(steps, {
+    error: input.error,
+    active: input.numberConnected && input.webhook,
+  });
+}
+
+export function buildYCloudDiagnostic(input: {
+  credentials: boolean;
+  numberConnected: boolean;
+  webhook: boolean;
+  error?: boolean;
+}): SafeDiagnostic {
+  const steps: SafeDiagnosticStep[] = [
+    {
+      code: "ycloud_access",
+      label: "Acceso a YCloud",
+      description: input.credentials
+        ? "El acceso y el canal fueron verificados por YCloud."
+        : "Falta conectar y validar el canal de YCloud.",
+      ready: input.credentials,
+    },
+    {
+      code: "phone_number",
+      label: "Número Coexistence",
+      description: input.numberConnected
+        ? "El número está conectado y operativo."
+        : "Todavía no hay un número Coexistence operativo.",
+      ready: input.numberConnected,
+    },
+    {
+      code: "webhook",
+      label: "Webhook de YCloud",
+      description: input.webhook
+        ? "VantixApp recibió eventos firmados de YCloud."
+        : "Falta confirmar la recepción de un evento firmado de YCloud.",
       ready: input.webhook,
     },
   ];
@@ -274,6 +314,7 @@ export async function getIntegrationsCenterView(
         where: { id: whatsappResolution.id, organizationId },
         select: {
           status: true,
+          provider: true,
           connectionMethod: true,
           displayPhoneNumber: true,
           verifiedName: true,
@@ -293,28 +334,38 @@ export async function getIntegrationsCenterView(
   const manualCompatibility =
     integration?.connectionMethod === "MANUAL" && connected;
   const permissions =
+    (integration?.provider === "YCLOUD" && connected) ||
     manualCompatibility ||
     REQUIRED_WHATSAPP_SCOPES.every((scope) =>
       integration?.grantedScopes.includes(scope)
     );
-  const webhook =
-    isWhatsappWebhookRuntimeConfigured() &&
-    Boolean(integration?.webhookSubscribedAt || integration?.lastWebhookAt);
-  const whatsappDiagnostics = buildWhatsappDiagnostic({
-    metaApplication: !metaConfiguration.missingCategories.includes(
-      "meta_application"
-    ),
-    embeddedSignupConfiguration:
-      !metaConfiguration.missingCategories.includes(
-        "embedded_signup_configuration"
-      ),
-    permissions,
-    numberConnected: connected,
-    webhook,
-    error:
-      integration?.status === "ERROR" ||
-      whatsappResolution.state === "ambiguous",
-  });
+  const ycloud = integration?.provider === "YCLOUD";
+  const webhook = ycloud
+    ? isYCloudWebhookRuntimeConfigured() && Boolean(integration?.lastWebhookAt)
+    : isWhatsappWebhookRuntimeConfigured() &&
+      Boolean(integration?.webhookSubscribedAt || integration?.lastWebhookAt);
+  const hasError =
+    integration?.status === "ERROR" || whatsappResolution.state === "ambiguous";
+  const whatsappDiagnostics = ycloud
+    ? buildYCloudDiagnostic({
+        credentials: connected,
+        numberConnected: connected,
+        webhook,
+        error: hasError,
+      })
+    : buildWhatsappDiagnostic({
+        metaApplication: !metaConfiguration.missingCategories.includes(
+          "meta_application"
+        ),
+        embeddedSignupConfiguration:
+          !metaConfiguration.missingCategories.includes(
+            "embedded_signup_configuration"
+          ),
+        permissions,
+        numberConnected: connected,
+        webhook,
+        error: hasError,
+      });
 
   const workflowsPublished = automation.workflowsPublished;
   const connectionTestVerified = automation.probeVerified;
@@ -360,6 +411,7 @@ export async function getIntegrationsCenterView(
           : null),
       integration: integration
         ? {
+            provider: integration.provider,
             connectionMethod: integration.connectionMethod,
             maskedPhoneNumber: maskPhoneNumber(
               integration.displayPhoneNumber

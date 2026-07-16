@@ -201,6 +201,7 @@ async function persistManualWhatsappConnection(input: {
             select: {
               id: true,
               organizationId: true,
+              provider: true,
               connectedAt: true,
             },
           });
@@ -218,12 +219,16 @@ async function persistManualWhatsappConnection(input: {
             displayPhoneNumber: input.validation.asset.displayPhoneNumber,
             verifiedName: input.validation.asset.verifiedName,
             encryptedAccessToken: input.encryptedAccessToken,
+            provider: "META_CLOUD" as const,
+            providerPhoneNumber: null,
             connectionMethod: "MANUAL" as const,
             businessId: input.validation.asset.businessId,
             tokenExpiresAt: input.validation.grant.expiresAt,
             grantedScopes: input.validation.grant.scopes,
             lastSyncedAt: input.now,
             webhookSubscribedAt: input.now,
+            lastWebhookAt:
+              matchingNumber?.provider === "META_CLOUD" ? undefined : null,
             status: "CONNECTED" as const,
             connectedAt: matchingNumber?.connectedAt ?? input.now,
             lastErrorCode: null,
