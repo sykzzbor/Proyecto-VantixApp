@@ -10,6 +10,13 @@ const E164_PATTERN = /^\+[1-9]\d{7,14}$/;
 export type YCloudApiErrorCode =
   | "invalid_configuration"
   | "authentication"
+  | "permission_denied"
+  | "account_pending"
+  | "balance_insufficient"
+  | "content_rejected"
+  | "recipient_invalid"
+  | "message_window_closed"
+  | "whatsapp_error"
   | "number_not_found"
   | "number_not_operational"
   | "rate_limited"
@@ -24,7 +31,11 @@ export class YCloudApiError extends Error {
     readonly code: YCloudApiErrorCode,
     readonly safeMessage: string,
     readonly retryable = false,
-    readonly httpStatus?: number
+    readonly httpStatus?: number,
+    /** Código devuelto por YCloud (error.code), ya validado y acotado. */
+    readonly providerCode?: string,
+    /** Identificador de la solicitud en YCloud, para soporte. */
+    readonly requestId?: string
   ) {
     super(safeMessage);
     this.name = "YCloudApiError";
@@ -68,8 +79,10 @@ const sentMessageSchema = z
   .object({
     id: z.string().trim().min(1).max(255),
     wamid: z.string().trim().min(1).max(512).optional(),
-    wabaId: z.string().trim().min(1).max(128),
-    from: z.string().trim().regex(E164_PATTERN),
+    // Opcionales: si YCloud los omite, el envío ya ocurrió y no debe
+    // etiquetarse como fallido. Cuando están presentes, se verifican.
+    wabaId: z.string().trim().min(1).max(128).optional(),
+    from: z.string().trim().regex(E164_PATTERN).optional(),
     status: z
       .enum(["accepted", "failed", "sent", "delivered", "read"])
       .optional(),
@@ -153,13 +166,182 @@ async function readLimitedJson(response: Response): Promise<unknown> {
   }
 }
 
-function responseError(status: number): YCloudApiError {
-  if (status === 401 || status === 403) {
+/**
+ * Cuerpo de error documentado por YCloud:
+ * { error: { status, code, message, target, docUrl, requestId, whatsappApiError } }.
+ * Todos los campos se tratan como opcionales y acotados: nunca se confía en
+ * el contenido ni se reenvía el mensaje crudo del proveedor al usuario.
+ */
+const errorBodySchema = z
+  .object({
+    error: z
+      .object({
+        code: z.string().trim().max(120).optional(),
+        requestId: z.string().trim().max(200).optional(),
+        whatsappApiError: z
+          .object({
+            code: z.union([z.string().max(60), z.number()]).optional(),
+          })
+          .passthrough()
+          .optional(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
+type YCloudErrorDetails = {
+  providerCode?: string;
+  requestId?: string;
+  whatsappErrorCode?: string;
+};
+
+function parseErrorDetails(rawBody: unknown): YCloudErrorDetails {
+  const parsed = errorBodySchema.safeParse(rawBody);
+  if (!parsed.success) return {};
+  const error = parsed.data.error;
+  const whatsappCode = error.whatsappApiError?.code;
+  return {
+    providerCode: error.code,
+    requestId: error.requestId,
+    whatsappErrorCode:
+      whatsappCode === undefined ? undefined : String(whatsappCode).slice(0, 60),
+  };
+}
+
+/** Códigos de Meta que indican mensaje fuera de la ventana/política permitida. */
+const WHATSAPP_WINDOW_ERROR_CODES = new Set(["131047", "470"]);
+
+/** Mapeo granular por error.code de YCloud (no solo por status HTTP). */
+const PROVIDER_CODE_MAP: Record<
+  string,
+  { code: YCloudApiErrorCode; message: string; retryable?: boolean }
+> = {
+  UNAUTHORIZED: {
+    code: "authentication",
+    message: "YCloud rechazó la API key.",
+  },
+  FORBIDDEN: {
+    code: "permission_denied",
+    message: "La API key no tiene permisos sobre ese recurso de YCloud.",
+  },
+  ACCOUNT_LIMITED: {
+    code: "account_pending",
+    message: "La cuenta de YCloud está limitada o pendiente de habilitación.",
+  },
+  ACCOUNT_UNAVAILABLE: {
+    code: "account_pending",
+    message: "La cuenta de YCloud está limitada o pendiente de habilitación.",
+  },
+  BALANCE_INSUFFICIENT: {
+    code: "balance_insufficient",
+    message: "La cuenta de YCloud no tiene saldo suficiente para enviar mensajes.",
+  },
+  CONTENT_PROHIBITED: {
+    code: "content_rejected",
+    message: "YCloud rechazó el contenido del mensaje por política.",
+  },
+  RECIPIENT_UNSUBSCRIBED: {
+    code: "recipient_invalid",
+    message: "El destinatario no admite mensajes de este remitente.",
+  },
+  RECIPIENT_IN_BLOCK_LIST: {
+    code: "recipient_invalid",
+    message: "El destinatario no admite mensajes de este remitente.",
+  },
+  MESSAGING_REGION_UNSUPPORTED: {
+    code: "recipient_invalid",
+    message: "El destino del mensaje no está habilitado para este canal.",
+  },
+  WHATSAPP_PHONE_NUMBER_UNAVAILABLE: {
+    code: "number_not_operational",
+    message: "El número de WhatsApp no está operativo en YCloud.",
+  },
+  WHATSAPP_WABA_UNAVAILABLE: {
+    code: "number_not_operational",
+    message: "La cuenta de WhatsApp Business no está operativa en YCloud.",
+  },
+  TOO_MANY_REQUESTS: {
+    code: "rate_limited",
+    message: "YCloud limitó temporalmente las solicitudes.",
+    retryable: true,
+  },
+  ACCOUNT_RATE_LIMITED: {
+    code: "rate_limited",
+    message: "YCloud limitó temporalmente las solicitudes.",
+    retryable: true,
+  },
+  SENDER_RATE_LIMITED: {
+    code: "rate_limited",
+    message: "YCloud limitó temporalmente los envíos de este número.",
+    retryable: true,
+  },
+};
+
+function responseError(
+  status: number,
+  details: YCloudErrorDetails,
+  endpoint: string
+): YCloudApiError {
+  // Diagnóstico sanitizado: nunca incluye API key, payload ni el mensaje crudo.
+  console.error(
+    `[VantixApp] YCloud error endpoint=${endpoint} status=${status} code=${details.providerCode ?? "desconocido"} whatsappCode=${details.whatsappErrorCode ?? "-"} requestId=${details.requestId ?? "-"}`
+  );
+
+  const mapped = details.providerCode
+    ? PROVIDER_CODE_MAP[details.providerCode]
+    : undefined;
+  if (mapped) {
+    return new YCloudApiError(
+      mapped.code,
+      mapped.message,
+      mapped.retryable ?? false,
+      status,
+      details.providerCode,
+      details.requestId
+    );
+  }
+
+  // Error originado en WhatsApp/Meta (viene en error.whatsappApiError).
+  if (details.whatsappErrorCode) {
+    if (WHATSAPP_WINDOW_ERROR_CODES.has(details.whatsappErrorCode)) {
+      return new YCloudApiError(
+        "message_window_closed",
+        "WhatsApp no permite este mensaje fuera de la ventana de 24 horas.",
+        false,
+        status,
+        details.providerCode,
+        details.requestId
+      );
+    }
+    return new YCloudApiError(
+      "whatsapp_error",
+      "WhatsApp rechazó el mensaje.",
+      false,
+      status,
+      details.providerCode,
+      details.requestId
+    );
+  }
+
+  // Sin código reconocible: se clasifica por status HTTP.
+  if (status === 401) {
     return new YCloudApiError(
       "authentication",
       "YCloud rechazó la API key.",
       false,
-      status
+      status,
+      details.providerCode,
+      details.requestId
+    );
+  }
+  if (status === 403) {
+    return new YCloudApiError(
+      "permission_denied",
+      "YCloud denegó el permiso para esta operación.",
+      false,
+      status,
+      details.providerCode,
+      details.requestId
     );
   }
   if (status === 429) {
@@ -167,7 +349,9 @@ function responseError(status: number): YCloudApiError {
       "rate_limited",
       "YCloud limitó temporalmente las solicitudes.",
       true,
-      status
+      status,
+      details.providerCode,
+      details.requestId
     );
   }
   if (status >= 500) {
@@ -175,15 +359,30 @@ function responseError(status: number): YCloudApiError {
       "ycloud_unavailable",
       "YCloud no está disponible temporalmente.",
       true,
-      status
+      status,
+      details.providerCode,
+      details.requestId
     );
   }
   return new YCloudApiError(
     "invalid_request",
     "YCloud rechazó la solicitud de WhatsApp.",
     false,
-    status
+    status,
+    details.providerCode,
+    details.requestId
   );
+}
+
+/** Lee el cuerpo de error con límite de tamaño; tolera respuestas no JSON. */
+async function readErrorBody(response: Response): Promise<unknown> {
+  try {
+    const body = await response.text();
+    if (Buffer.byteLength(body, "utf8") > MAX_RESPONSE_BYTES) return undefined;
+    return JSON.parse(body) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 async function requestYCloud(input: YCloudRequest): Promise<unknown> {
@@ -225,7 +424,12 @@ async function requestYCloud(input: YCloudRequest): Promise<unknown> {
   } finally {
     clearTimeout(timeout);
   }
-  if (!response.ok) throw responseError(response.status);
+  if (!response.ok) {
+    const details = parseErrorDetails(await readErrorBody(response));
+    // Solo la ruta sin query: no expone parámetros.
+    const endpoint = input.path.split("?")[0] ?? input.path;
+    throw responseError(response.status, details, endpoint);
+  }
   return readLimitedJson(response);
 }
 
@@ -320,13 +524,21 @@ export async function sendYCloudTextMessage(input: {
   const parsed = sentMessageSchema.safeParse(raw);
   if (
     !parsed.success ||
-    parsed.data.from !== from ||
-    parsed.data.wabaId !== input.expectedWabaId ||
-    parsed.data.status === "failed"
+    (parsed.data.from !== undefined && parsed.data.from !== from) ||
+    (parsed.data.wabaId !== undefined &&
+      parsed.data.wabaId !== input.expectedWabaId)
   ) {
     throw new YCloudApiError(
       "invalid_response",
       "YCloud no confirmó el envío del mensaje."
+    );
+  }
+  if (parsed.data.status === "failed") {
+    throw new YCloudApiError(
+      "whatsapp_error",
+      "WhatsApp rechazó el mensaje.",
+      false,
+      200
     );
   }
   return {

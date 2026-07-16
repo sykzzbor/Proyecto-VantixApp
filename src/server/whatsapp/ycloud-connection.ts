@@ -76,7 +76,11 @@ const defaultDependencies: YCloudConnectionDependencies = {
 export function toYCloudConnectionError(error: unknown): YCloudConnectionError {
   if (error instanceof YCloudConnectionError) return error;
   if (error instanceof YCloudApiError) {
-    if (error.code === "authentication") {
+    if (
+      error.code === "authentication" ||
+      error.code === "permission_denied" ||
+      error.code === "account_pending"
+    ) {
       return new YCloudConnectionError(
         "ycloud_authentication",
         error.safeMessage,

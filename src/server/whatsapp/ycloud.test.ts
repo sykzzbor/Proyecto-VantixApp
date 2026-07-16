@@ -207,6 +207,181 @@ test("cliente YCloud envía texto con externalId y conserva ID YCloud y wamid", 
   });
 });
 
+test("sendDirectly clasifica errores por código real de YCloud, no solo por status", async () => {
+  const previousError = console.error;
+  console.error = () => undefined;
+  try {
+    const send = (status: number, body: unknown) =>
+      sendYCloudTextMessage({
+        apiKey: API_KEY,
+        from: PHONE,
+        to: "+5493515551111",
+        text: "Hola",
+        externalId: "message-internal-2",
+        expectedWabaId: WABA_ID,
+        fetchImpl: (async () =>
+          new Response(JSON.stringify(body), {
+            status,
+            headers: { "content-type": "application/json" },
+          })) as typeof fetch,
+      });
+
+    const cases: Array<{
+      status: number;
+      providerCode: string;
+      expected: string;
+      retryable?: boolean;
+    }> = [
+      { status: 401, providerCode: "UNAUTHORIZED", expected: "authentication" },
+      { status: 403, providerCode: "FORBIDDEN", expected: "permission_denied" },
+      {
+        status: 403,
+        providerCode: "BALANCE_INSUFFICIENT",
+        expected: "balance_insufficient",
+      },
+      { status: 403, providerCode: "ACCOUNT_LIMITED", expected: "account_pending" },
+      {
+        status: 403,
+        providerCode: "WHATSAPP_PHONE_NUMBER_UNAVAILABLE",
+        expected: "number_not_operational",
+      },
+      {
+        status: 403,
+        providerCode: "RECIPIENT_IN_BLOCK_LIST",
+        expected: "recipient_invalid",
+      },
+      {
+        status: 403,
+        providerCode: "CONTENT_PROHIBITED",
+        expected: "content_rejected",
+      },
+      { status: 400, providerCode: "PARAM_INVALID", expected: "invalid_request" },
+      {
+        status: 429,
+        providerCode: "SENDER_RATE_LIMITED",
+        expected: "rate_limited",
+        retryable: true,
+      },
+      {
+        status: 503,
+        providerCode: "SERVICE_UNAVAILABLE",
+        expected: "ycloud_unavailable",
+        retryable: true,
+      },
+    ];
+    for (const item of cases) {
+      await assert.rejects(
+        send(item.status, {
+          error: {
+            status: item.status,
+            code: item.providerCode,
+            message: `interno ${API_KEY} https://privado.example`,
+            requestId: "req-unit-1",
+          },
+        }),
+        (error) =>
+          error instanceof YCloudApiError &&
+          error.code === item.expected &&
+          error.retryable === (item.retryable ?? false) &&
+          error.httpStatus === item.status &&
+          error.providerCode === item.providerCode &&
+          error.requestId === "req-unit-1" &&
+          !/test-only|privado\.example|interno/i.test(error.safeMessage),
+        `caso ${item.providerCode}`
+      );
+    }
+
+    // 403 sin código reconocible NO debe reportarse como API key rechazada.
+    await assert.rejects(
+      send(403, { detalle: "sin formato de error" }),
+      (error) =>
+        error instanceof YCloudApiError &&
+        error.code === "permission_denied" &&
+        !/API key/i.test(error.safeMessage)
+    );
+    // 401 sin cuerpo sigue siendo autenticación.
+    await assert.rejects(
+      send(401, "no-json"),
+      (error) => error instanceof YCloudApiError && error.code === "authentication"
+    );
+
+    // Errores internos de WhatsApp/Meta (error.whatsappApiError).
+    await assert.rejects(
+      send(400, {
+        error: { status: 400, code: "OTRO", whatsappApiError: { code: 131047 } },
+      }),
+      (error) =>
+        error instanceof YCloudApiError && error.code === "message_window_closed"
+    );
+    await assert.rejects(
+      send(400, {
+        error: { status: 400, code: "OTRO", whatsappApiError: { code: "135000" } },
+      }),
+      (error) => error instanceof YCloudApiError && error.code === "whatsapp_error"
+    );
+
+    // 200 con status "failed" es un rechazo de WhatsApp, no una respuesta inválida.
+    await assert.rejects(
+      send(200, { id: "out-1", wabaId: WABA_ID, from: PHONE, status: "failed" }),
+      (error) => error instanceof YCloudApiError && error.code === "whatsapp_error"
+    );
+  } finally {
+    console.error = previousError;
+  }
+});
+
+test("sendDirectly tolera respuesta mínima, verifica wabaId/from y normaliza destino", async () => {
+  // Respuesta mínima (sin wabaId/from): el mensaje ya fue enviado; no se
+  // etiqueta como fallido.
+  const minimal = await sendYCloudTextMessage({
+    apiKey: API_KEY,
+    from: PHONE,
+    to: "+54 9 351 555-1111",
+    text: "Hola",
+    externalId: "message-internal-3",
+    expectedWabaId: WABA_ID,
+    fetchImpl: (async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      assert.equal(body.to, "+5493515551111");
+      assert.equal(body.from, PHONE);
+      return Response.json({ id: "minimal-1" });
+    }) as typeof fetch,
+  });
+  assert.deepEqual(minimal, { messageId: "minimal-1", whatsappMessageId: null });
+
+  // Si los campos vienen y no coinciden, sigue siendo respuesta inválida.
+  await assert.rejects(
+    sendYCloudTextMessage({
+      apiKey: API_KEY,
+      from: PHONE,
+      to: "+5493515551111",
+      text: "Hola",
+      externalId: "message-internal-4",
+      expectedWabaId: WABA_ID,
+      fetchImpl: (async () =>
+        Response.json({ id: "out-2", wabaId: "otra-waba" })) as typeof fetch,
+    }),
+    (error) => error instanceof YCloudApiError && error.code === "invalid_response"
+  );
+
+  // Destinatario no normalizable: error de configuración local, sin llamar a YCloud.
+  await assert.rejects(
+    sendYCloudTextMessage({
+      apiKey: API_KEY,
+      from: PHONE,
+      to: "0351-555-1111",
+      text: "Hola",
+      externalId: "message-internal-5",
+      expectedWabaId: WABA_ID,
+      fetchImpl: (async () => {
+        assert.fail("no debería llamar a YCloud");
+      }) as typeof fetch,
+    }),
+    (error) =>
+      error instanceof YCloudApiError && error.code === "invalid_configuration"
+  );
+});
+
 test("firma YCloud valida body crudo, timestamp y anti-replay", () => {
   const raw = JSON.stringify(inboundPayload());
   const timestamp = String(Math.floor(NOW.getTime() / 1000));
