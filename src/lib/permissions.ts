@@ -21,6 +21,7 @@ const PERMISSIONS = {
   "catalog.delete": ["OWNER", "ADMIN"],
   "agent.update": ["OWNER", "ADMIN"],
   "whatsapp.manage": ["OWNER", "ADMIN"],
+  "integrations.manage": ["OWNER", "ADMIN"],
   "inbox.respond": ["OWNER", "ADMIN", "AGENT"],
   "inbox.manage": ["OWNER", "ADMIN"],
   "customers.update": ["OWNER", "ADMIN"],

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bot,
+  CalendarDays,
   Check,
   CircleAlert,
   CircleCheck,
@@ -1039,6 +1040,345 @@ function N8nCard({
   );
 }
 
+type GoogleCalendarData = IntegrationsCenterView["googleCalendar"];
+
+function GoogleCalendarCard({
+  data,
+  canManage,
+}: {
+  data: GoogleCalendarData;
+  canManage: boolean;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState<
+    "connect" | "test" | "disconnect" | "calendars" | "select" | null
+  >(null);
+  const [calendars, setCalendars] = useState<
+    { id: string; name: string; primary: boolean }[] | null
+  >(null);
+  const [disconnectOpen, setDisconnectOpen] = useState(false);
+
+  async function post(path: string, body?: unknown) {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: body ? { "content-type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const payload = (await response.json().catch(() => ({}))) as {
+      message?: string;
+      [key: string]: unknown;
+    };
+    return { ok: response.ok, payload };
+  }
+
+  async function handleConnect() {
+    setBusy("connect");
+    try {
+      const { ok, payload } = await post("/api/integrations/google-calendar/connect");
+      if (!ok || typeof payload.url !== "string") {
+        toast.error(payload.message ?? "No se pudo iniciar la conexión con Google.");
+        return;
+      }
+      window.location.assign(payload.url);
+    } catch {
+      toast.error("No se pudo iniciar la conexión con Google.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleTest() {
+    setBusy("test");
+    try {
+      const { ok, payload } = await post("/api/integrations/google-calendar/test");
+      if (ok) toast.success("Conexión con Google Calendar verificada.");
+      else toast.error(payload.message ?? "La prueba de conexión falló.");
+      router.refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleLoadCalendars() {
+    setBusy("calendars");
+    try {
+      const response = await fetch("/api/integrations/google-calendar/calendars");
+      const payload = (await response.json().catch(() => ({}))) as {
+        calendars?: { id: string; name: string; primary: boolean }[];
+        message?: string;
+      };
+      if (!response.ok || !payload.calendars) {
+        toast.error(payload.message ?? "No se pudieron listar los calendarios.");
+        return;
+      }
+      setCalendars(payload.calendars);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleSelect(calendarId: string) {
+    setBusy("select");
+    try {
+      const { ok, payload } = await post(
+        "/api/integrations/google-calendar/calendar",
+        { calendarId }
+      );
+      if (ok) {
+        toast.success("Calendario elegido.");
+        setCalendars(null);
+        router.refresh();
+      } else {
+        toast.error(payload.message ?? "No se pudo elegir el calendario.");
+      }
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleDisconnect() {
+    setBusy("disconnect");
+    try {
+      const { ok, payload } = await post("/api/integrations/google-calendar/disconnect");
+      if (ok) toast.success("Google Calendar desconectado.");
+      else toast.error(payload.message ?? "No se pudo desconectar.");
+      setDisconnectOpen(false);
+      setCalendars(null);
+      router.refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const statusBadge = !data.configured
+    ? {
+        label: "Requiere configuración",
+        className: "border-border bg-muted/40 text-muted-foreground",
+        icon: CircleDashed,
+      }
+    : !data.connected
+      ? {
+          label: "No conectado",
+          className: "border-border bg-muted/40 text-muted-foreground",
+          icon: CircleOff,
+        }
+      : data.status === "ERROR"
+        ? {
+            label: "Con error",
+            className: "border-destructive/30 bg-destructive/10 text-destructive",
+            icon: CircleAlert,
+          }
+        : {
+            label: "Conectado",
+            className:
+              "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+            icon: CircleCheck,
+          };
+  const StatusIcon = statusBadge.icon;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-[#8eacff]">
+              <CalendarDays className="size-5" />
+            </span>
+            <div className="min-w-0 space-y-1">
+              <CardTitle>Google Calendar</CardTitle>
+              <CardDescription>
+                Base para agendar turnos desde las conversaciones (próxima etapa).
+              </CardDescription>
+            </div>
+          </div>
+          <Badge variant="outline" className={statusBadge.className}>
+            <StatusIcon className="size-3.5" aria-hidden />
+            {statusBadge.label}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!data.configured ? (
+          <p className="rounded-lg border border-border/70 bg-background/40 p-3 text-sm text-muted-foreground">
+            Falta configurar las credenciales de Google en el servidor. Ver{" "}
+            <span className="font-medium text-foreground">
+              docs/GOOGLE_CALENDAR_SETUP.md
+            </span>
+            .
+          </p>
+        ) : data.connected ? (
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <Detail label="Cuenta" value={data.googleEmail ?? "No disponible"} />
+            <Detail
+              label="Calendario elegido"
+              value={data.selectedCalendarName ?? "Sin elegir"}
+            />
+            <Detail
+              label="Última prueba"
+              value={formatDate(data.lastTestedAt)}
+            />
+            <Detail label="Acceso" value="Solo lectura de calendarios" />
+          </dl>
+        ) : (
+          <p className="rounded-lg border border-border/70 bg-background/40 p-3 text-sm text-muted-foreground">
+            Conectá una cuenta de Google para elegir el calendario de trabajo.
+            Los permisos de escritura para turnos se pedirán en la próxima
+            etapa.
+          </p>
+        )}
+
+        {data.lastError && data.status === "ERROR" && (
+          <div className="flex gap-2 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">
+            <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <p className="min-w-0 break-words text-xs leading-relaxed">
+              {data.lastError}
+            </p>
+          </div>
+        )}
+
+        {calendars && (
+          <div className="space-y-2 rounded-lg border border-border/70 bg-background/40 p-3">
+            <p className="text-xs font-medium text-muted-foreground">
+              Elegí el calendario de trabajo
+            </p>
+            {calendars.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                La cuenta no tiene calendarios visibles.
+              </p>
+            ) : (
+              <ul className="max-h-48 space-y-1 overflow-y-auto">
+                {calendars.map((calendar) => (
+                  <li key={calendar.id}>
+                    <button
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() => handleSelect(calendar.id)}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+                        calendar.id === data.selectedCalendarId &&
+                          "bg-primary/10 text-foreground"
+                      )}
+                    >
+                      <span className="min-w-0 truncate">
+                        {calendar.name}
+                        {calendar.primary && (
+                          <span className="ml-1.5 text-[10px] text-muted-foreground">
+                            principal
+                          </span>
+                        )}
+                      </span>
+                      {calendar.id === data.selectedCalendarId && (
+                        <Check className="size-4 shrink-0 text-[#8eacff]" aria-hidden />
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </CardContent>
+      <CardFooter className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        {canManage ? (
+          data.connected ? (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy !== null}
+                onClick={calendars ? () => setCalendars(null) : handleLoadCalendars}
+              >
+                {busy === "calendars" && (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                )}
+                {calendars ? "Ocultar calendarios" : "Elegir calendario"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy !== null}
+                onClick={handleTest}
+              >
+                {busy === "test" ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : (
+                  <PlugZap className="size-4" aria-hidden />
+                )}
+                Probar conexión
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy !== null}
+                onClick={handleConnect}
+              >
+                <RefreshCcw className="size-4" aria-hidden />
+                Reconectar
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive sm:ml-auto"
+                disabled={busy !== null}
+                onClick={() => setDisconnectOpen(true)}
+              >
+                <Unplug className="size-4" aria-hidden />
+                Desconectar
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              disabled={busy !== null || !data.configured}
+              onClick={handleConnect}
+            >
+              {busy === "connect" && (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              )}
+              Conectar con Google
+            </Button>
+          )
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Solo el propietario o un administrador pueden gestionar esta
+            integración.
+          </p>
+        )}
+      </CardFooter>
+
+      <AlertDialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Desconectar Google Calendar</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se revoca el acceso y se eliminan las credenciales guardadas. Vas
+              a poder reconectar cuando quieras.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy === "disconnect"}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDisconnect();
+              }}
+              disabled={busy === "disconnect"}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {busy === "disconnect" && (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              )}
+              Desconectar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
+  );
+}
+
 export function IntegrationsCenter({
   initialData,
   canManage,
@@ -1053,6 +1393,7 @@ export function IntegrationsCenter({
     >
       <WhatsappCard data={initialData.whatsapp} canManage={canManage} />
       <N8nCard data={initialData.n8n} canManage={canManage} />
+      <GoogleCalendarCard data={initialData.googleCalendar} canManage={canManage} />
     </section>
   );
 }

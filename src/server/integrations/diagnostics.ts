@@ -7,6 +7,10 @@ import {
   isWhatsappWebhookRuntimeConfigured,
 } from "@/server/whatsapp/config";
 import { resolveCurrentWhatsappIntegration } from "@/server/whatsapp/current-integration";
+import {
+  getGoogleCalendarView,
+  type GoogleCalendarView,
+} from "@/server/integrations/google-calendar/service";
 
 const REQUIRED_WHATSAPP_SCOPES = [
   "whatsapp_business_management",
@@ -68,6 +72,7 @@ export type IntegrationsCenterView = {
     lastError: string | null;
     diagnostics: SafeDiagnostic;
   };
+  googleCalendar: GoogleCalendarView;
 };
 
 function maskPhoneNumber(value: string): string {
@@ -301,14 +306,16 @@ export async function getIntegrationsCenterView(
   organizationId: string
 ): Promise<IntegrationsCenterView> {
   const metaConfiguration = getMetaEmbeddedSignupPublicConfiguration();
-  const [whatsappResolution, attempt, automation] = await Promise.all([
-    resolveCurrentWhatsappIntegration(organizationId),
-    prisma.whatsappEmbeddedSignupAttempt.findUnique({
-      where: { organizationId },
-      select: { status: true, expiresAt: true, lastErrorCode: true },
-    }),
-    getAutomationInfrastructureStatus(organizationId),
-  ]);
+  const [whatsappResolution, attempt, automation, googleCalendar] =
+    await Promise.all([
+      resolveCurrentWhatsappIntegration(organizationId),
+      prisma.whatsappEmbeddedSignupAttempt.findUnique({
+        where: { organizationId },
+        select: { status: true, expiresAt: true, lastErrorCode: true },
+      }),
+      getAutomationInfrastructureStatus(organizationId),
+      getGoogleCalendarView(organizationId),
+    ]);
   const integration = whatsappResolution.state === "current"
     ? await prisma.whatsappIntegration.findFirst({
         where: { id: whatsappResolution.id, organizationId },
@@ -440,5 +447,6 @@ export async function getIntegrationsCenterView(
       lastError: sanitizeAutomationMessage(automation.lastError),
       diagnostics: n8nDiagnostics,
     },
+    googleCalendar,
   };
 }

@@ -125,6 +125,8 @@ model Organization {
   automationActionDeliveries AutomationActionDelivery[]
   integrationConnections     IntegrationConnection[]
   automationRules            OrganizationAutomationRule[]
+  googleCalendarConnection   GoogleCalendarConnection?
+  googleOAuthStates          GoogleOAuthState[]
 
   @@map("organizations")
 }
@@ -784,4 +786,50 @@ model IntegrationConnection {
   @@unique([organizationId, provider])
   @@index([organizationId])
   @@map("integration_connections")
+}
+
+// ============================================================
+// Etapa 6D.1A: Google Calendar (conexión OAuth base)
+// ============================================================
+
+enum GoogleCalendarConnectionStatus {
+  CONNECTED
+  ERROR
+}
+
+model GoogleCalendarConnection {
+  id                    String                         @id @default(cuid())
+  organizationId        String                         @unique
+  status                GoogleCalendarConnectionStatus @default(CONNECTED)
+  googleEmail           String?
+  selectedCalendarId    String?
+  selectedCalendarName  String?
+  grantedScopes         String[]                       @default([])
+  encryptedAccessToken  String
+  encryptedRefreshToken String
+  accessTokenExpiresAt  DateTime
+  connectedByUserId     String?
+  lastError             String?
+  lastTestedAt          DateTime?
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("google_calendar_connections")
+}
+
+model GoogleOAuthState {
+  id             String    @id @default(cuid())
+  organizationId String
+  userId         String
+  stateHash      String    @unique
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, expiresAt])
+  @@map("google_oauth_states")
 }
