@@ -89,43 +89,75 @@ test("state: se guarda solo el hash y se consume una única vez", async () => {
   assert.equal(rows.has(hashOAuthState(state)), true);
 
   const first = await consumeGoogleOAuthState(
-    { state, sessionOrganizationId: "org-a", now: NOW },
+    {
+      state,
+      sessionOrganizationId: "org-a",
+      sessionUserId: "user-1",
+      now: NOW,
+    },
     store
   );
   assert.deepEqual(first, { ok: true, organizationId: "org-a", userId: "user-1" });
 
   // Doble callback: el segundo consumo se rechaza.
   const second = await consumeGoogleOAuthState(
-    { state, sessionOrganizationId: "org-a", now: NOW },
+    {
+      state,
+      sessionOrganizationId: "org-a",
+      sessionUserId: "user-1",
+      now: NOW,
+    },
     store
   );
   assert.deepEqual(second, { ok: false, reason: "already_used" });
 });
 
-test("state: rechaza inválido, vencido y organización ajena", async () => {
+test("state: rechaza inválido, vencido, organización o usuario ajenos", async () => {
   const { store } = memoryStore();
   const state = await withGoogleEnv(() =>
     createGoogleOAuthState({ organizationId: "org-a", userId: "user-1" }, store)
   );
 
   const missing = await consumeGoogleOAuthState(
-    { state: "estado-inexistente", sessionOrganizationId: "org-a", now: NOW },
+    {
+      state: "estado-inexistente",
+      sessionOrganizationId: "org-a",
+      sessionUserId: "user-1",
+      now: NOW,
+    },
     store
   );
   assert.deepEqual(missing, { ok: false, reason: "not_found" });
 
   // Aislamiento multiempresa: otra organización no puede consumirlo.
   const foreign = await consumeGoogleOAuthState(
-    { state, sessionOrganizationId: "org-b", now: NOW },
+    {
+      state,
+      sessionOrganizationId: "org-b",
+      sessionUserId: "user-1",
+      now: NOW,
+    },
     store
   );
   assert.deepEqual(foreign, { ok: false, reason: "org_mismatch" });
+
+  const foreignUser = await consumeGoogleOAuthState(
+    {
+      state,
+      sessionOrganizationId: "org-a",
+      sessionUserId: "user-2",
+      now: NOW,
+    },
+    store
+  );
+  assert.deepEqual(foreignUser, { ok: false, reason: "user_mismatch" });
 
   // Vencido (más de 10 minutos después).
   const expired = await consumeGoogleOAuthState(
     {
       state,
       sessionOrganizationId: "org-a",
+      sessionUserId: "user-1",
       now: new Date(Date.now() + 11 * 60 * 1000),
     },
     store
@@ -141,17 +173,28 @@ test("resolveStateConsumption cubre cada rechazo de forma pura", () => {
     usedAt: null,
   };
   assert.equal(
-    resolveStateConsumption({ record: base, sessionOrganizationId: "org-a", now: NOW }).ok,
+    resolveStateConsumption({
+      record: base,
+      sessionOrganizationId: "org-a",
+      sessionUserId: "user-1",
+      now: NOW,
+    }).ok,
     true
   );
   assert.deepEqual(
-    resolveStateConsumption({ record: null, sessionOrganizationId: "org-a", now: NOW }),
+    resolveStateConsumption({
+      record: null,
+      sessionOrganizationId: "org-a",
+      sessionUserId: "user-1",
+      now: NOW,
+    }),
     { ok: false, reason: "not_found" }
   );
   assert.deepEqual(
     resolveStateConsumption({
       record: { ...base, usedAt: NOW },
       sessionOrganizationId: "org-a",
+      sessionUserId: "user-1",
       now: NOW,
     }),
     { ok: false, reason: "already_used" }
@@ -160,6 +203,7 @@ test("resolveStateConsumption cubre cada rechazo de forma pura", () => {
     resolveStateConsumption({
       record: { ...base, expiresAt: NOW },
       sessionOrganizationId: "org-a",
+      sessionUserId: "user-1",
       now: NOW,
     }),
     { ok: false, reason: "expired" }

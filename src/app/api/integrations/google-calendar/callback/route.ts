@@ -48,6 +48,7 @@ export async function GET(request: Request) {
   const consumed = await consumeGoogleOAuthState({
     state,
     sessionOrganizationId: membership.organizationId,
+    sessionUserId: session.user.id,
   });
   if (!consumed.ok) return redirectWithResult(request, "estado_invalido");
 

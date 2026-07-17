@@ -14,7 +14,8 @@ export function hashOAuthState(state: string): string {
 
 /**
  * Decisión pura de consumo (testeable sin base de datos): el state es válido
- * una única vez, dentro de su ventana, y para la organización de la sesión.
+ * una única vez, dentro de su ventana, y para la organización y el usuario
+ * que iniciaron la conexión.
  */
 export function resolveStateConsumption(input: {
   record: {
@@ -24,16 +25,28 @@ export function resolveStateConsumption(input: {
     usedAt: Date | null;
   } | null;
   sessionOrganizationId: string;
+  sessionUserId: string;
   now?: Date;
 }):
   | { ok: true }
-  | { ok: false; reason: "not_found" | "expired" | "already_used" | "org_mismatch" } {
+  | {
+      ok: false;
+      reason:
+        | "not_found"
+        | "expired"
+        | "already_used"
+        | "org_mismatch"
+        | "user_mismatch";
+    } {
   const now = input.now ?? new Date();
   if (!input.record) return { ok: false, reason: "not_found" };
   if (input.record.usedAt) return { ok: false, reason: "already_used" };
   if (input.record.expiresAt <= now) return { ok: false, reason: "expired" };
   if (input.record.organizationId !== input.sessionOrganizationId) {
     return { ok: false, reason: "org_mismatch" };
+  }
+  if (input.record.userId !== input.sessionUserId) {
+    return { ok: false, reason: "user_mismatch" };
   }
   return { ok: true };
 }
@@ -96,21 +109,35 @@ export async function createGoogleOAuthState(
 }
 
 /**
- * Consume el state: única vez, no vencido y de la organización de la sesión.
+ * Consume el state: única vez, no vencido y ligado a organización y usuario.
  * El doble callback pierde la carrera en `markUsed` (update atómico).
  */
 export async function consumeGoogleOAuthState(
-  input: { state: string; sessionOrganizationId: string; now?: Date },
+  input: {
+    state: string;
+    sessionOrganizationId: string;
+    sessionUserId: string;
+    now?: Date;
+  },
   store: StateStore = defaultStore
 ): Promise<
   | { ok: true; organizationId: string; userId: string }
-  | { ok: false; reason: "not_found" | "expired" | "already_used" | "org_mismatch" }
+  | {
+      ok: false;
+      reason:
+        | "not_found"
+        | "expired"
+        | "already_used"
+        | "org_mismatch"
+        | "user_mismatch";
+    }
 > {
   const now = input.now ?? new Date();
   const record = await store.find(hashOAuthState(input.state));
   const decision = resolveStateConsumption({
     record,
     sessionOrganizationId: input.sessionOrganizationId,
+    sessionUserId: input.sessionUserId,
     now,
   });
   if (!decision.ok) return decision;
