@@ -9,7 +9,7 @@ import { AGENT_TONE_LABELS } from "@/lib/validations/agent";
 export function buildAgentInstructions(
   settings: AgentSettings,
   business: BusinessProfile | null,
-  options: { hasKnowledge?: boolean } = {}
+  options: { hasKnowledge?: boolean; hasAppointments?: boolean } = {}
 ): string {
   const businessName = business?.name ?? "el negocio";
   const tone = AGENT_TONE_LABELS[settings.tone];
@@ -38,6 +38,15 @@ export function buildAgentInstructions(
     `- Si no podés ayudar con algo, podés usar este mensaje como guía: "${settings.fallbackMessage}"`,
     "- Si la consulta requiere atención humana (reclamos, pedidos explícitos de hablar con una persona, temas sensibles), utilizá request_human_support y avisale al cliente que una persona del equipo va a continuar la conversación.",
   ];
+
+  if (options.hasAppointments) {
+    lines.push(
+      "- Para turnos: consultá horarios con check_appointment_availability antes de ofrecerlos y ofrecé solo los horarios devueltos.",
+      "- Antes de crear, reprogramar o cancelar un turno pedí SIEMPRE la confirmación explícita del cliente (nombre, fecha y hora exactos) y recién entonces usá la herramienta con customer_confirmed=true.",
+      "- Si la fecha o la hora son ambiguas (\"mañana a la tarde\"), pedí la aclaración antes de usar las herramientas de turnos.",
+      "- Si una operación de turnos falla o la agenda no está disponible, decilo con claridad, no afirmes que se reservó y ofrecé derivar a una persona."
+    );
+  }
 
   if (options.hasKnowledge) {
     lines.push(

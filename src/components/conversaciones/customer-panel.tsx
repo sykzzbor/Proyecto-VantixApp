@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Bot, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import {
   customerFormSchema,
@@ -11,8 +12,16 @@ import {
 import { saveConversationCustomer } from "@/server/actions/customers";
 import type { ConversationDetail } from "@/server/inbox";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { FieldError } from "@/components/forms/field-error";
 import { SubmitButton } from "@/components/forms/submit-button";
@@ -36,9 +45,27 @@ function toDefaults(detail: ConversationDetail): CustomerFormInput {
 export function CustomerPanel({
   detail,
   canEdit,
+  canRespond = false,
+  canManage = false,
+  members = [],
+  isPending = false,
+  onTake,
+  onReturnToAI,
+  onStatusChange,
+  onAssign,
+  instanceId = "panel",
 }: {
   detail: ConversationDetail;
   canEdit: boolean;
+  canRespond?: boolean;
+  canManage?: boolean;
+  members?: { id: string; userId: string; name: string }[];
+  isPending?: boolean;
+  onTake?: () => void;
+  onReturnToAI?: () => void;
+  onStatusChange?: (status: "OPEN" | "PENDING" | "CLOSED") => void;
+  onAssign?: (membershipId: string | null) => void;
+  instanceId?: string;
 }) {
   const {
     register,
@@ -66,6 +93,11 @@ export function CustomerPanel({
     );
     reset(values);
   }
+
+  const assignedMembershipId =
+    members.find((member) => member.userId === detail.assigned?.userId)?.id ??
+    "unassigned";
+  const fieldId = (name: string) => `${name}-${instanceId}-${detail.id}`;
 
   return (
     <div className="space-y-4 p-4">
@@ -123,6 +155,141 @@ export function CustomerPanel({
         </dl>
       </section>
 
+      {(canRespond || canManage) && (
+        <section className="space-y-3 rounded-xl border border-border/75 bg-card/70 p-3.5">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              Gestión
+            </p>
+            <h3 className="mt-1 text-sm font-semibold tracking-tight">
+              Acciones de la conversación
+            </h3>
+          </div>
+
+          {canRespond && detail.status !== "closed" && (
+            detail.handlingMode === "human" ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full justify-start"
+                disabled={isPending}
+                onClick={onReturnToAI}
+              >
+                <Bot className="size-4" aria-hidden />
+                Devolver a la IA
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                className="w-full justify-start"
+                disabled={isPending}
+                onClick={onTake}
+              >
+                <UserRound className="size-4" aria-hidden />
+                Tomar conversación
+              </Button>
+            )
+          )}
+
+          {canManage && (
+            <div className="grid gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor={fieldId("conversation-status")}>Estado</Label>
+                <Select
+                  value={detail.status.toUpperCase()}
+                  disabled={isPending}
+                  onValueChange={(value) =>
+                    onStatusChange?.(value as "OPEN" | "PENDING" | "CLOSED")
+                  }
+                >
+                  <SelectTrigger id={fieldId("conversation-status")} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="OPEN">Abierta</SelectItem>
+                    <SelectItem value="PENDING">Pendiente</SelectItem>
+                    <SelectItem value="CLOSED">Cerrada</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor={fieldId("conversation-owner")}>Responsable</Label>
+                <Select
+                  value={assignedMembershipId}
+                  disabled={isPending}
+                  onValueChange={(value) =>
+                    onAssign?.(value === "unassigned" ? null : value)
+                  }
+                >
+                  <SelectTrigger id={fieldId("conversation-owner")} className="w-full">
+                    <SelectValue placeholder="Sin responsable" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">Sin responsable</SelectItem>
+                    {members.map((member) => (
+                      <SelectItem key={member.id} value={member.id}>
+                        {member.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Turnos vinculados a la conversación o al cliente */}
+      <section className="space-y-3 rounded-xl border border-border/75 bg-card/70 p-3.5">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Agenda
+          </p>
+          <h3 className="mt-1 text-sm font-semibold tracking-tight">Turnos</h3>
+        </div>
+        {detail.appointments.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            Este cliente no tiene turnos registrados.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {detail.appointments.map((appointment, index) => (
+              <li
+                key={`${appointment.whenLabel}-${index}`}
+                className="flex items-center justify-between gap-2 text-xs"
+              >
+                <span
+                  className={
+                    appointment.upcoming
+                      ? "font-medium text-foreground"
+                      : "text-muted-foreground"
+                  }
+                >
+                  {appointment.whenLabel}
+                </span>
+                <Badge
+                  variant="outline"
+                  className={
+                    appointment.statusLabel === "Cancelado"
+                      ? "bg-muted/50 font-normal text-muted-foreground"
+                      : appointment.statusLabel === "Con error"
+                        ? "border-destructive/25 bg-destructive/10 font-normal text-destructive"
+                      : appointment.upcoming
+                        ? "border-emerald-500/20 bg-emerald-500/10 font-normal text-emerald-300"
+                        : "font-normal text-muted-foreground"
+                  }
+                >
+                  {appointment.statusLabel}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       {/* Datos del cliente */}
       <section className="space-y-3 rounded-xl border border-border/75 bg-card/70 p-3.5">
         <div>
@@ -146,18 +313,18 @@ export function CustomerPanel({
             noValidate
           >
             <div className="space-y-1.5">
-              <Label htmlFor="customer-name">Nombre</Label>
+              <Label htmlFor={fieldId("customer-name")}>Nombre</Label>
               <Input
-                id="customer-name"
+                id={fieldId("customer-name")}
                 placeholder="Cliente de prueba"
                 {...register("name")}
               />
               <FieldError message={errors.name?.message} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="customer-phone">Teléfono</Label>
+              <Label htmlFor={fieldId("customer-phone")}>Teléfono</Label>
               <Input
-                id="customer-phone"
+                id={fieldId("customer-phone")}
                 type="tel"
                 placeholder="+54 9 11 5555-0000"
                 {...register("phone")}
@@ -165,9 +332,9 @@ export function CustomerPanel({
               <FieldError message={errors.phone?.message} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="customer-email">Email</Label>
+              <Label htmlFor={fieldId("customer-email")}>Email</Label>
               <Input
-                id="customer-email"
+                id={fieldId("customer-email")}
                 type="email"
                 placeholder="cliente@email.com"
                 {...register("email")}
@@ -175,9 +342,9 @@ export function CustomerPanel({
               <FieldError message={errors.email?.message} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="customer-notes">Notas internas</Label>
+              <Label htmlFor={fieldId("customer-notes")}>Notas internas</Label>
               <Textarea
-                id="customer-notes"
+                id={fieldId("customer-notes")}
                 rows={3}
                 placeholder="Preferencias, historial, datos útiles para el equipo."
                 {...register("notes")}

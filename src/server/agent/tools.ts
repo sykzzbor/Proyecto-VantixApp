@@ -8,6 +8,13 @@ import {
   KNOWLEDGE_SEARCH_MAX_LIMIT,
   searchKnowledgeChunks,
 } from "@/server/knowledge/search";
+import {
+  APPOINTMENT_TOOL_DEFINITIONS,
+  runCancelAppointment,
+  runCheckAvailability,
+  runCreateAppointment,
+  runRescheduleAppointment,
+} from "@/server/agent/appointment-tools";
 
 /**
  * Contexto interno de ejecución de herramientas. El organizationId
@@ -137,6 +144,7 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
       required: ["query", "category", "limit"],
     },
   },
+  ...APPOINTMENT_TOOL_DEFINITIONS,
   {
     name: "request_human_support",
     description:
@@ -464,6 +472,14 @@ async function dispatchTool(
       return searchFaqs(ctx, args);
     case "search_knowledge":
       return searchKnowledge(ctx, args);
+    case "check_appointment_availability":
+      return runCheckAvailability(ctx, args);
+    case "create_appointment":
+      return runCreateAppointment(ctx, args);
+    case "reschedule_appointment":
+      return runRescheduleAppointment(ctx, args);
+    case "cancel_appointment":
+      return runCancelAppointment(ctx, args);
     case "request_human_support":
       return requestHumanSupport(ctx, args);
     default:

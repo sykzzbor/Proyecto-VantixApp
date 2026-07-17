@@ -171,6 +171,16 @@ export type ThreadMessage = {
   errorCode: string | null;
   errorMessage: string | null;
   retryable: boolean;
+  messageType:
+    | "text"
+    | "audio"
+    | "image"
+    | "document"
+    | "video"
+    | "sticker"
+    | "location"
+    | "unknown";
+  mediaFilename: string | null;
 };
 
 export type ConversationDetail = {
@@ -191,7 +201,74 @@ export type ConversationDetail = {
     notes: string | null;
   } | null;
   messages: ThreadMessage[];
+  /** Turnos vinculados a la conversación o al cliente (solo datos visibles). */
+  appointments: {
+    whenLabel: string;
+    statusLabel:
+      | "Confirmado"
+      | "Reprogramado"
+      | "Cancelado"
+      | "Pendiente"
+      | "Con error";
+    upcoming: boolean;
+  }[];
 };
+
+const APPOINTMENT_STATUS_LABEL = {
+  CONFIRMED: "Confirmado",
+  RESCHEDULED: "Reprogramado",
+  CANCELLED: "Cancelado",
+  PENDING: "Pendiente",
+  FAILED: "Con error",
+} as const;
+
+function messagePresentation(metadata: Prisma.JsonValue): {
+  messageType: ThreadMessage["messageType"];
+  mediaFilename: string | null;
+} {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return { messageType: "text", mediaFilename: null };
+  }
+  const record = metadata as Prisma.JsonObject;
+  const supported = new Set<ThreadMessage["messageType"]>([
+    "text",
+    "audio",
+    "image",
+    "document",
+    "video",
+    "sticker",
+    "location",
+  ]);
+  const rawType = typeof record.messageType === "string" ? record.messageType : "text";
+  const messageType = supported.has(rawType as ThreadMessage["messageType"])
+    ? (rawType as ThreadMessage["messageType"])
+    : "unknown";
+  const media =
+    record.media && typeof record.media === "object" && !Array.isArray(record.media)
+      ? (record.media as Prisma.JsonObject)
+      : null;
+  const filename = media && typeof media.filename === "string" ? media.filename.trim() : "";
+  return {
+    messageType,
+    mediaFilename: filename ? filename.slice(0, 180) : null,
+  };
+}
+
+function formatAppointmentWhen(startAt: Date, timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat("es-AR", {
+      timeZone,
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(startAt);
+  } catch {
+    return formatDateTime(startAt);
+  }
+}
 
 export async function getConversationDetail(
   organizationId: string,
@@ -213,44 +290,80 @@ export async function getConversationDetail(
   });
   if (!conversation) return null;
 
-  const settings = await prisma.agentSettings.findUnique({
-    where: { organizationId },
-    select: { assistantName: true },
-  });
+  const [settings, appointmentRecords] = await Promise.all([
+    prisma.agentSettings.findUnique({
+      where: { organizationId },
+      select: { assistantName: true },
+    }),
+    prisma.appointment.findMany({
+      where: {
+        organizationId,
+        OR: [
+          { conversationId },
+          ...(conversation.customerId
+            ? [{ customerId: conversation.customerId }]
+            : []),
+        ],
+      },
+      orderBy: { startAt: "desc" },
+      take: 4,
+      select: { startAt: true, timezone: true, status: true },
+    }),
+  ]);
+  const now = Date.now();
+  const appointments = appointmentRecords
+    .map((appointment) => ({
+      whenLabel: formatAppointmentWhen(appointment.startAt, appointment.timezone),
+      statusLabel: APPOINTMENT_STATUS_LABEL[appointment.status],
+      upcoming:
+        appointment.startAt.getTime() >= now &&
+        appointment.status !== "CANCELLED",
+      startMs: appointment.startAt.getTime(),
+    }))
+    .sort((a, b) => Number(b.upcoming) - Number(a.upcoming) || a.startMs - b.startMs)
+    .map(({ whenLabel, statusLabel, upcoming }) => ({
+      whenLabel,
+      statusLabel,
+      upcoming,
+    }));
   const aiName = settings?.assistantName ?? "Asistente";
   const customerName = conversation.customer?.name ?? DEFAULT_CUSTOMER_NAME;
 
-  const messages = [...conversation.messages].reverse().map((message) => ({
-    id: message.id,
-    senderType:
-      message.senderType === "CUSTOMER"
-        ? ("customer" as const)
-        : message.senderType === "AI"
-          ? ("ai" as const)
-          : message.senderType === "HUMAN"
-            ? ("human" as const)
-            : ("system" as const),
-    senderName:
-      message.senderType === "CUSTOMER"
-        ? customerName
-        : message.senderType === "AI"
-          ? aiName
-          : message.senderType === "HUMAN"
-            ? (message.senderUser?.name ?? "Equipo")
-            : "Sistema",
-    content: message.content,
-    timeLabel: formatTime(message.createdAt),
-    dateLabel: formatDate(message.createdAt),
-    deliveryStatus: message.deliveryStatus
-      ? DELIVERY_STATUS_FROM_DB[message.deliveryStatus]
-      : null,
-    errorCode: message.errorCode,
-    errorMessage: message.errorMessage,
-    retryable:
-      conversation.channel === "whatsapp" &&
-      message.deliveryStatus === "FAILED" &&
-      (message.senderType === "HUMAN" || message.senderType === "AI"),
-  }));
+  const messages = [...conversation.messages].reverse().map((message) => {
+    const presentation = messagePresentation(message.metadata);
+    return {
+      id: message.id,
+      senderType:
+        message.senderType === "CUSTOMER"
+          ? ("customer" as const)
+          : message.senderType === "AI"
+            ? ("ai" as const)
+            : message.senderType === "HUMAN"
+              ? ("human" as const)
+              : ("system" as const),
+      senderName:
+        message.senderType === "CUSTOMER"
+          ? customerName
+          : message.senderType === "AI"
+            ? aiName
+            : message.senderType === "HUMAN"
+              ? (message.senderUser?.name ?? "Equipo")
+              : "Sistema",
+      content: message.content,
+      timeLabel: formatTime(message.createdAt),
+      dateLabel: formatDate(message.createdAt),
+      deliveryStatus: message.deliveryStatus
+        ? DELIVERY_STATUS_FROM_DB[message.deliveryStatus]
+        : null,
+      errorCode: message.errorCode,
+      errorMessage: message.errorMessage,
+      retryable:
+        conversation.channel === "whatsapp" &&
+        message.deliveryStatus === "FAILED" &&
+        (message.senderType === "HUMAN" || message.senderType === "AI"),
+      ...presentation,
+    };
+  });
 
   return {
     id: conversation.id,
@@ -280,5 +393,6 @@ export async function getConversationDetail(
         }
       : null,
     messages,
+    appointments,
   };
 }

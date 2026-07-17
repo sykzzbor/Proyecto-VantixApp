@@ -101,6 +101,10 @@ test("OpenAI existente conserva su selección y herramientas", async () => {
       "search_services",
       "search_faqs",
       "search_knowledge",
+      "check_appointment_availability",
+      "create_appointment",
+      "reschedule_appointment",
+      "cancel_appointment",
       "request_human_support",
     ]
   );

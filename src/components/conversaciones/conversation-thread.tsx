@@ -10,12 +10,17 @@ import {
   CheckCheck,
   CircleAlert,
   Clock3,
+  FileText,
+  Image as ImageIcon,
   Info,
   Loader2,
+  MapPin,
+  Mic,
   MoreVertical,
   RotateCw,
   SendHorizonal,
   UserRound,
+  Video,
 } from "lucide-react";
 import { toast } from "sonner";
 import { MAX_HUMAN_MESSAGE_LENGTH } from "@/lib/validations/conversation";
@@ -107,7 +112,7 @@ function DeliveryStatus({ message }: { message: ThreadMessage }) {
     <span
       className={cn(
         "inline-flex items-center gap-1",
-        message.deliveryStatus === "read" && "text-blue-500 dark:text-blue-400",
+        message.deliveryStatus === "read" && "text-[#3b82f6]",
         message.deliveryStatus === "failed" && "text-destructive"
       )}
     >
@@ -128,6 +133,42 @@ function groupByDay(messages: ThreadMessage[]) {
     }
   }
   return groups;
+}
+
+function MessageContent({ message }: { message: ThreadMessage }) {
+  if (message.messageType === "text") return message.content;
+  const media = {
+    audio: { icon: Mic, label: "Mensaje de audio" },
+    image: { icon: ImageIcon, label: "Imagen" },
+    document: { icon: FileText, label: "Documento" },
+    video: { icon: Video, label: "Video" },
+    sticker: { icon: ImageIcon, label: "Sticker" },
+    location: { icon: MapPin, label: "Ubicación" },
+    unknown: { icon: FileText, label: "Contenido multimedia" },
+  }[message.messageType];
+  const Icon = media.icon;
+  return (
+    <div className="space-y-1.5">
+      <span className="flex items-center gap-2 font-medium">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-black/[0.08]">
+          <Icon className="size-4" aria-hidden />
+        </span>
+        <span className="min-w-0">
+          <span className="block">{media.label}</span>
+          {message.mediaFilename && (
+            <span className="block max-w-60 truncate text-[11px] font-normal opacity-70">
+              {message.mediaFilename}
+            </span>
+          )}
+        </span>
+      </span>
+      {message.content && (
+        <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+          {message.content}
+        </p>
+      )}
+    </div>
+  );
 }
 
 export function ConversationThread({
@@ -157,6 +198,8 @@ export function ConversationThread({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const shouldStickToBottomRef = useRef(true);
+  const initialScrollDoneRef = useRef(false);
 
   const customerName = detail.customer?.name ?? "Cliente de prueba";
   const isClosed = detail.status === "closed";
@@ -168,8 +211,17 @@ export function ConversationThread({
   }`;
 
   useEffect(() => {
+    initialScrollDoneRef.current = false;
+    shouldStickToBottomRef.current = true;
+  }, [detail.id]);
+
+  useEffect(() => {
     const container = scrollRef.current;
-    if (container) container.scrollTop = container.scrollHeight;
+    if (!container) return;
+    if (!initialScrollDoneRef.current || shouldStickToBottomRef.current) {
+      container.scrollTop = container.scrollHeight;
+      initialScrollDoneRef.current = true;
+    }
   }, [messages.length]);
 
   function backHref(): string {
@@ -199,6 +251,7 @@ export function ConversationThread({
 
   function appendMessage(message?: ThreadMessage) {
     if (!message) return;
+    shouldStickToBottomRef.current = true;
     setMessages((previous) =>
       previous.some((item) => item.id === message.id)
         ? previous
@@ -254,6 +307,34 @@ export function ConversationThread({
   }
 
   const groups = groupByDay(messages);
+  const customerPanelProps = {
+    detail,
+    canEdit: canEditCustomer,
+    canRespond,
+    canManage,
+    members,
+    isPending,
+    onTake: () =>
+      runAction(
+        () => takeConversation(detail.id),
+        "Tomaste la conversación."
+      ),
+    onReturnToAI: () =>
+      runAction(
+        () => returnConversationToAI(detail.id),
+        "La conversación volvió a la IA."
+      ),
+    onStatusChange: (status: "OPEN" | "PENDING" | "CLOSED") =>
+      runAction(
+        () => setConversationStatus(detail.id, status),
+        "Estado de la conversación actualizado."
+      ),
+    onAssign: (membershipId: string | null) =>
+      runAction(
+        () => assignConversation(detail.id, membershipId),
+        "Responsable actualizado."
+      ),
+  };
 
   return (
     <div className="flex min-h-0 min-w-0 w-full flex-1 overflow-hidden bg-card">
@@ -264,7 +345,7 @@ export function ConversationThread({
           asChild
           variant="ghost"
           size="icon"
-          className="lg:hidden"
+          className="md:hidden"
           aria-label="Volver a la lista"
         >
           <Link href={backHref()}>
@@ -326,7 +407,7 @@ export function ConversationThread({
             </span>
             <span
               className="inline-flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground"
-              title={isHuman ? "Atención humana" : "IA activa"}
+              title={isHuman ? "Atención humana" : "IA respondiendo"}
             >
               {isHuman ? (
                 <UserRound className="size-3" aria-hidden />
@@ -334,7 +415,7 @@ export function ConversationThread({
                 <Bot className="size-3" aria-hidden />
               )}
               <span className="hidden md:inline">
-                {isHuman ? "Humano" : "IA activa"}
+                {isHuman ? "Humano" : "IA respondiendo"}
               </span>
             </span>
             {detail.assigned && (
@@ -384,7 +465,7 @@ export function ConversationThread({
           )}
 
           {/* Información del cliente en pantallas angostas */}
-          <div className="min-[1400px]:hidden">
+          <div className="xl:hidden">
             <Sheet>
               <SheetTrigger asChild>
                 <Button
@@ -400,7 +481,7 @@ export function ConversationThread({
                 <SheetHeader className="border-b px-4 py-3 text-left">
                   <SheetTitle className="text-base">Cliente</SheetTitle>
                 </SheetHeader>
-                <CustomerPanel detail={detail} canEdit={canEditCustomer} />
+                <CustomerPanel {...customerPanelProps} instanceId="drawer" />
               </SheetContent>
             </Sheet>
           </div>
@@ -534,7 +615,16 @@ export function ConversationThread({
       )}
 
       {/* Mensajes */}
-      <div ref={scrollRef} className="conversation-canvas min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5">
+      <div
+        ref={scrollRef}
+        className="inbox-conversation-canvas min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5"
+        onScroll={(event) => {
+          const target = event.currentTarget;
+          const distanceFromBottom =
+            target.scrollHeight - target.scrollTop - target.clientHeight;
+          shouldStickToBottomRef.current = distanceFromBottom < 96;
+        }}
+      >
         {messages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-sm text-muted-foreground">
@@ -545,19 +635,17 @@ export function ConversationThread({
           <div className="mx-auto w-full max-w-4xl space-y-5">
             {groups.map((group) => (
               <div key={group.dateLabel} className="space-y-3">
-                <div className="flex items-center gap-3 py-1">
-                  <div className="h-px flex-1 bg-border" />
-                  <span className="rounded-full border border-border/70 bg-card/75 px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+                <div className="flex items-center justify-center py-1">
+                  <span className="rounded-lg bg-white/85 px-2.5 py-1 text-[10px] font-medium text-[#54656f] shadow-sm">
                     {group.dateLabel}
                   </span>
-                  <div className="h-px flex-1 bg-border" />
                 </div>
                 {group.messages.map((message) => {
                   if (message.senderType === "system") {
                     return (
                       <p
                         key={message.id}
-                        className="mx-auto w-fit max-w-[90%] rounded-full border border-border bg-muted/70 px-3 py-1.5 text-center text-[11px] leading-relaxed text-muted-foreground"
+                        className="mx-auto w-fit max-w-[90%] rounded-lg bg-[#fdf3d0] px-3 py-1.5 text-center text-[11px] leading-relaxed text-[#5c5240] shadow-sm"
                       >
                         {message.content} · {message.timeLabel}
                       </p>
@@ -575,9 +663,9 @@ export function ConversationThread({
                         fromCustomer ? "items-start" : "items-end"
                       )}
                     >
-                      <span className="mb-1 flex items-center gap-1 px-1 text-[10px] text-muted-foreground">
+                      <span className="mb-1 flex items-center gap-1 px-1 text-[10px] font-medium text-[#6b6255]">
                         {message.senderType === "ai" && (
-                          <Bot className="size-3" aria-hidden />
+                          <Bot className="size-3 text-emerald-700" aria-hidden />
                         )}
                         {message.senderName}
                         {message.senderType === "ai" && " · IA"}
@@ -587,22 +675,25 @@ export function ConversationThread({
                       <div
                         className={cn(
                           "max-w-[90%] whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm sm:max-w-[76%]",
-                          fromCustomer && "rounded-bl-md border border-border/90 bg-[#202633]",
+                          // Entrantes: burbuja blanca sobre el lienzo claro.
+                          fromCustomer && "rounded-bl-md bg-white text-[#111b21]",
                           !fromCustomer &&
                             failed &&
-                            "rounded-br-md border border-destructive/40 bg-destructive/[0.07] text-foreground",
+                            "rounded-br-md border border-destructive/50 bg-[#fdecea] text-[#7f1d1d]",
+                          // IA: verde suave, con el indicador Bot en la etiqueta.
                           !failed &&
                             message.senderType === "ai" &&
-                            "rounded-br-md border border-primary/20 bg-primary/[0.11] text-secondary-foreground",
+                            "rounded-br-md bg-[#d9fdd3] text-[#0b3d1f]",
+                          // Humanos: azul Vantix.
                           !failed &&
                             message.senderType === "human" &&
                             "rounded-br-md bg-primary text-primary-foreground shadow-[0_10px_28px_-18px_rgba(79,124,255,0.95)]"
                         )}
                       >
-                        {message.content}
+                        <MessageContent message={message} />
                       </div>
                       {message.deliveryStatus && (
-                        <div className="mt-1 flex max-w-[85%] items-center justify-end gap-1.5 px-1 text-[10px] text-muted-foreground sm:max-w-[70%]">
+                        <div className="mt-1 flex max-w-[85%] items-center justify-end gap-1.5 px-1 text-[10px] text-[#6b6255] sm:max-w-[70%]">
                           <DeliveryStatus message={message} />
                           {canRetry && (
                             <Button
@@ -680,7 +771,7 @@ export function ConversationThread({
         <div className="flex flex-col items-start justify-between gap-3 border-t border-border bg-primary/[0.045] px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row sm:items-center">
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Bot className="size-4" aria-hidden />
-            La IA está a cargo. Para responder vos, tomá la conversación.
+            IA respondiendo. Para escribir vos, tomá la conversación.
           </p>
           <Button
             size="sm"
@@ -754,14 +845,14 @@ export function ConversationThread({
       )}
       </div>
 
-      <aside className="hidden w-[17rem] shrink-0 overflow-y-auto border-l border-border bg-sidebar/35 min-[1400px]:block">
+      <aside className="hidden w-60 shrink-0 overflow-y-auto border-l border-border bg-sidebar/35 xl:block 2xl:w-[17rem]">
         <div className="sticky top-0 z-10 border-b border-border bg-card/95 px-4 py-4 backdrop-blur">
           <p className="text-sm font-semibold">Cliente</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Contexto y datos de contacto
           </p>
         </div>
-        <CustomerPanel detail={detail} canEdit={canEditCustomer} />
+        <CustomerPanel {...customerPanelProps} instanceId="sidebar" />
       </aside>
     </div>
   );

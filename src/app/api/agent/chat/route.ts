@@ -7,6 +7,7 @@ import {
   isAgentConfigured,
 } from "@/server/agent/config";
 import { buildAgentInstructions } from "@/server/agent/prompt";
+import { getAppointmentReadiness } from "@/server/appointments/service";
 import { AgentRunError, runAgent } from "@/server/agent/run";
 import type { AgentToolContext } from "@/server/agent/tools";
 import { recordAiUsage } from "@/server/agent/usage";
@@ -116,13 +117,15 @@ export async function POST(request: NextRequest) {
     }
 
     // 7. Configuración del agente.
-    const [settings, business, knowledgeCount] = await Promise.all([
-      prisma.agentSettings.findUnique({ where: { organizationId } }),
-      prisma.businessProfile.findUnique({ where: { organizationId } }),
-      prisma.knowledgeDocument.count({
-        where: { organizationId, status: "READY", enabled: true },
-      }),
-    ]);
+    const [settings, business, knowledgeCount, appointmentReadiness] =
+      await Promise.all([
+        prisma.agentSettings.findUnique({ where: { organizationId } }),
+        prisma.businessProfile.findUnique({ where: { organizationId } }),
+        prisma.knowledgeDocument.count({
+          where: { organizationId, status: "READY", enabled: true },
+        }),
+        getAppointmentReadiness(organizationId).catch(() => null),
+      ]);
     if (!settings || !settings.enabled) {
       return jsonError(
         409,
@@ -188,6 +191,7 @@ export async function POST(request: NextRequest) {
       result = await runAgent({
         ctx,
         instructions: buildAgentInstructions(settings, business, {
+          hasAppointments: appointmentReadiness?.ready ?? false,
           hasKnowledge: knowledgeCount > 0,
         }),
         history: historyRows

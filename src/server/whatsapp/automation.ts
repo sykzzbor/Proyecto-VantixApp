@@ -4,6 +4,7 @@ import {
   isAgentConfigured,
 } from "@/server/agent/config";
 import { buildAgentInstructions } from "@/server/agent/prompt";
+import { getAppointmentReadiness } from "@/server/appointments/service";
 import { runAgent } from "@/server/agent/run";
 import type { AgentToolContext } from "@/server/agent/tools";
 import { recordAiUsage } from "@/server/agent/usage";
@@ -82,17 +83,19 @@ export async function handleWhatsappAutomaticResponse(
     return;
   }
 
-  const [conversation, settings, business, knowledgeCount] = await Promise.all([
-    prisma.conversation.findFirst({
-      where: { id: conversationId, organizationId },
-      select: { id: true, handlingMode: true, status: true },
-    }),
-    prisma.agentSettings.findUnique({ where: { organizationId } }),
-    prisma.businessProfile.findUnique({ where: { organizationId } }),
-    prisma.knowledgeDocument.count({
-      where: { organizationId, status: "READY", enabled: true },
-    }),
-  ]);
+  const [conversation, settings, business, knowledgeCount, appointmentReadiness] =
+    await Promise.all([
+      prisma.conversation.findFirst({
+        where: { id: conversationId, organizationId },
+        select: { id: true, handlingMode: true, status: true },
+      }),
+      prisma.agentSettings.findUnique({ where: { organizationId } }),
+      prisma.businessProfile.findUnique({ where: { organizationId } }),
+      prisma.knowledgeDocument.count({
+        where: { organizationId, status: "READY", enabled: true },
+      }),
+      getAppointmentReadiness(organizationId).catch(() => null),
+    ]);
 
   if (!conversation || conversation.status === "CLOSED") return;
   if (conversation.handlingMode === "HUMAN") return;
@@ -132,6 +135,7 @@ export async function handleWhatsappAutomaticResponse(
     result = await runAgent({
       ctx,
       instructions: buildAgentInstructions(settings, business, {
+        hasAppointments: appointmentReadiness?.ready ?? false,
         hasKnowledge: knowledgeCount > 0,
       }),
       history: historyRows

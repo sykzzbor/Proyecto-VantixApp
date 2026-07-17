@@ -110,20 +110,25 @@ export function DashboardShell({
   const showCurrentSection = currentItem?.href !== "/dashboard";
 
   return (
-    <div className="flex min-h-svh w-full bg-background">
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
-        <div className="flex h-16 items-center border-b border-sidebar-border bg-[#05060c] px-5">
+    // Altura fija del viewport: la sidebar nunca crece con el contenido y el
+    // scroll de cada zona (navegación / contenido) es independiente.
+    <div className="flex h-dvh w-full overflow-hidden bg-background">
+      <aside className="hidden h-full w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
+        <div className="flex h-16 shrink-0 items-center border-b border-sidebar-border bg-[#05060c] px-5">
           <Link href="/dashboard" aria-label="Ir al dashboard de Vantix">
             <VantixLogo priority className="w-[7.75rem]" />
           </Link>
         </div>
-        <div className="flex-1 overflow-y-auto p-3">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
           <NavLinks pathname={pathname} />
         </div>
-        <SidebarFooter orgName={orgName} user={user} role={role} />
+        {/* Usuario siempre visible abajo, sin importar el largo de la página. */}
+        <div className="shrink-0">
+          <SidebarFooter orgName={orgName} user={user} role={role} />
+        </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
         <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-border/80 bg-background/95 px-4 backdrop-blur-md md:px-6">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
@@ -196,8 +201,10 @@ export function DashboardShell({
           </div>
         </header>
 
-        <main className="flex-1 bg-background p-4 sm:p-5 md:p-6 lg:p-8">
-          <div className="mx-auto w-full max-w-[1440px]">{children}</div>
+        <main className="min-h-0 flex-1 overflow-y-auto bg-background p-4 sm:p-5 md:p-6 lg:p-8">
+          <div className="mx-auto flex min-h-full w-full max-w-[1440px] flex-col">
+            {children}
+          </div>
         </main>
       </div>
     </div>

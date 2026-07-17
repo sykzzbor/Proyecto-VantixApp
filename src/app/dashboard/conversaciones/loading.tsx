@@ -2,8 +2,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Loading() {
   return (
-    <div className="flex h-[calc(100dvh-6rem)] min-h-0 overflow-hidden rounded-xl border border-border/90 bg-card lg:h-[calc(100svh-8rem)] lg:min-h-[34rem]">
-        <div className="flex w-full flex-col gap-3 border-r p-3 lg:w-80">
+    <div className="flex h-[calc(100dvh-6rem)] min-h-0 overflow-hidden rounded-xl border border-border/90 bg-card md:h-[calc(100svh-7rem)] md:min-h-[34rem] lg:h-[calc(100svh-8rem)]">
+        <div className="flex w-full flex-col gap-3 border-r p-3 md:w-80">
           <div className="flex items-center justify-between gap-3 py-1">
             <div className="space-y-2">
               <Skeleton className="h-4 w-32" />
@@ -26,7 +26,7 @@ export default function Loading() {
             </div>
           ))}
         </div>
-        <div className="hidden flex-1 flex-col p-4 lg:flex">
+        <div className="hidden flex-1 flex-col p-4 md:flex">
           <Skeleton className="h-10 w-full" />
           <div className="flex flex-1 flex-col justify-end gap-3 py-4">
             <Skeleton className="h-12 w-2/3" />
@@ -35,7 +35,7 @@ export default function Loading() {
           </div>
           <Skeleton className="h-10 w-full" />
         </div>
-        <div className="hidden w-64 flex-col gap-3 border-l p-4 min-[1400px]:flex">
+        <div className="hidden w-60 flex-col gap-3 border-l p-4 xl:flex 2xl:w-64">
           <Skeleton className="h-6 w-1/2" />
           <Skeleton className="h-24 w-full" />
           <Skeleton className="h-40 w-full" />

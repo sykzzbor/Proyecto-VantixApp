@@ -53,6 +53,8 @@ function toThreadMessage(message: Message, senderName: string): ThreadMessage {
     retryable:
       message.deliveryStatus === "FAILED" &&
       (message.senderType === "HUMAN" || message.senderType === "AI"),
+    messageType: "text",
+    mediaFilename: null,
   };
 }
 

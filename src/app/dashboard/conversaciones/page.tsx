@@ -57,11 +57,11 @@ export default async function ConversacionesPage(
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-[calc(100dvh-6rem)] min-h-0 overflow-hidden rounded-xl border border-border/90 bg-card shadow-[0_24px_70px_-48px_rgba(0,0,0,0.95)] lg:h-[calc(100svh-8rem)] lg:min-h-[34rem]">
+      <div className="flex h-[calc(100dvh-6rem)] min-h-0 overflow-hidden rounded-xl border border-border/90 bg-card shadow-[0_24px_70px_-48px_rgba(0,0,0,0.95)] md:h-[calc(100svh-7rem)] md:min-h-[34rem] lg:h-[calc(100svh-8rem)]">
         <div
           className={cn(
-            "w-full flex-col bg-sidebar/45 lg:flex lg:w-[20rem] lg:shrink-0 lg:border-r lg:border-border xl:w-[21rem]",
-            detail ? "hidden lg:flex" : "flex"
+            "w-full flex-col bg-sidebar/45 md:flex md:w-[19rem] md:shrink-0 md:border-r md:border-border xl:w-[21rem]",
+            detail ? "hidden md:flex" : "flex"
           )}
         >
           <ConversationList
@@ -74,7 +74,7 @@ export default async function ConversacionesPage(
         <div
           className={cn(
             "min-w-0 flex-1 flex-col",
-            detail ? "flex" : "hidden lg:flex"
+            detail ? "flex" : "hidden md:flex"
           )}
         >
           {detail ? (

@@ -642,7 +642,7 @@ export async function rescheduleAppointment(
   input: RescheduleAppointmentRequest & {
     organizationId: string;
     appointmentId: string;
-    userId: string;
+    userId: string | null;
   },
   dependencies: AppointmentServiceDependencies = defaultDependencies
 ): Promise<AppointmentView> {
@@ -736,7 +736,7 @@ export async function cancelAppointment(
   input: CancelAppointmentRequest & {
     organizationId: string;
     appointmentId: string;
-    userId: string;
+    userId: string | null;
   },
   dependencies: AppointmentServiceDependencies = defaultDependencies
 ): Promise<AppointmentView> {
