@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { can } from "@/lib/permissions";
 import {
+  GOOGLE_CALENDAR_SCOPES,
+  hasRequiredGoogleCalendarScopes,
+} from "@/server/integrations/google-calendar/config";
+import {
   decryptAccessToken,
   encryptAccessToken,
 } from "@/server/whatsapp/crypto";
@@ -231,7 +235,7 @@ test("la URL de consentimiento pide scope mínimo, offline y state", async () =>
   assert.equal(parsed.origin, "https://accounts.google.com");
   assert.equal(
     parsed.searchParams.get("scope"),
-    "https://www.googleapis.com/auth/calendar.readonly"
+    GOOGLE_CALENDAR_SCOPES.join(" ")
   );
   assert.equal(parsed.searchParams.get("access_type"), "offline");
   assert.equal(parsed.searchParams.get("prompt"), "consent");
@@ -254,7 +258,7 @@ test("exchange y refresh envían el formulario correcto y parsean tokens", async
         access_token: ACCESS_TOKEN,
         refresh_token: REFRESH_TOKEN,
         expires_in: 3600,
-        scope: "https://www.googleapis.com/auth/calendar.readonly",
+        scope: GOOGLE_CALENDAR_SCOPES.join(" "),
       });
     }) as typeof fetch);
     assert.match(exchangeBody, /grant_type=authorization_code/);
@@ -274,6 +278,20 @@ test("exchange y refresh envían el formulario correcto y parsean tokens", async
     assert.match(refreshBody, /grant_type=refresh_token/);
     assert.equal(refreshed.accessToken, "nuevo-access-token-000001");
   });
+});
+
+test("scope: una conexión readonly exige reconexión y el conjunto nuevo habilita escritura", () => {
+  assert.equal(
+    hasRequiredGoogleCalendarScopes([
+      "https://www.googleapis.com/auth/calendar.readonly",
+    ]),
+    false
+  );
+  assert.equal(hasRequiredGoogleCalendarScopes(GOOGLE_CALENDAR_SCOPES), true);
+  assert.equal(
+    hasRequiredGoogleCalendarScopes(["https://www.googleapis.com/auth/calendar"]),
+    true
+  );
 });
 
 test("errores de Google quedan sanitizados (sin cuerpo crudo ni tokens)", async () => {

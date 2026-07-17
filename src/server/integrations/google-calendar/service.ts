@@ -6,6 +6,7 @@ import {
 } from "@/server/whatsapp/crypto";
 import {
   ACCESS_TOKEN_EXPIRY_BUFFER_MS,
+  hasRequiredGoogleCalendarScopes,
   isGoogleCalendarConfigured,
 } from "@/server/integrations/google-calendar/config";
 import {
@@ -26,6 +27,8 @@ import {
 export type GoogleCalendarView = {
   configured: boolean;
   connected: boolean;
+  writeAccess: boolean;
+  reconnectionRequired: boolean;
   status: "CONNECTED" | "ERROR" | null;
   googleEmail: string | null;
   selectedCalendarId: string | null;
@@ -45,13 +48,19 @@ export async function getGoogleCalendarView(
       googleEmail: true,
       selectedCalendarId: true,
       selectedCalendarName: true,
+      grantedScopes: true,
       lastTestedAt: true,
       lastError: true,
     },
   });
+  const writeAccess = connection
+    ? hasRequiredGoogleCalendarScopes(connection.grantedScopes)
+    : false;
   return {
     configured: isGoogleCalendarConfigured(),
     connected: Boolean(connection),
+    writeAccess,
+    reconnectionRequired: Boolean(connection) && !writeAccess,
     status: connection?.status ?? null,
     googleEmail: connection?.googleEmail ?? null,
     selectedCalendarId: connection?.selectedCalendarId ?? null,
@@ -104,7 +113,8 @@ export async function saveGoogleConnection(input: {
  */
 export async function getValidAccessToken(
   organizationId: string,
-  fetchImpl?: typeof fetch
+  fetchImpl?: typeof fetch,
+  options: { requireEventManagement?: boolean } = {}
 ): Promise<string> {
   const connection = await prisma.googleCalendarConnection.findUnique({
     where: { organizationId },
@@ -112,10 +122,26 @@ export async function getValidAccessToken(
       encryptedAccessToken: true,
       encryptedRefreshToken: true,
       accessTokenExpiresAt: true,
+      status: true,
+      grantedScopes: true,
     },
   });
   if (!connection) {
     throw new GoogleApiError("not_configured", "Google Calendar no está conectado.");
+  }
+  if (options.requireEventManagement) {
+    if (connection.status !== "CONNECTED") {
+      throw new GoogleApiError(
+        "authorization_expired",
+        "La conexión con Google requiere atención. Reconectá la cuenta."
+      );
+    }
+    if (!hasRequiredGoogleCalendarScopes(connection.grantedScopes)) {
+      throw new GoogleApiError(
+        "permission_denied",
+        "Reconectá Google Calendar para autorizar la gestión de turnos."
+      );
+    }
   }
 
   const expiresSoon =

@@ -23,7 +23,9 @@ export type GoogleApiErrorCode =
   | "network_error"
   | "google_unavailable"
   | "invalid_response"
-  | "invalid_request";
+  | "invalid_request"
+  | "not_found"
+  | "conflict";
 
 export class GoogleApiError extends Error {
   constructor(
@@ -88,6 +90,10 @@ const freeBusyResponseSchema = z
   })
   .passthrough();
 
+const calendarEventResponseSchema = z
+  .object({ id: z.string().min(5).max(1024) })
+  .passthrough();
+
 export type GoogleTokens = {
   accessToken: string;
   refreshToken?: string;
@@ -128,6 +134,22 @@ function responseError(status: number, context: string): GoogleApiError {
       status
     );
   }
+  if (status === 404 || status === 410) {
+    return new GoogleApiError(
+      "not_found",
+      "El evento de Google Calendar ya no existe.",
+      false,
+      status
+    );
+  }
+  if (status === 409) {
+    return new GoogleApiError(
+      "conflict",
+      "Google Calendar detectó un conflicto con el evento.",
+      false,
+      status
+    );
+  }
   if (status === 429) {
     return new GoogleApiError(
       "rate_limited",
@@ -150,7 +172,7 @@ function responseError(status: number, context: string): GoogleApiError {
 async function googleFetch(input: {
   url: string;
   context: string;
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PATCH" | "DELETE";
   headers?: Record<string, string>;
   body?: string;
   fetchImpl?: typeof fetch;
@@ -176,6 +198,7 @@ async function googleFetch(input: {
     clearTimeout(timeout);
   }
   if (!response.ok) throw responseError(response.status, input.context);
+  if (response.status === 204) return null;
   try {
     return (await response.json()) as unknown;
   } catch {
@@ -345,4 +368,122 @@ export async function fetchCalendarFreeBusy(
     start: new Date(interval.start),
     end: new Date(interval.end),
   }));
+}
+
+type GoogleEventMutationInput = {
+  accessToken: string;
+  calendarId: string;
+  startAt: Date;
+  endAt: Date;
+  timeZone: string;
+};
+
+function validateEventMutation(input: GoogleEventMutationInput) {
+  if (
+    input.calendarId.length < 1 ||
+    input.calendarId.length > 512 ||
+    input.timeZone.length < 1 ||
+    input.timeZone.length > 100 ||
+    !Number.isFinite(input.startAt.getTime()) ||
+    !Number.isFinite(input.endAt.getTime()) ||
+    input.startAt >= input.endAt
+  ) {
+    throw new GoogleApiError("invalid_request", "El turno no es válido.");
+  }
+}
+
+function eventUrl(calendarId: string, eventId?: string): string {
+  const base = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
+  return eventId
+    ? `${base}/${encodeURIComponent(eventId)}?sendUpdates=none`
+    : `${base}?sendUpdates=none`;
+}
+
+/** Crea un evento sin asistentes ni datos privados de conexión. */
+export async function createGoogleCalendarEvent(
+  input: GoogleEventMutationInput & {
+    title: string;
+    notes?: string | null;
+    location?: string | null;
+  },
+  fetchImpl?: typeof fetch
+): Promise<{ eventId: string }> {
+  validateEventMutation(input);
+  const raw = await googleFetch({
+    url: eventUrl(input.calendarId),
+    context: "event_create",
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      summary: input.title,
+      description: input.notes || undefined,
+      location: input.location || undefined,
+      start: { dateTime: input.startAt.toISOString(), timeZone: input.timeZone },
+      end: { dateTime: input.endAt.toISOString(), timeZone: input.timeZone },
+    }),
+    fetchImpl,
+  });
+  const parsed = calendarEventResponseSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new GoogleApiError("invalid_response", "Google devolvió un evento no válido.");
+  }
+  return { eventId: parsed.data.id };
+}
+
+/** Reprograma únicamente el horario del evento conocido por VantixApp. */
+export async function updateGoogleCalendarEvent(
+  input: GoogleEventMutationInput & { eventId: string },
+  fetchImpl?: typeof fetch
+): Promise<void> {
+  validateEventMutation(input);
+  if (input.eventId.length < 5 || input.eventId.length > 1024) {
+    throw new GoogleApiError("invalid_request", "El evento no es válido.");
+  }
+  const raw = await googleFetch({
+    url: eventUrl(input.calendarId, input.eventId),
+    context: "event_update",
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      start: { dateTime: input.startAt.toISOString(), timeZone: input.timeZone },
+      end: { dateTime: input.endAt.toISOString(), timeZone: input.timeZone },
+    }),
+    fetchImpl,
+  });
+  if (!calendarEventResponseSchema.safeParse(raw).success) {
+    throw new GoogleApiError("invalid_response", "Google devolvió un evento no válido.");
+  }
+}
+
+/** Elimina el evento; 404/410 cuentan como cancelación idempotente. */
+export async function deleteGoogleCalendarEvent(
+  input: { accessToken: string; calendarId: string; eventId: string },
+  fetchImpl?: typeof fetch
+): Promise<void> {
+  if (
+    input.calendarId.length < 1 ||
+    input.calendarId.length > 512 ||
+    input.eventId.length < 5 ||
+    input.eventId.length > 1024
+  ) {
+    throw new GoogleApiError("invalid_request", "El evento no es válido.");
+  }
+  try {
+    await googleFetch({
+      url: eventUrl(input.calendarId, input.eventId),
+      context: "event_delete",
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${input.accessToken}` },
+      fetchImpl,
+    });
+  } catch (error) {
+    if (error instanceof GoogleApiError && error.code === "not_found") return;
+    throw error;
+  }
 }

@@ -335,8 +335,10 @@ export async function checkAppointmentAvailability(
       slots: [],
     };
   }
-  const timeMin = new Date(effectiveMin);
-  const timeMax = new Date(effectiveMax);
+  // FreeBusy debe cubrir también el descanso anterior y posterior al rango.
+  const bufferMs = settings.bufferMinutes * MINUTE_MS;
+  const timeMin = new Date(effectiveMin - bufferMs);
+  const timeMax = new Date(effectiveMax + bufferMs);
   let busy: GoogleBusyInterval[];
   try {
     busy = await dependencies.fetchBusy({

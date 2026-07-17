@@ -1,8 +1,8 @@
-# Google Calendar — configuración (Etapa 6D.1A)
+# Google Calendar — configuración (Etapas 6D.1A y 6D.1B)
 
-Esta etapa conecta cada organización con una cuenta de Google Calendar
-(OAuth 2.0 oficial) para elegir un calendario de trabajo y probar la conexión.
-Los turnos, la disponibilidad y las herramientas del agente llegan en 6D.1B.
+La integración conecta cada organización con una cuenta de Google Calendar
+(OAuth 2.0 oficial), permite elegir un calendario, consultar disponibilidad y
+gestionar turnos. Las herramientas de Claude no forman parte de esta etapa.
 
 ## 1. Crear el proyecto en Google Cloud
 
@@ -11,9 +11,12 @@ Los turnos, la disponibilidad y las herramientas del agente llegan en 6D.1B.
 3. En **APIs & Services → OAuth consent screen**:
    - User type: **External** (o Internal si usás Google Workspace propio).
    - Completá nombre de la app, email de soporte y dominios.
-   - Scopes: agregá `https://www.googleapis.com/auth/calendar.readonly`
-     (único scope que pide esta etapa; 6D.1B agregará el de eventos y
-     requerirá reconectar).
+   - Scopes: agregá exactamente los permisos mínimos que usa VantixApp:
+     - `https://www.googleapis.com/auth/calendar.calendarlist.readonly`
+     - `https://www.googleapis.com/auth/calendar.events.freebusy`
+     - `https://www.googleapis.com/auth/calendar.events`
+   - Una conexión creada anteriormente con `calendar.readonly` deberá
+     reconectarse para autorizar la gestión de eventos.
    - Mientras la app esté en modo **Testing**, agregá como *test users* los
      emails de las cuentas de Google que van a conectar.
 
@@ -66,6 +69,7 @@ npm run db:deploy
 - `state` OAuth de un solo uso, con vencimiento de 10 minutos, guardado como
   hash SHA-256 y atado a la organización y al usuario de la sesión (CSRF y
   anti-replay; el doble callback se rechaza).
-- Scope mínimo: `calendar.readonly`. La escritura de eventos se pedirá recién
-  en 6D.1B.
+- Scopes separados y mínimos: listado de calendarios, FreeBusy y gestión de
+  eventos. Una conexión sin los tres permisos falla cerrada y solicita
+  reconexión antes de crear, reprogramar o cancelar.
 - Desconectar revoca el token en Google (best effort) y borra las credenciales.

@@ -10,14 +10,21 @@ export class GoogleCalendarConfigurationError extends Error {
   }
 }
 
-/**
- * Scope mínimo para la etapa actual: listar calendarios y leer metadatos para
- * elegir uno y probar la conexión. La gestión de eventos (turnos) llegará en
- * 6D.1B y requerirá reconectar con un scope adicional.
- */
+/** Scopes mínimos separados para listar, consultar FreeBusy y gestionar eventos. */
 export const GOOGLE_CALENDAR_SCOPES = [
-  "https://www.googleapis.com/auth/calendar.readonly",
+  "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+  "https://www.googleapis.com/auth/calendar.events.freebusy",
+  "https://www.googleapis.com/auth/calendar.events",
 ] as const;
+
+const GOOGLE_CALENDAR_FULL_SCOPE = "https://www.googleapis.com/auth/calendar";
+
+/** Una conexión readonly previa debe reconectarse antes de escribir eventos. */
+export function hasRequiredGoogleCalendarScopes(scopes: readonly string[]): boolean {
+  const granted = new Set(scopes);
+  if (granted.has(GOOGLE_CALENDAR_FULL_SCOPE)) return true;
+  return GOOGLE_CALENDAR_SCOPES.every((scope) => granted.has(scope));
+}
 
 export const GOOGLE_REQUEST_TIMEOUT_MS = 10_000;
 export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutos

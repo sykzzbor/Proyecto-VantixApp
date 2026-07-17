@@ -36,7 +36,10 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const authorization = await authorizeAutomationRequest(request, "appointments.manage");
+  const authorization = await authorizeAutomationRequest(
+    request,
+    "appointments.settings.manage"
+  );
   if (!authorization.ok) return authorization.response;
 
   const body = await readLimitedRawBody(request, MAX_BODY_BYTES);

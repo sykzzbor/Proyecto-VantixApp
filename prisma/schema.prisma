@@ -31,6 +31,7 @@ model User {
   createdAutomationRules OrganizationAutomationRule[]    @relation("AutomationRuleCreatedBy")
   updatedAutomationRules OrganizationAutomationRule[]    @relation("AutomationRuleUpdatedBy")
   whatsappSignupAttempts WhatsappEmbeddedSignupAttempt[]
+  createdAppointments     Appointment[]                    @relation("AppointmentCreatedBy")
 
   @@map("users")
 }
@@ -128,6 +129,7 @@ model Organization {
   googleCalendarConnection   GoogleCalendarConnection?
   googleOAuthStates          GoogleOAuthState[]
   appointmentSettings        AppointmentSettings?
+  appointments               Appointment[]
 
   @@map("organizations")
 }
@@ -425,6 +427,7 @@ model Customer {
 
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   conversations Conversation[]
+  appointments  Appointment[]
 
   @@index([organizationId])
   @@index([organizationId, phone])
@@ -453,6 +456,7 @@ model Conversation {
   assignedUser        User?                @relation("AssignedConversations", fields: [assignedUserId], references: [id], onDelete: SetNull)
   messages            Message[]
   automationEvents    AutomationEvent[]
+  appointments        Appointment[]
 
   @@index([organizationId, channel, status])
   @@index([organizationId, lastMessageAt(sort: Desc)])
@@ -859,4 +863,60 @@ model AppointmentSettings {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("appointment_settings")
+}
+
+// ============================================================
+// Etapa 6D.1B-B: turnos sincronizados con Google Calendar
+// ============================================================
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  RESCHEDULED
+  CANCELLED
+  FAILED
+}
+
+enum AppointmentSource {
+  MANUAL
+  AI
+}
+
+model Appointment {
+  id                 String            @id @default(cuid())
+  organizationId     String
+  customerId         String?
+  conversationId     String?
+  googleEventId      String?
+  calendarId         String
+  startAt            DateTime
+  endAt              DateTime
+  timezone           String
+  status             AppointmentStatus @default(PENDING)
+  title              String
+  customerName       String
+  customerPhone      String?
+  notes              String?
+  cancellationReason String?
+  createdByUserId    String?
+  source             AppointmentSource @default(MANUAL)
+  idempotencyKey     String
+  lastOperationKey   String?
+  lastError          String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  createdBy    User?         @relation("AppointmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, idempotencyKey])
+  @@unique([organizationId, googleEventId])
+  @@unique([organizationId, id])
+  @@index([organizationId, status, startAt])
+  @@index([organizationId, startAt])
+  @@index([organizationId, customerId, startAt])
+  @@index([organizationId, conversationId])
+  @@map("appointments")
 }

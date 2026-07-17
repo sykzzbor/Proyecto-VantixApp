@@ -3,6 +3,7 @@ import {
   BookOpen,
   Bot,
   Briefcase,
+  CalendarClock,
   Inbox,
   LayoutDashboard,
   MessageCircleQuestion,
@@ -36,6 +37,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard", label: "Resumen", icon: LayoutDashboard, exact: true },
       { href: "/dashboard/conversaciones", label: "Conversaciones", icon: Inbox },
+      { href: "/dashboard/turnos", label: "Turnos", icon: CalendarClock },
     ],
   },
   {

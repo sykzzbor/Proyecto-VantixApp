@@ -78,11 +78,11 @@ function availabilityDependencies(input?: {
   };
 }
 
-test("turnos: OWNER/ADMIN editan y AGENT/VIEWER quedan en lectura", () => {
-  assert.equal(can("OWNER", "appointments.manage"), true);
-  assert.equal(can("ADMIN", "appointments.manage"), true);
-  assert.equal(can("AGENT", "appointments.manage"), false);
-  assert.equal(can("VIEWER", "appointments.manage"), false);
+test("configuración de turnos: OWNER/ADMIN editan y AGENT/VIEWER quedan en lectura", () => {
+  assert.equal(can("OWNER", "appointments.settings.manage"), true);
+  assert.equal(can("ADMIN", "appointments.settings.manage"), true);
+  assert.equal(can("AGENT", "appointments.settings.manage"), false);
+  assert.equal(can("VIEWER", "appointments.settings.manage"), false);
   for (const role of ["OWNER", "ADMIN", "AGENT", "VIEWER"] as const) {
     assert.equal(can(role, "appointments.view"), true);
   }

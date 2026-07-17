@@ -1163,6 +1163,12 @@ function GoogleCalendarCard({
           className: "border-border bg-muted/40 text-muted-foreground",
           icon: CircleOff,
         }
+      : data.reconnectionRequired
+        ? {
+            label: "Reconexión requerida",
+            className: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+            icon: CircleAlert,
+          }
       : data.status === "ERROR"
         ? {
             label: "Con error",
@@ -1218,14 +1224,26 @@ function GoogleCalendarCard({
               label="Última prueba"
               value={formatDate(data.lastTestedAt)}
             />
-            <Detail label="Acceso" value="Solo lectura de calendarios" />
+            <Detail
+              label="Acceso"
+              value={data.writeAccess ? "Gestión de turnos habilitada" : "Reconexión requerida"}
+            />
           </dl>
         ) : (
           <p className="rounded-lg border border-border/70 bg-background/40 p-3 text-sm text-muted-foreground">
-            Conectá una cuenta de Google para elegir el calendario de trabajo.
-            Los permisos de escritura para turnos se pedirán en la próxima
-            etapa.
+            Conectá una cuenta de Google para elegir el calendario de trabajo y
+            gestionar turnos.
           </p>
+        )}
+
+        {data.reconnectionRequired && (
+          <div className="flex gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-200">
+            <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <p className="min-w-0 text-xs leading-relaxed">
+              Esta conexión conserva permisos de solo lectura. Reconectala para
+              crear, reprogramar y cancelar turnos.
+            </p>
+          </div>
         )}
 
         {data.lastError && data.status === "ERROR" && (
