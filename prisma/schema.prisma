@@ -127,6 +127,7 @@ model Organization {
   automationRules            OrganizationAutomationRule[]
   googleCalendarConnection   GoogleCalendarConnection?
   googleOAuthStates          GoogleOAuthState[]
+  appointmentSettings        AppointmentSettings?
 
   @@map("organizations")
 }
@@ -832,4 +833,30 @@ model GoogleOAuthState {
 
   @@index([organizationId, expiresAt])
   @@map("google_oauth_states")
+}
+
+// ============================================================
+// Etapa 6D.1B (parte 1): configuración de turnos y disponibilidad
+// ============================================================
+
+model AppointmentSettings {
+  id                     String   @id @default(cuid())
+  organizationId         String   @unique
+  enabled                Boolean  @default(false)
+  timeZone               String   @default("UTC")
+  defaultDurationMinutes Int      @default(30)
+  bufferMinutes          Int      @default(0)
+  minimumNoticeMinutes   Int      @default(120)
+  maxAdvanceDays         Int      @default(30)
+  weeklySchedule         Json
+  location               String?
+  defaultEventTitle      String   @default("Turno")
+  allowRescheduling      Boolean  @default(false)
+  allowCancellation      Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("appointment_settings")
 }

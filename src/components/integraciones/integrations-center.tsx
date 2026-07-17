@@ -42,6 +42,7 @@ import {
 import { WhatsappIcon } from "@/components/whatsapp/whatsapp-icon";
 import { ManualWhatsappConnectionDialog } from "@/components/integraciones/manual-whatsapp-connection-dialog";
 import { YCloudConnectionDialog } from "@/components/integraciones/ycloud-connection-dialog";
+import { GoogleCalendarAppointmentSettings } from "@/components/integraciones/google-calendar-appointment-settings";
 import { cn } from "@/lib/utils";
 import type {
   IntegrationsCenterView,
@@ -1187,7 +1188,7 @@ function GoogleCalendarCard({
             <div className="min-w-0 space-y-1">
               <CardTitle>Google Calendar</CardTitle>
               <CardDescription>
-                Base para agendar turnos desde las conversaciones (próxima etapa).
+                Conexión y disponibilidad segura para los turnos de la organización.
               </CardDescription>
             </div>
           </div>
@@ -1277,6 +1278,8 @@ function GoogleCalendarCard({
             )}
           </div>
         )}
+
+        <GoogleCalendarAppointmentSettings canManage={canManage} />
       </CardContent>
       <CardFooter className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {canManage ? (

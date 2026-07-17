@@ -64,6 +64,30 @@ const calendarListSchema = z
   })
   .passthrough();
 
+const freeBusyResponseSchema = z
+  .object({
+    calendars: z.record(
+      z.string(),
+      z
+        .object({
+          busy: z
+            .array(
+              z
+                .object({
+                  start: z.string().datetime({ offset: true }),
+                  end: z.string().datetime({ offset: true }),
+                })
+                .strict()
+            )
+            .max(1000)
+            .default([]),
+          errors: z.array(z.unknown()).max(20).optional(),
+        })
+        .passthrough()
+    ),
+  })
+  .passthrough();
+
 export type GoogleTokens = {
   accessToken: string;
   refreshToken?: string;
@@ -75,6 +99,11 @@ export type GoogleCalendarItem = {
   id: string;
   name: string;
   primary: boolean;
+};
+
+export type GoogleBusyInterval = {
+  start: Date;
+  end: Date;
 };
 
 function responseError(status: number, context: string): GoogleApiError {
@@ -262,5 +291,58 @@ export async function fetchCalendarList(
     id: item.id,
     name: item.summary ?? item.id,
     primary: item.primary ?? false,
+  }));
+}
+
+/** Consulta FreeBusy para un único calendario previamente validado y guardado. */
+export async function fetchCalendarFreeBusy(
+  input: {
+    accessToken: string;
+    calendarId: string;
+    timeMin: Date;
+    timeMax: Date;
+    timeZone: string;
+  },
+  fetchImpl?: typeof fetch
+): Promise<GoogleBusyInterval[]> {
+  if (
+    input.calendarId.length < 1 ||
+    input.calendarId.length > 512 ||
+    !Number.isFinite(input.timeMin.getTime()) ||
+    !Number.isFinite(input.timeMax.getTime()) ||
+    input.timeMin >= input.timeMax
+  ) {
+    throw new GoogleApiError("invalid_request", "El rango de disponibilidad no es válido.");
+  }
+  const raw = await googleFetch({
+    url: "https://www.googleapis.com/calendar/v3/freeBusy",
+    context: "free_busy",
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      timeMin: input.timeMin.toISOString(),
+      timeMax: input.timeMax.toISOString(),
+      timeZone: input.timeZone,
+      items: [{ id: input.calendarId }],
+    }),
+    fetchImpl,
+  });
+  const parsed = freeBusyResponseSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new GoogleApiError("invalid_response", "Google devolvió una respuesta no válida.");
+  }
+  const calendar = parsed.data.calendars[input.calendarId];
+  if (!calendar || (calendar.errors?.length ?? 0) > 0) {
+    throw new GoogleApiError(
+      "permission_denied",
+      "Google no permitió consultar el calendario seleccionado."
+    );
+  }
+  return calendar.busy.map((interval) => ({
+    start: new Date(interval.start),
+    end: new Date(interval.end),
   }));
 }

@@ -22,6 +22,8 @@ const PERMISSIONS = {
   "agent.update": ["OWNER", "ADMIN"],
   "whatsapp.manage": ["OWNER", "ADMIN"],
   "integrations.manage": ["OWNER", "ADMIN"],
+  "appointments.view": ["OWNER", "ADMIN", "AGENT", "VIEWER"],
+  "appointments.manage": ["OWNER", "ADMIN"],
   "inbox.respond": ["OWNER", "ADMIN", "AGENT"],
   "inbox.manage": ["OWNER", "ADMIN"],
   "customers.update": ["OWNER", "ADMIN"],
