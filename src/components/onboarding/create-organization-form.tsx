@@ -55,30 +55,33 @@ export function CreateOrganizationForm({ userName }: { userName: string }) {
   }
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="border-0 bg-transparent shadow-none">
+      <CardHeader className="px-0">
         <CardTitle className="text-xl">
-          Hola {userName.split(" ")[0]}, creá tu negocio
+          Hola {userName.split(" ")[0]}, empecemos
         </CardTitle>
         <CardDescription>
-          Tu cuenta todavía no pertenece a ningún negocio. Creá el tuyo para
-          empezar, o pedile a tu equipo que te envíe una invitación.
+          Asignale un nombre al espacio donde vas a gestionar clientes, equipo e integraciones.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5 px-0">
           <FormAlert message={formError} />
           <div className="space-y-2">
             <Label htmlFor="name">Nombre del negocio</Label>
             <Input
               id="name"
               placeholder="Estética Aurora"
+              autoFocus
               {...register("name")}
             />
             <FieldError message={errors.name?.message} />
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Podés cambiarlo más adelante desde Configuración. No tiene que coincidir con el nombre público del negocio.
+            </p>
           </div>
         </CardContent>
-        <CardFooter className="flex-col gap-3 pt-6">
+        <CardFooter className="mt-6 flex-col gap-3 border-0 bg-transparent px-0 pt-0">
           <SubmitButton loading={isSubmitting} className="w-full">
             Crear negocio
           </SubmitButton>

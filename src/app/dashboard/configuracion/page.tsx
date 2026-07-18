@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { KeyRound, ScrollText, UserRound } from "lucide-react";
+import Link from "next/link";
+import { ArrowUpRight, KeyRound, Palette, Plug, ScrollText, UserRound, Users } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import {
   ChangePasswordForm,
@@ -24,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ThemeSettings } from "@/components/theme/theme-switcher";
 import { can } from "@/lib/permissions";
 import { requireOrgContext } from "@/server/context";
 import { getAuditLogs } from "@/server/queries";
@@ -51,16 +53,19 @@ export default async function ConfiguracionPage() {
         <TabsList className="w-full justify-start overflow-x-auto sm:w-fit">
           <TabsTrigger value="cuenta">Cuenta</TabsTrigger>
           <TabsTrigger value="organizacion">Organización</TabsTrigger>
+          <TabsTrigger value="apariencia">Apariencia</TabsTrigger>
+          <TabsTrigger value="accesos">Accesos</TabsTrigger>
+          <TabsTrigger value="seguridad">Seguridad</TabsTrigger>
           {canReadAudit && (
             <TabsTrigger value="actividad">Actividad</TabsTrigger>
           )}
         </TabsList>
 
-        <TabsContent value="cuenta" className="grid items-start gap-4 lg:grid-cols-2">
+        <TabsContent value="cuenta" className="max-w-3xl">
           <Card>
             <CardHeader>
               <div className="flex size-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
-                <UserRound className="size-4 text-[#8eacff]" aria-hidden />
+                <UserRound className="size-4 text-primary" aria-hidden />
               </div>
               <CardTitle className="mt-2 text-base">Perfil</CardTitle>
               <CardDescription>
@@ -83,11 +88,13 @@ export default async function ConfiguracionPage() {
               <ProfileNameForm currentName={user.name} />
             </CardContent>
           </Card>
+        </TabsContent>
 
+        <TabsContent value="seguridad" className="max-w-3xl">
           <Card>
             <CardHeader>
               <div className="flex size-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
-                <KeyRound className="size-4 text-[#8eacff]" aria-hidden />
+                <KeyRound className="size-4 text-primary" aria-hidden />
               </div>
               <CardTitle className="mt-2 text-base">Contraseña</CardTitle>
               <CardDescription>
@@ -109,12 +116,75 @@ export default async function ConfiguracionPage() {
           />
         </TabsContent>
 
+        <TabsContent value="apariencia">
+          <Card>
+            <CardHeader className="border-b">
+              <div className="flex items-start gap-3">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
+                  <Palette className="size-4.5 text-primary" aria-hidden />
+                </div>
+                <div>
+                  <CardTitle className="text-base">Apariencia del panel</CardTitle>
+                  <CardDescription className="mt-1">
+                    Elegí cómo querés ver VantixApp. La preferencia queda guardada
+                    en este navegador y se conserva al volver a iniciar sesión.
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ThemeSettings />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="accesos">
+          <div className="grid gap-4 md:grid-cols-2">
+            {[
+              {
+                icon: Users,
+                title: "Usuarios y permisos",
+                description: can(role, "team.manage")
+                  ? "Invitá integrantes y administrá los roles de la organización."
+                  : "Consultá quiénes integran la organización y qué rol tiene cada persona.",
+                href: "/dashboard/equipo",
+              },
+              {
+                icon: Plug,
+                title: "Integraciones",
+                description: can(role, "integrations.manage")
+                  ? "Conectá y supervisá los servicios externos habilitados."
+                  : "Consultá el estado seguro de las conexiones de la organización.",
+                href: "/dashboard/integraciones",
+              },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.title}
+                  href={item.href}
+                  className="group rounded-xl border border-border bg-card p-5 transition-[border-color,background-color,transform] hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-primary/20"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <span className="flex size-10 items-center justify-center rounded-lg border border-primary/15 bg-primary/10 text-primary">
+                      <Icon className="size-4.5" aria-hidden />
+                    </span>
+                    <ArrowUpRight className="size-4 text-muted-foreground transition-colors group-hover:text-primary" aria-hidden />
+                  </div>
+                  <h3 className="mt-4 text-sm font-semibold">{item.title}</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.description}</p>
+                </Link>
+              );
+            })}
+          </div>
+        </TabsContent>
+
         {canReadAudit && (
           <TabsContent value="actividad">
             <Card>
               <CardHeader>
                 <div className="flex size-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
-                  <ScrollText className="size-4 text-[#8eacff]" aria-hidden />
+                  <ScrollText className="size-4 text-primary" aria-hidden />
                 </div>
                 <CardTitle className="mt-2 text-base">Registro de actividad</CardTitle>
                 <CardDescription>

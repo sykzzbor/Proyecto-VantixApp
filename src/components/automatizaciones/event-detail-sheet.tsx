@@ -226,7 +226,7 @@ export function EventDetailSheet({
                     value={
                       <Link
                         href={`/dashboard/conversaciones?conversacion=${encodeURIComponent(event.conversationId)}`}
-                        className="text-[#8eacff] hover:underline"
+                        className="text-primary hover:underline"
                       >
                         Abrir conversación
                       </Link>
@@ -241,7 +241,7 @@ export function EventDetailSheet({
                 {event.actionDeliveryStatus && <DataRow label="Envío" value={event.actionDeliveryStatus.toLowerCase()} />}
               </dl>
               {event.lastError && (
-                <p className="mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-red-200">
+                <p className="mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
                   {event.lastError}
                 </p>
               )}
@@ -278,7 +278,7 @@ export function EventDetailSheet({
                         {run.externalExecutionId && <span>Externo: {run.externalExecutionId}</span>}
                       </div>
                       {(run.errorCode || run.errorMessage) && (
-                        <p className="mt-2 text-xs text-red-300">{run.errorCode ? `${run.errorCode}: ` : ""}{run.errorMessage}</p>
+                        <p className="mt-2 text-xs text-destructive">{run.errorCode ? `${run.errorCode}: ` : ""}{run.errorMessage}</p>
                       )}
                     </div>
                   ))}

@@ -18,7 +18,7 @@ export function ActiveBadge({
       className={cn(
         "gap-1.5 font-medium",
         active
-          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+          ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
           : "bg-muted/50 text-muted-foreground"
       )}
     >

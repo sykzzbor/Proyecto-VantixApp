@@ -14,16 +14,16 @@ import {
   YAxis,
 } from "recharts";
 
-const ACCENT = "#8eacff";
-const AXIS = "#8b93a7";
-const GRID = "rgba(255,255,255,0.06)";
+const ACCENT = "var(--chart-1)";
+const AXIS = "var(--muted-foreground)";
+const GRID = "color-mix(in srgb, var(--foreground) 8%, transparent)";
 export const CHART_PALETTE = [
-  "#8eacff",
-  "#5b8def",
-  "#34d399",
-  "#fbbf24",
-  "#f87171",
-  "#a78bfa",
+  "var(--chart-1)",
+  "var(--chart-5)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--destructive)",
+  "var(--chart-4)",
 ];
 
 type TooltipEntry = {

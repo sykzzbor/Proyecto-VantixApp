@@ -126,7 +126,7 @@ function ConfigIndicator({
     <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/25 px-3 py-2">
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="flex items-center gap-1.5 text-xs font-medium">
-        {configured ? <CheckCircle2 className="size-3.5 text-emerald-400" /> : <TriangleAlert className="size-3.5 text-amber-400" />}
+        {configured ? <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" /> : <TriangleAlert className="size-3.5 text-amber-700 dark:text-amber-400" />}
         {configured ? configuredLabel : "Pendiente"}
       </span>
     </div>
@@ -246,10 +246,10 @@ export function AutomationDashboard({
 
   const stateMeta =
     infrastructure.state === "operational"
-      ? { label: infrastructure.mockMode ? "Modo de prueba: Listo" : "Configurado", className: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300", icon: ShieldCheck }
+      ? { label: infrastructure.mockMode ? "Modo de prueba: Listo" : "Configurado", className: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300", icon: ShieldCheck }
       : infrastructure.state === "error"
-        ? { label: "Con error", className: "border-red-400/20 bg-red-400/10 text-red-300", icon: XCircle }
-        : { label: "Configuración incompleta", className: "border-amber-400/20 bg-amber-400/10 text-amber-300", icon: TriangleAlert };
+        ? { label: "Con error", className: "border-destructive/25 bg-destructive/10 text-destructive", icon: XCircle }
+        : { label: "Configuración incompleta", className: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300", icon: TriangleAlert };
   const StateIcon = stateMeta.icon;
 
   return (
@@ -297,7 +297,7 @@ export function AutomationDashboard({
         <CardHeader className="border-b sm:grid-cols-[1fr_auto]">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <CardTitle className="flex items-center gap-2"><ServerCog className="size-4 text-[#8eacff]" />Infraestructura</CardTitle>
+              <CardTitle className="flex items-center gap-2"><ServerCog className="size-4 text-primary" />Infraestructura</CardTitle>
               <Badge variant="outline" className={stateMeta.className}><StateIcon />{stateMeta.label}</Badge>
               {infrastructure.mockMode && <Badge>Modo de prueba</Badge>}
             </div>
@@ -310,7 +310,7 @@ export function AutomationDashboard({
         <CardContent className="space-y-3">
           {/* Resumen para negocio: qué falta, sin vocabulario técnico arriba. */}
           {infrastructure.readinessMissingCategories.length > 0 ? (
-            <p className="rounded-lg border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-200">
+            <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
               La conexión con n8n todavía no está lista:{" "}
               {infrastructure.readinessMissingCategories.length}{" "}
               {infrastructure.readinessMissingCategories.length === 1
@@ -324,7 +324,7 @@ export function AutomationDashboard({
             </p>
           )}
           {infrastructure.lastError && (
-            <p className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs text-red-200">
+            <p className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
               Último error: {infrastructure.lastError}
             </p>
           )}
@@ -342,7 +342,7 @@ export function AutomationDashboard({
               <ConfigIndicator configured={infrastructure.workflowsPublished} label="Workflows" configuredLabel="Publicados" />
               <ConfigIndicator configured={infrastructure.probeVerified} label="Router y callback" configuredLabel="Verificados" />
               {infrastructure.readinessMissingCategories.length > 0 && (
-                <p className="text-xs text-amber-200/90 md:col-span-2 lg:col-span-3">
+                <p className="text-xs text-amber-800 dark:text-amber-200/90 md:col-span-2 lg:col-span-3">
                   Falta completar: {infrastructure.readinessMissingCategories.map((category) => ({ endpoint: "endpoint", outbound_signature: "firma de salida", callback_signature: "firma de callback", dispatcher: "dispatcher", workflows: "workflows por publicar", connection_test: "prueba de router y callback" })[category]).join(", ")}.
                 </p>
               )}
@@ -431,7 +431,7 @@ export function AutomationDashboard({
                         <TableCell><AutomationStatusBadge status={event.status} /></TableCell>
                         <TableCell>{event.attempts} / {event.maxAttempts}</TableCell>
                         <TableCell>{event.latestRun ? <div><span className="font-medium">{event.latestRun.provider}</span><div className="text-xs text-muted-foreground">{formatDuration(event.latestRun.durationMs)}</div></div> : "—"}</TableCell>
-                        <TableCell><div className="text-xs">Creado: {formatDateTime(event.createdAt)}</div><div className="text-xs text-muted-foreground">Actualizado: {formatDateTime(event.updatedAt)}</div>{event.nextAttemptAt && <div className="text-xs text-amber-300">Próximo: {formatDateTime(event.nextAttemptAt)}</div>}</TableCell>
+                        <TableCell><div className="text-xs">Creado: {formatDateTime(event.createdAt)}</div><div className="text-xs text-muted-foreground">Actualizado: {formatDateTime(event.updatedAt)}</div>{event.nextAttemptAt && <div className="text-xs text-amber-700 dark:text-amber-300">Próximo: {formatDateTime(event.nextAttemptAt)}</div>}</TableCell>
                         <TableCell className="text-right"><Button variant="ghost" size="xs" onClick={() => setSelectedEventId(event.id)}>Ver detalle</Button></TableCell>
                       </TableRow>
                     ))}
@@ -442,7 +442,7 @@ export function AutomationDashboard({
                 {events.items.map((event) => (
                   <button key={event.id} type="button" onClick={() => setSelectedEventId(event.id)} className="w-full p-4 text-left transition-colors hover:bg-accent/50">
                     <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-medium">{automationEventTypeLabel(event.type)}</p><p className="font-mono text-xs text-muted-foreground">{event.shortId}</p></div><AutomationStatusBadge status={event.status} /></div>
-                    <div className="mt-3 grid gap-1 text-xs text-muted-foreground"><div className="flex items-center justify-between"><span>{event.attempts} / {event.maxAttempts} intentos</span><span>{formatDateTime(event.createdAt)}</span></div><span>Actualizado: {formatDateTime(event.updatedAt)}</span>{event.nextAttemptAt && <span className="text-amber-300">Próximo intento: {formatDateTime(event.nextAttemptAt)}</span>}</div>
+                    <div className="mt-3 grid gap-1 text-xs text-muted-foreground"><div className="flex items-center justify-between"><span>{event.attempts} / {event.maxAttempts} intentos</span><span>{formatDateTime(event.createdAt)}</span></div><span>Actualizado: {formatDateTime(event.updatedAt)}</span>{event.nextAttemptAt && <span className="text-amber-700 dark:text-amber-300">Próximo intento: {formatDateTime(event.nextAttemptAt)}</span>}</div>
                   </button>
                 ))}
               </div>
@@ -499,7 +499,7 @@ export function AutomationDashboard({
                 {runs.items.map((run) => (
                   <button key={run.id} type="button" onClick={() => setSelectedEventId(run.eventId)} className="w-full p-4 text-left transition-colors hover:bg-accent/50">
                     <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-medium">{automationEventTypeLabel(run.eventType)}</p><p className="text-xs text-muted-foreground">{run.provider} · intento {run.attempt}</p></div><AutomationStatusBadge status={run.status} /></div>
-                    <div className="mt-3 grid gap-1 text-xs text-muted-foreground"><div className="flex items-center justify-between"><span>{formatDuration(run.durationMs)}</span><span>{formatDateTime(run.startedAt)}</span></div><span>Finalizó: {formatDateTime(run.finishedAt)}</span>{(run.errorCode || run.errorMessage) && <span className="text-red-300">{run.errorCode ? `${run.errorCode}: ` : ""}{run.errorMessage}</span>}</div>
+                    <div className="mt-3 grid gap-1 text-xs text-muted-foreground"><div className="flex items-center justify-between"><span>{formatDuration(run.durationMs)}</span><span>{formatDateTime(run.startedAt)}</span></div><span>Finalizó: {formatDateTime(run.finishedAt)}</span>{(run.errorCode || run.errorMessage) && <span className="text-destructive">{run.errorCode ? `${run.errorCode}: ` : ""}{run.errorMessage}</span>}</div>
                   </button>
                 ))}
               </div>

@@ -4,6 +4,8 @@ import {
   Bot,
   Briefcase,
   CalendarClock,
+  CircleHelp,
+  CreditCard,
   Inbox,
   LayoutDashboard,
   MessageCircleQuestion,
@@ -11,6 +13,7 @@ import {
   Plug,
   Settings,
   Store,
+  UserRound,
   Users,
   Workflow,
 } from "lucide-react";
@@ -80,6 +83,14 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/equipo", label: "Equipo", icon: Users },
       { href: "/dashboard/configuracion", label: "Configuración", icon: Settings },
+    ],
+  },
+  {
+    label: "Cuenta",
+    items: [
+      { href: "/dashboard/perfil", label: "Perfil", icon: UserRound },
+      { href: "/dashboard/planes", label: "Planes", icon: CreditCard },
+      { href: "/dashboard/ayuda", label: "Centro de ayuda", icon: CircleHelp },
     ],
   },
 ];

@@ -18,6 +18,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { UserMenu } from "@/components/dashboard/user-menu";
+import { ThemeSwitcher } from "@/components/theme/theme-switcher";
 
 type DashboardShellProps = {
   orgName: string;
@@ -60,7 +61,7 @@ function NavLinks({
                   <Icon
                     className={cn(
                       "size-4 shrink-0",
-                      active ? "text-[#8eacff]" : "text-muted-foreground/80"
+                      active ? "text-sidebar-primary" : "text-muted-foreground/80"
                     )}
                     aria-hidden
                   />
@@ -114,7 +115,7 @@ export function DashboardShell({
     // scroll de cada zona (navegación / contenido) es independiente.
     <div className="flex h-dvh w-full overflow-hidden bg-background">
       <aside className="hidden h-full w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
-        <div className="flex h-16 shrink-0 items-center border-b border-sidebar-border bg-[#05060c] px-5">
+        <div className="flex h-16 shrink-0 items-center border-b border-sidebar-border bg-sidebar px-5">
           <Link href="/dashboard" aria-label="Ir al dashboard de Vantix">
             <VantixLogo priority className="w-[7.75rem]" />
           </Link>
@@ -142,7 +143,7 @@ export function DashboardShell({
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="flex w-72 flex-col p-0">
-              <SheetHeader className="border-b border-sidebar-border bg-[#05060c] px-5 py-4 text-left">
+              <SheetHeader className="border-b border-sidebar-border bg-sidebar px-5 py-4 text-left">
                 <SheetTitle>
                   <VantixLogo className="w-28" />
                   <span className="sr-only">Vantix</span>
@@ -193,10 +194,11 @@ export function DashboardShell({
             )}
           </nav>
 
-          <p className="ml-auto hidden max-w-48 truncate text-xs text-muted-foreground lg:block">
+          <ThemeSwitcher />
+          <p className="hidden max-w-48 truncate text-xs text-muted-foreground lg:block">
             {orgName}
           </p>
-          <div className="ml-auto lg:hidden">
+          <div className="lg:hidden">
             <UserMenu name={user.name} email={user.email} />
           </div>
         </header>

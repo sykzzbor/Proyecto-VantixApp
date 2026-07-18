@@ -278,7 +278,7 @@ export function CustomerPanel({
                       : appointment.statusLabel === "Con error"
                         ? "border-destructive/25 bg-destructive/10 font-normal text-destructive"
                       : appointment.upcoming
-                        ? "border-emerald-500/20 bg-emerald-500/10 font-normal text-emerald-300"
+                        ? "border-emerald-500/20 bg-emerald-500/10 font-normal text-emerald-700 dark:text-emerald-300"
                         : "font-normal text-muted-foreground"
                   }
                 >

@@ -12,7 +12,7 @@ export function EmptyThread({
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center sm:p-8">
         <div className="flex size-12 items-center justify-center rounded-xl border border-primary/15 bg-primary/10">
-          <MousePointerClick className="size-6 text-[#8eacff]" aria-hidden />
+          <MousePointerClick className="size-6 text-primary" aria-hidden />
         </div>
         <div>
           <p className="text-sm font-medium">Elegí una conversación</p>
@@ -27,7 +27,7 @@ export function EmptyThread({
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center sm:p-8">
       <div className="flex size-12 items-center justify-center rounded-xl border border-primary/15 bg-primary/10">
-        <Bot className="size-6 text-[#8eacff]" aria-hidden />
+        <Bot className="size-6 text-primary" aria-hidden />
       </div>
       <div>
         <p className="text-sm font-medium">Tu bandeja está lista</p>
@@ -45,7 +45,7 @@ export function EmptyThread({
         </Button>
         <Button asChild variant="outline" size="sm">
           <Link href="/dashboard/integraciones">
-            <WhatsappIcon className="size-4 text-emerald-400" aria-hidden />
+            <WhatsappIcon className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
             Conectar WhatsApp
             <ArrowRight className="size-4" aria-hidden />
           </Link>

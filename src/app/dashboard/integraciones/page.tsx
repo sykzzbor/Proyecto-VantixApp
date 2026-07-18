@@ -19,7 +19,7 @@ export default async function IntegrationsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Centro de Integraciones"
-        description="Conectá y supervisá los servicios externos de tu organización desde un único lugar seguro."
+        description="Revisá qué servicios están operativos, cuáles necesitan atención y dónde continuar cada configuración."
       />
       <IntegrationsCenter
         initialData={integrations}

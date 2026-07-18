@@ -159,7 +159,7 @@ export function TestChat({
       {/* Encabezado */}
       <div className="flex min-h-16 items-center gap-3 border-b border-border bg-card/95 px-4 py-3">
         <div className="flex size-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
-          <Bot className="size-4.5 text-[#8eacff]" aria-hidden />
+          <Bot className="size-4.5 text-primary" aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{assistantName}</p>
@@ -214,7 +214,7 @@ export function TestChat({
         {messages.length === 0 && !sending ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <div className="flex size-12 items-center justify-center rounded-xl border border-primary/15 bg-primary/10">
-              <Bot className="size-6 text-[#8eacff]" aria-hidden />
+              <Bot className="size-6 text-primary" aria-hidden />
             </div>
             <div>
               <p className="text-sm font-medium">Probá a {assistantName}</p>
@@ -224,7 +224,7 @@ export function TestChat({
               </p>
             </div>
             {enabled && (
-              <div className="mt-2 max-w-[85%] rounded-xl rounded-bl-sm border border-border bg-[#202633] px-3.5 py-2.5 text-left text-sm leading-relaxed">
+              <div className="mt-2 max-w-[85%] rounded-xl rounded-bl-sm border border-border bg-card px-3.5 py-2.5 text-left text-sm leading-relaxed shadow-sm">
                 {welcomeMessage}
               </div>
             )}
@@ -241,7 +241,7 @@ export function TestChat({
               >
                 {message.role === "assistant" && (
                   <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                    <Bot className="size-3.5 text-[#8eacff]" aria-hidden />
+                    <Bot className="size-3.5 text-primary" aria-hidden />
                   </div>
                 )}
                 <div

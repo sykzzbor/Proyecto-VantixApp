@@ -146,7 +146,7 @@ export function UploadDocumentDialog({
                 : "border-border bg-card/60 hover:border-primary/40"
             )}
           >
-            <CloudUpload className="size-7 text-[#8eacff]" aria-hidden />
+            <CloudUpload className="size-7 text-primary" aria-hidden />
             <p className="mt-2 text-sm font-medium">
               Arrastrá un archivo o hacé clic para elegirlo
             </p>
@@ -164,7 +164,7 @@ export function UploadDocumentDialog({
 
           {file && (
             <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5">
-              <FileText className="size-5 shrink-0 text-[#8eacff]" aria-hidden />
+              <FileText className="size-5 shrink-0 text-primary" aria-hidden />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{file.name}</p>
                 <p className="text-xs text-muted-foreground">

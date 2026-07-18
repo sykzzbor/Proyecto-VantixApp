@@ -58,7 +58,7 @@ export function UserMenu({
           aria-label="Abrir menú de usuario"
         >
           <Avatar className={cn("size-7", inSidebar && "size-8")}>
-            <AvatarFallback className="border border-primary/20 bg-primary/10 text-xs font-semibold text-[#9cb7ff]">
+            <AvatarFallback className="border border-primary/20 bg-primary/10 text-xs font-semibold text-primary">
               {initials(name) || "U"}
             </AvatarFallback>
           </Avatar>

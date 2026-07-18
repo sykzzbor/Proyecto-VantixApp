@@ -264,7 +264,7 @@ export function BusinessForm({ defaults, canEdit }: BusinessFormProps) {
                 </p>
               </div>
               <div className="flex items-start gap-2.5 rounded-lg border border-primary/15 bg-primary/[0.06] p-3 text-xs leading-relaxed text-muted-foreground">
-                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#8eacff]" aria-hidden />
+                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
                 Estos datos son los que el agente puede usar al responder consultas del negocio.
               </div>
             </CardContent>

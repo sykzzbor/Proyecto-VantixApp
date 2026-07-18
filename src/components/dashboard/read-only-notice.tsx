@@ -16,7 +16,7 @@ export function ReadOnlyNotice({
       )}
       role="status"
     >
-      <LockKeyhole className="mt-0.5 size-4 shrink-0 text-[#8eacff]" aria-hidden />
+      <LockKeyhole className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
       <p>{message}</p>
     </div>
   );

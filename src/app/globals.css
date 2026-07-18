@@ -48,7 +48,42 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-:root,
+:root {
+  color-scheme: light;
+  --background: #f5f7fb;
+  --foreground: #161b26;
+  --card: #ffffff;
+  --card-foreground: #161b26;
+  --popover: #ffffff;
+  --popover-foreground: #161b26;
+  --primary: #3f6df2;
+  --primary-foreground: #ffffff;
+  --secondary: #edf1f7;
+  --secondary-foreground: #273247;
+  --muted: #eef1f5;
+  --muted-foreground: #667085;
+  --accent: #e9efff;
+  --accent-foreground: #1f315f;
+  --destructive: #dc3f4f;
+  --border: #dce2eb;
+  --input: #cfd7e4;
+  --ring: #4f7cff;
+  --chart-1: #3f6df2;
+  --chart-2: #169c5a;
+  --chart-3: #d78916;
+  --chart-4: #805ad5;
+  --chart-5: #1685bc;
+  --radius: 0.75rem;
+  --sidebar: #12161d;
+  --sidebar-foreground: #eef2fb;
+  --sidebar-primary: #5b83f7;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1d2943;
+  --sidebar-accent-foreground: #f5f7ff;
+  --sidebar-border: #28303c;
+  --sidebar-ring: #7599ff;
+}
+
 .dark {
   color-scheme: dark;
   --background: #0f1115;
@@ -127,13 +162,22 @@
 
 @layer components {
   .conversation-canvas {
+    background-color: #eef2f8;
+    background-image: radial-gradient(
+      circle at center,
+      rgba(63, 109, 242, 0.12) 0.75px,
+      transparent 0.9px
+    );
+    background-size: 22px 22px;
+  }
+
+  .dark .conversation-canvas {
     background-color: #10141c;
     background-image: radial-gradient(
       circle at center,
       rgba(107, 145, 255, 0.075) 0.75px,
       transparent 0.9px
     );
-    background-size: 22px 22px;
   }
 
   /* El inbox usa un lienzo claro y familiar; el chat de prueba conserva su tema. */
@@ -145,6 +189,15 @@
       transparent 1px
     );
     background-size: 20px 20px;
+  }
+
+  .dark .inbox-conversation-canvas {
+    background-color: #131821;
+    background-image: radial-gradient(
+      circle at center,
+      rgba(132, 151, 186, 0.11) 0.8px,
+      transparent 1px
+    );
   }
 }
 

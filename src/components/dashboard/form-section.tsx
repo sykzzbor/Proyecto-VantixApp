@@ -26,7 +26,7 @@ export function FormSection({
         <div className="flex items-start gap-3">
           {Icon && (
             <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
-              <Icon className="size-4 text-[#8eacff]" aria-hidden />
+              <Icon className="size-4 text-primary" aria-hidden />
             </div>
           )}
           <div className="min-w-0">

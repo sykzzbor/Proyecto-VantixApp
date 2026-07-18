@@ -136,7 +136,12 @@ export function MetricsView({
   return (
     <div className="space-y-6">
       {/* Selector de período y canal */}
-      <div className="flex flex-wrap items-end gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">Vista del período</p>
+          <p className="mt-1 text-xs text-muted-foreground">Ajustá el rango y el canal sin perder el contexto del informe.</p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
         <Select
           value={filters.period || "7d"}
           onValueChange={(value) =>
@@ -199,6 +204,7 @@ export function MetricsView({
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {/* Indicadores principales del período */}
@@ -284,7 +290,12 @@ export function MetricsView({
       </Card>
 
       {/* Gráficos */}
-      <section className="grid gap-4 lg:grid-cols-2">
+      <section className="space-y-3" aria-labelledby="metrics-charts">
+        <div>
+          <h3 id="metrics-charts" className="text-sm font-semibold">Tendencias y distribución</h3>
+          <p className="mt-1 text-xs text-muted-foreground">Los gráficos se muestran únicamente cuando existe actividad real.</p>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard
           title="Conversaciones por día"
           empty={data.conversationsByDay.length === 0}
@@ -304,8 +315,8 @@ export function MetricsView({
         >
           <SharePieChart
             data={[
-              { name: "Claude (IA)", value: totals.aiReplies, color: "#8eacff" },
-              { name: "Humano", value: totals.humanReplies, color: "#34d399" },
+              { name: "Claude (IA)", value: totals.aiReplies, color: "var(--chart-1)" },
+              { name: "Humano", value: totals.humanReplies, color: "var(--chart-2)" },
             ]}
           />
         </ChartCard>
@@ -315,9 +326,9 @@ export function MetricsView({
         >
           <SharePieChart
             data={[
-              { name: "Activas", value: totals.active, color: "#8eacff" },
-              { name: "Pendientes", value: totals.pending, color: "#fbbf24" },
-              { name: "Cerradas", value: totals.closed, color: "#34d399" },
+              { name: "Activas", value: totals.active, color: "var(--chart-1)" },
+              { name: "Pendientes", value: totals.pending, color: "var(--chart-3)" },
+              { name: "Cerradas", value: totals.closed, color: "var(--chart-2)" },
             ]}
           />
         </ChartCard>
@@ -373,6 +384,7 @@ export function MetricsView({
             )}
           </CardContent>
         </Card>
+        </div>
       </section>
 
       {/* Uso de herramientas */}

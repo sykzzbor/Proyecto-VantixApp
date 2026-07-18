@@ -186,7 +186,7 @@ export function AgentForm({ defaults, canEdit, configured }: AgentFormProps) {
           <Card>
             <CardHeader>
               <div className="flex size-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
-                <Power className="size-4 text-[#8eacff]" aria-hidden />
+                <Power className="size-4 text-primary" aria-hidden />
               </div>
               <CardTitle className="mt-2 text-base">Estado operativo</CardTitle>
               <CardDescription>
@@ -218,9 +218,9 @@ export function AgentForm({ defaults, canEdit, configured }: AgentFormProps) {
               </div>
               <div className="flex items-start gap-2.5 text-sm text-muted-foreground">
                 {configured ? (
-                  <CircleCheckBig className="mt-0.5 size-4 shrink-0 text-emerald-400" aria-hidden />
+                  <CircleCheckBig className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
                 ) : (
-                  <CircleDashed className="mt-0.5 size-4 shrink-0 text-amber-300" aria-hidden />
+                  <CircleDashed className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />
                 )}
                 <p>
                   {configured
@@ -241,7 +241,7 @@ export function AgentForm({ defaults, canEdit, configured }: AgentFormProps) {
           <Card size="sm">
             <CardContent className="space-y-3">
               <div className="flex items-start gap-2.5">
-                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#8eacff]" aria-hidden />
+                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
                 <div>
                   <p className="text-sm font-medium">Control seguro</p>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">

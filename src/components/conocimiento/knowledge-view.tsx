@@ -258,8 +258,8 @@ export function KnowledgeView({
           className="grid grid-cols-2 overflow-hidden rounded-xl border border-border/80 bg-card/45 sm:grid-cols-4"
         >
           {[
-            ["Listos para la IA", readyCount, "text-emerald-300"],
-            ["Procesando", processingCount, "text-sky-300"],
+            ["Listos para la IA", readyCount, "text-emerald-700 dark:text-emerald-300"],
+            ["Procesando", processingCount, "text-sky-700 dark:text-sky-300"],
             ["Con error", failedCount, "text-destructive"],
             ["Desactivados", inactiveCount, "text-muted-foreground"],
           ].map(([label, value, color], index) => (
@@ -381,7 +381,7 @@ export function KnowledgeView({
               >
                 <div className="flex min-w-0 gap-3">
                   <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
-                    <FileText className="size-4.5 text-[#8eacff]" aria-hidden />
+                    <FileText className="size-4.5 text-primary" aria-hidden />
                   </div>
                   <div className="min-w-0 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
@@ -390,7 +390,7 @@ export function KnowledgeView({
                       {document.availableForAgent && (
                         <Badge
                           variant="outline"
-                          className="gap-1 border-primary/20 bg-primary/10 text-[11px] font-normal text-[#8eacff]"
+                          className="gap-1 border-primary/20 bg-primary/10 text-[11px] font-normal text-primary"
                         >
                         La IA lo usa
                         </Badge>

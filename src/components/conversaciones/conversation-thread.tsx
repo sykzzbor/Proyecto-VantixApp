@@ -354,7 +354,7 @@ export function ConversationThread({
         </Button>
 
         <Avatar className="hidden size-10 sm:flex">
-          <AvatarFallback className="border border-primary/15 bg-primary/10 text-xs font-semibold text-[#9cb7ff]">
+          <AvatarFallback className="border border-primary/15 bg-primary/10 text-xs font-semibold text-primary">
             {customerName.charAt(0).toUpperCase()}
           </AvatarFallback>
         </Avatar>
@@ -583,7 +583,7 @@ export function ConversationThread({
       {isWhatsapp &&
         detail.whatsappIntegrationStatus === "connected" &&
         !autoReplyEnabled && (
-          <div className="flex items-start gap-2 border-b border-amber-500/15 bg-amber-500/[0.07] px-4 py-2.5 text-xs text-amber-200">
+          <div className="flex items-start gap-2 border-b border-amber-500/15 bg-amber-500/[0.07] px-4 py-2.5 text-xs text-amber-800 dark:text-amber-200">
             <Bot className="mt-0.5 size-3.5 shrink-0" aria-hidden />
             <p>
               Las respuestas automáticas están desactivadas. Los mensajes nuevos
@@ -594,7 +594,7 @@ export function ConversationThread({
 
       {/* Indicador de atención humana */}
       {isHuman && (
-        <div className="flex items-start gap-2 border-b border-amber-500/15 bg-amber-500/[0.07] px-4 py-2.5 text-xs text-amber-200">
+        <div className="flex items-start gap-2 border-b border-amber-500/15 bg-amber-500/[0.07] px-4 py-2.5 text-xs text-amber-800 dark:text-amber-200">
           <UserRound className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <p>
             Atención humana
@@ -845,7 +845,7 @@ export function ConversationThread({
       )}
       </div>
 
-      <aside className="hidden w-60 shrink-0 overflow-y-auto border-l border-border bg-sidebar/35 xl:block 2xl:w-[17rem]">
+      <aside className="hidden w-60 shrink-0 overflow-y-auto border-l border-border bg-muted/25 xl:block 2xl:w-[17rem]">
         <div className="sticky top-0 z-10 border-b border-border bg-card/95 px-4 py-4 backdrop-blur">
           <p className="text-sm font-semibold">Cliente</p>
           <p className="mt-0.5 text-xs text-muted-foreground">

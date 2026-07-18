@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { CalendarClock, CalendarPlus, Loader2, RefreshCcw, RotateCw, XCircle } from "lucide-react";
+import { CalendarClock, CalendarPlus, Filter, Loader2, RefreshCcw, RotateCw, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,21 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { formatLocalMinute, localMinuteToUtc } from "@/lib/time-zone";
 import type {
@@ -32,6 +47,14 @@ const STATUS_LABELS: Record<AppointmentView["status"], string> = {
   RESCHEDULED: "Reprogramado",
   CANCELLED: "Cancelado",
   FAILED: "Con error",
+};
+
+const STATUS_STYLES: Record<AppointmentView["status"], string> = {
+  PENDING: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  CONFIRMED: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  RESCHEDULED: "border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-300",
+  CANCELLED: "border-border bg-muted text-muted-foreground",
+  FAILED: "border-destructive/25 bg-destructive/10 text-destructive",
 };
 
 function newKey() {
@@ -51,6 +74,15 @@ function localDate(appointment: AppointmentView) {
     timeZone: appointment.timezone,
     dateStyle: "medium",
     timeStyle: "short",
+  }).format(new Date(appointment.startAt));
+}
+
+function localDateKey(appointment: AppointmentView) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: appointment.timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
   }).format(new Date(appointment.startAt));
 }
 
@@ -75,8 +107,15 @@ export function AppointmentsDashboard({
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [cancelReason, setCancelReason] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [dateFilter, setDateFilter] = useState("");
 
   const timeZone = readiness.timeZone ?? "UTC";
+  const filteredAppointments = appointments.filter((appointment) => {
+    if (statusFilter !== "ALL" && appointment.status !== statusFilter) return false;
+    if (dateFilter && localDateKey(appointment) !== dateFilter) return false;
+    return true;
+  });
   async function refresh() {
     setBusy("refresh");
     setError(null);
@@ -230,8 +269,52 @@ export function AppointmentsDashboard({
 
       <Card>
         <CardHeader className="border-b">
-          <div className="flex items-center justify-between gap-3">
-            <CardTitle>Próximos turnos</CardTitle>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <CardTitle>Agenda de turnos</CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {appointments.length} turno{appointments.length === 1 ? "" : "s"} en el período disponible
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <Filter className="size-3.5" aria-hidden />
+                Filtros
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-full sm:w-44" aria-label="Filtrar por estado">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Todos los estados</SelectItem>
+                  {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                type="date"
+                value={dateFilter}
+                onChange={(event) => setDateFilter(event.target.value)}
+                className="w-full sm:w-40"
+                aria-label="Filtrar por fecha"
+              />
+              {(statusFilter !== "ALL" || dateFilter) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setStatusFilter("ALL");
+                    setDateFilter("");
+                  }}
+                >
+                  Limpiar
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end">
             <Button
               type="button"
               variant="ghost"
@@ -249,17 +332,22 @@ export function AppointmentsDashboard({
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {appointments.length === 0 ? (
+          {filteredAppointments.length === 0 ? (
             <div className="flex flex-col items-center px-4 py-14 text-center">
               <CalendarClock className="size-8 text-muted-foreground/60" aria-hidden />
-              <p className="mt-3 text-sm font-medium">Todavía no hay turnos próximos</p>
+              <p className="mt-3 text-sm font-medium">
+                {appointments.length === 0 ? "Todavía no hay turnos próximos" : "No hay turnos con estos filtros"}
+              </p>
               <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-                Cuando crees un turno aparecerá aquí sin exponer datos privados de Google.
+                {appointments.length === 0
+                  ? "Cuando crees un turno aparecerá aquí sin exponer datos privados de Google."
+                  : "Cambiá el estado o la fecha para volver a ver la agenda."}
               </p>
             </div>
           ) : (
-            <ul className="divide-y divide-border/70">
-              {appointments.map((appointment) => {
+            <>
+            <ul className="divide-y divide-border/70 md:hidden">
+              {filteredAppointments.map((appointment) => {
                 const mutable = !["CANCELLED", "PENDING"].includes(appointment.status);
                 return (
                   <li key={appointment.id} className="p-4">
@@ -267,7 +355,7 @@ export function AppointmentsDashboard({
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="truncate font-medium">{appointment.customerName}</p>
-                          <Badge variant="outline">{STATUS_LABELS[appointment.status]}</Badge>
+                          <Badge variant="outline" className={STATUS_STYLES[appointment.status]}>{STATUS_LABELS[appointment.status]}</Badge>
                           <Badge variant="secondary">
                             {appointment.source === "AI" ? "IA" : "Manual"}
                           </Badge>
@@ -312,6 +400,75 @@ export function AppointmentsDashboard({
                 );
               })}
             </ul>
+            <div className="hidden overflow-x-auto md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Fecha y hora local</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Origen</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredAppointments.map((appointment) => {
+                    const mutable = !["CANCELLED", "PENDING"].includes(appointment.status);
+                    return (
+                      <TableRow key={appointment.id}>
+                        <TableCell>
+                          <div className="max-w-64">
+                            <p className="truncate font-medium">{appointment.customerName}</p>
+                            <p className="mt-0.5 truncate text-xs text-muted-foreground">{appointment.title}</p>
+                            {appointment.lastError && <p className="mt-1 line-clamp-1 text-xs text-destructive">{appointment.lastError}</p>}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <p className="whitespace-nowrap text-sm">{localDate(appointment)}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{appointment.timezone}</p>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={STATUS_STYLES[appointment.status]}>{STATUS_LABELS[appointment.status]}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{appointment.source === "AI" ? "IA" : "Manual"}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          {canManage ? (
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                disabled={!readiness.ready || !readiness.allowRescheduling || !mutable || busy !== null}
+                                onClick={() => openReschedule(appointment)}
+                              >
+                                <RotateCw className="size-4" aria-hidden />
+                                Reprogramar
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                                disabled={!readiness.ready || !readiness.allowCancellation || !mutable || busy !== null}
+                                onClick={() => openCancel(appointment)}
+                              >
+                                <XCircle className="size-4" aria-hidden />
+                                Cancelar
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="block text-right text-xs text-muted-foreground">Solo lectura</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+            </>
           )}
         </CardContent>
       </Card>

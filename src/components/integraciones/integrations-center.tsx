@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  ArrowRight,
   Bot,
   CalendarDays,
   Check,
@@ -646,7 +648,19 @@ function WhatsappCard({
           </div>
         )}
 
-        <DiagnosticList diagnostic={data.diagnostics} />
+        <details className="group rounded-lg border border-border/70 bg-muted/20">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium marker:hidden">
+            <span>Preparación del canal</span>
+            <span className="text-xs font-normal text-muted-foreground">
+              {data.diagnostics.missingCount === 0
+                ? "Completa"
+                : `${data.diagnostics.missingCount} pendiente${data.diagnostics.missingCount === 1 ? "" : "s"}`}
+            </span>
+          </summary>
+          <div className="border-t border-border/70 p-3">
+            <DiagnosticList diagnostic={data.diagnostics} />
+          </div>
+        </details>
       </CardContent>
       <CardFooter className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {canManage ? (
@@ -986,24 +1000,35 @@ function N8nCard({
           </div>
         )}
 
-        <DiagnosticList diagnostic={data.diagnostics} />
-
-        <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-4">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="size-4 text-primary" aria-hidden />
-            <p className="text-sm font-semibold">Checklist de activación</p>
+        <details className="group rounded-lg border border-border/70 bg-muted/20">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium marker:hidden">
+            <span>Preparación y activación</span>
+            <span className="text-xs font-normal text-muted-foreground">
+              {data.diagnostics.missingCount === 0
+                ? "Lista para revisar"
+                : `${data.diagnostics.missingCount} pendiente${data.diagnostics.missingCount === 1 ? "" : "s"}`}
+            </span>
+          </summary>
+          <div className="space-y-5 border-t border-border/70 p-3">
+            <DiagnosticList diagnostic={data.diagnostics} />
+            <div className="space-y-3 rounded-lg border border-border/70 bg-card p-4">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="size-4 text-primary" aria-hidden />
+                <p className="text-sm font-semibold">Checklist de activación</p>
+              </div>
+              <ol className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                {N8N_ACTIVATION_STEPS.map((step, index) => (
+                  <li key={step} className="flex min-w-0 items-start gap-2">
+                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
+                      {index + 1}
+                    </span>
+                    <span className="pt-0.5 leading-relaxed">{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
           </div>
-          <ol className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-            {N8N_ACTIVATION_STEPS.map((step, index) => (
-              <li key={step} className="flex min-w-0 items-start gap-2">
-                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
-                  {index + 1}
-                </span>
-                <span className="pt-0.5 leading-relaxed">{step}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
+        </details>
       </CardContent>
       <CardFooter className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
         {canManage ? (
@@ -1046,9 +1071,11 @@ type GoogleCalendarData = IntegrationsCenterView["googleCalendar"];
 function GoogleCalendarCard({
   data,
   canManage,
+  showSettings = false,
 }: {
   data: GoogleCalendarData;
   canManage: boolean;
+  showSettings?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<
@@ -1166,7 +1193,7 @@ function GoogleCalendarCard({
       : data.reconnectionRequired
         ? {
             label: "Reconexión requerida",
-            className: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+            className: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
             icon: CircleAlert,
           }
       : data.status === "ERROR"
@@ -1188,7 +1215,7 @@ function GoogleCalendarCard({
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-[#8eacff]">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <CalendarDays className="size-5" />
             </span>
             <div className="min-w-0 space-y-1">
@@ -1234,7 +1261,7 @@ function GoogleCalendarCard({
         )}
 
         {data.reconnectionRequired && (
-          <div className="flex gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-200">
+          <div className="flex gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-200">
             <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
             <p className="min-w-0 text-xs leading-relaxed">
               Esta conexión conserva permisos de solo lectura. Reconectala para
@@ -1284,7 +1311,7 @@ function GoogleCalendarCard({
                         )}
                       </span>
                       {calendar.id === data.selectedCalendarId && (
-                        <Check className="size-4 shrink-0 text-[#8eacff]" aria-hidden />
+                        <Check className="size-4 shrink-0 text-primary" aria-hidden />
                       )}
                     </button>
                   </li>
@@ -1294,12 +1321,24 @@ function GoogleCalendarCard({
           </div>
         )}
 
-        <GoogleCalendarAppointmentSettings canManage={canManage} />
+        {showSettings && (
+          <div className="border-t border-border/70 pt-5">
+            <GoogleCalendarAppointmentSettings canManage={canManage} />
+          </div>
+        )}
       </CardContent>
       <CardFooter className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {canManage ? (
           data.connected ? (
             <>
+              {!showSettings && (
+                <Button asChild variant="secondary" size="sm">
+                  <Link href="/dashboard/integraciones/google-calendar">
+                    Administrar agenda
+                    <ArrowRight className="size-4" aria-hidden />
+                  </Link>
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -1345,16 +1384,26 @@ function GoogleCalendarCard({
               </Button>
             </>
           ) : (
-            <Button
-              size="sm"
-              disabled={busy !== null}
-              onClick={handleConnect}
-            >
-              {busy === "connect" && (
-                <Loader2 className="size-4 animate-spin" aria-hidden />
+            <>
+              <Button
+                size="sm"
+                disabled={busy !== null}
+                onClick={handleConnect}
+              >
+                {busy === "connect" && (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                )}
+                Conectar con Google
+              </Button>
+              {!showSettings && (
+                <Button asChild variant="ghost" size="sm">
+                  <Link href="/dashboard/integraciones/google-calendar">
+                    Ver configuración
+                    <ArrowRight className="size-4" aria-hidden />
+                  </Link>
+                </Button>
               )}
-              Conectar con Google
-            </Button>
+            </>
           )
         ) : (
           <p className="text-xs text-muted-foreground">
@@ -1404,14 +1453,72 @@ export function IntegrationsCenter({
   initialData: IntegrationsCenterView;
   canManage: boolean;
 }) {
+  const whatsappOperational = initialData.whatsapp.status === "connected";
+  const googleOperational =
+    initialData.googleCalendar.connected &&
+    !initialData.googleCalendar.reconnectionRequired &&
+    initialData.googleCalendar.status !== "ERROR";
+  const n8nOperational = initialData.n8n.status === "operational";
+  const operationalCount = [
+    whatsappOperational,
+    googleOperational,
+    n8nOperational,
+  ].filter(Boolean).length;
+
   return (
-    <section
-      className="grid min-w-0 gap-5 xl:grid-cols-2"
-      aria-label="Integraciones de la organización"
-    >
-      <WhatsappCard data={initialData.whatsapp} canManage={canManage} />
-      <N8nCard data={initialData.n8n} canManage={canManage} />
-      <GoogleCalendarCard data={initialData.googleCalendar} canManage={canManage} />
-    </section>
+    <div className="space-y-7" aria-label="Integraciones de la organización">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-xs font-medium text-muted-foreground">Operativas</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums">{operationalCount}</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-xs font-medium text-muted-foreground">Disponibles</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums">3</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-xs font-medium text-muted-foreground">Requieren atención</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums">{3 - operationalCount}</p>
+        </div>
+      </div>
+
+      {operationalCount > 0 && (
+        <section className="space-y-3" aria-labelledby="integrations-operational">
+          <div>
+            <h3 id="integrations-operational" className="text-sm font-semibold">Conectadas y operativas</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Servicios listos para trabajar con esta organización.</p>
+          </div>
+          <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+            {whatsappOperational && <WhatsappCard data={initialData.whatsapp} canManage={canManage} />}
+            {googleOperational && <GoogleCalendarCard data={initialData.googleCalendar} canManage={canManage} />}
+            {n8nOperational && <N8nCard data={initialData.n8n} canManage={canManage} />}
+          </div>
+        </section>
+      )}
+
+      {operationalCount < 3 && (
+        <section className="space-y-3" aria-labelledby="integrations-pending">
+          <div>
+            <h3 id="integrations-pending" className="text-sm font-semibold">Disponibles y pendientes</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Conectá o completá únicamente los servicios que necesita tu operación.</p>
+          </div>
+          <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+            {!whatsappOperational && <WhatsappCard data={initialData.whatsapp} canManage={canManage} />}
+            {!googleOperational && <GoogleCalendarCard data={initialData.googleCalendar} canManage={canManage} />}
+            {!n8nOperational && <N8nCard data={initialData.n8n} canManage={canManage} />}
+          </div>
+        </section>
+      )}
+    </div>
   );
+}
+
+export function GoogleCalendarIntegrationDetail({
+  data,
+  canManage,
+}: {
+  data: GoogleCalendarData;
+  canManage: boolean;
+}) {
+  return <GoogleCalendarCard data={data} canManage={canManage} showSettings />;
 }

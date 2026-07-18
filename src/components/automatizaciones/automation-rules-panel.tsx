@@ -64,27 +64,27 @@ const STATE_META: Record<
   ACTIVE: {
     label: "Activa",
     icon: Sparkles,
-    className: "border-blue-400/20 bg-blue-400/10 text-blue-300",
+    className: "border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-300",
   },
   PAUSED: {
     label: "Pausada",
     icon: PauseCircle,
-    className: "border-slate-400/20 bg-slate-400/10 text-slate-300",
+    className: "border-border bg-muted text-muted-foreground",
   },
   INCOMPLETE: {
     label: "Incompleta",
     icon: TriangleAlert,
-    className: "border-amber-400/20 bg-amber-400/10 text-amber-300",
+    className: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   },
   ERROR: {
     label: "Con error",
     icon: ShieldAlert,
-    className: "border-red-400/20 bg-red-400/10 text-red-300",
+    className: "border-destructive/25 bg-destructive/10 text-destructive",
   },
   WORKING: {
     label: "Funcionando",
     icon: CheckCircle2,
-    className: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
+    className: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   },
 };
 
@@ -114,7 +114,7 @@ function ExecutionSummary({ rule }: { rule: AutomationRuleView }) {
         Última ejecución: <strong className="text-foreground">{formatDateTime(rule.lastExecutionAt)}</strong>
       </span>
       {rule.lastError && (
-        <span className="break-words text-red-300">Último error: {rule.lastError}</span>
+        <span className="break-words text-destructive">Último error: {rule.lastError}</span>
       )}
     </div>
   );
@@ -202,7 +202,7 @@ function HandoffRuleCard({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2">
-              <BellRing className="size-4 text-[#8eacff]" />
+              <BellRing className="size-4 text-primary" />
               Aviso de atención humana
             </CardTitle>
             <CardDescription className="mt-1 max-w-2xl">
@@ -317,7 +317,7 @@ function HandoffRuleCard({
         </div>
 
         <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/5 p-3 text-xs text-muted-foreground">
-          <p className="mb-2 font-semibold uppercase tracking-wider text-emerald-300">
+          <p className="mb-2 font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
             Configuración segura
           </p>
           <div className="grid gap-1 sm:grid-cols-2">
@@ -406,7 +406,7 @@ function FollowUpRuleCard({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2">
-              <MessageCircleMore className="size-4 text-[#8eacff]" />
+              <MessageCircleMore className="size-4 text-primary" />
               Seguimiento automático
             </CardTitle>
             <CardDescription className="mt-1 max-w-2xl">
@@ -513,7 +513,7 @@ function FollowUpRuleCard({
         </div>
 
         <div className="rounded-lg border border-blue-400/20 bg-blue-400/5 p-3">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-blue-300">Vista previa</p>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-300">Vista previa</p>
           <p className="break-words text-sm leading-relaxed">{previewText}</p>
         </div>
 

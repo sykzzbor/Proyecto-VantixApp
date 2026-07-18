@@ -14,18 +14,18 @@ const STATUS_CONFIG: Record<
 > = {
   UPLOADED: {
     label: "En cola",
-    className: "border-amber-500/20 bg-amber-500/10 text-amber-300",
+    className: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
     icon: Clock,
   },
   PROCESSING: {
     label: "Procesando",
-    className: "border-sky-500/20 bg-sky-500/10 text-sky-300",
+    className: "border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300",
     icon: Loader2,
     spin: true,
   },
   READY: {
     label: "Listo",
-    className: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
+    className: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
     icon: CircleCheckBig,
   },
   FAILED: {

@@ -19,7 +19,7 @@ export function StatCard({ icon: Icon, label, value, hint }: StatCardProps) {
           {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
         </div>
         <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
-          <Icon className="size-4.5 text-[#8eacff]" aria-hidden />
+          <Icon className="size-4.5 text-primary" aria-hidden />
         </div>
       </CardContent>
     </Card>

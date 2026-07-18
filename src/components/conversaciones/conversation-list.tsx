@@ -66,7 +66,7 @@ export function ConversationList({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-[4.5rem] items-center justify-between gap-3 border-b border-border bg-sidebar/75 px-4 py-3">
+      <div className="flex min-h-[4.5rem] items-center justify-between gap-3 border-b border-border bg-card px-4 py-3">
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold tracking-[-0.02em] text-foreground">
             Conversaciones
@@ -79,7 +79,7 @@ export function ConversationList({
       </div>
 
       {/* Buscador y filtros */}
-      <div className="space-y-2.5 border-b border-border bg-sidebar/45 p-3">
+      <div className="space-y-2.5 border-b border-border bg-muted/35 p-3">
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
@@ -170,7 +170,7 @@ export function ConversationList({
                   )}
                 >
                   <Avatar className="mt-0.5 size-10 shrink-0">
-                    <AvatarFallback className="border border-primary/15 bg-primary/10 text-sm font-semibold text-[#a9beff]">
+                    <AvatarFallback className="border border-primary/15 bg-primary/10 text-sm font-semibold text-primary">
                       {initial(item.customerName)}
                     </AvatarFallback>
                   </Avatar>

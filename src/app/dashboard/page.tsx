@@ -167,7 +167,7 @@ function CatalogLink({
       href={href}
       className="group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-colors hover:border-border hover:bg-secondary/40 focus-visible:ring-2 focus-visible:ring-ring/40"
     >
-      <Icon className="size-4 shrink-0 text-muted-foreground group-hover:text-[#8eacff]" aria-hidden />
+      <Icon className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" aria-hidden />
       <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground group-hover:text-foreground">
         {label}
       </span>
@@ -206,7 +206,7 @@ export default async function DashboardPage() {
               className="flex flex-col gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="flex min-w-0 items-start gap-3">
-                <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-300" aria-hidden />
+                <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />
                 <div className="min-w-0">
                   <p className="text-sm font-medium">{notice.title}</p>
                   <p className="text-sm text-muted-foreground">
@@ -263,8 +263,9 @@ export default async function DashboardPage() {
       </section>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        {/* Canales y agente */}
-        <Card className="lg:col-span-1">
+        {/* Canales, agente y agenda */}
+        <div className="space-y-5 lg:col-span-1">
+        <Card>
           <CardHeader>
             <CardTitle className="text-base">Canales</CardTitle>
             <CardDescription>Cómo entran las consultas hoy.</CardDescription>
@@ -272,7 +273,7 @@ export default async function DashboardPage() {
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/40 px-3 py-2.5">
               <div className="flex min-w-0 items-center gap-2.5">
-                <WhatsappIcon className="size-4 shrink-0 text-emerald-400" />
+                <WhatsappIcon className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
                 <div className="min-w-0">
                   <p className="text-sm font-medium">WhatsApp</p>
                   {summary.whatsapp ? (
@@ -298,7 +299,7 @@ export default async function DashboardPage() {
 
             <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/40 px-3 py-2.5">
               <div className="flex min-w-0 items-center gap-2.5">
-                <Bot className="size-4 shrink-0 text-[#8eacff]" />
+                <Bot className="size-4 shrink-0 text-primary" />
                 <div className="min-w-0">
                   <p className="text-sm font-medium">
                     {summary.agent?.assistantName ?? "Agente IA"}
@@ -327,6 +328,53 @@ export default async function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Próximos turnos (datos reales de la agenda) */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Próximos turnos</CardTitle>
+            <CardDescription>Los siguientes de la agenda.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {summary.upcomingAppointments.length === 0 ? (
+              <p className="py-2 text-sm text-muted-foreground">
+                No hay turnos próximos.{" "}
+                <Link
+                  href="/dashboard/turnos"
+                  className="text-primary underline-offset-2 hover:underline"
+                >
+                  Ver agenda
+                </Link>
+              </p>
+            ) : (
+              <ul className="space-y-2.5">
+                {summary.upcomingAppointments.map((appointment, index) => (
+                  <li
+                    key={`${appointment.whenLabel}-${index}`}
+                    className="flex items-center justify-between gap-2 text-sm"
+                  >
+                    <span className="min-w-0 truncate">
+                      {appointment.customerName}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {appointment.whenLabel}
+                      {appointment.rescheduled && " · reprogramado"}
+                    </span>
+                  </li>
+                ))}
+                <li className="pt-1">
+                  <Link
+                    href="/dashboard/turnos"
+                    className="text-xs text-primary underline-offset-2 hover:underline"
+                  >
+                    Ver toda la agenda →
+                  </Link>
+                </li>
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+        </div>
 
         {/* Actividad reciente */}
         <Card className="lg:col-span-2">
