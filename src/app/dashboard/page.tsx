@@ -180,6 +180,16 @@ function CatalogLink({
 export default async function DashboardPage() {
   const { user, org } = await requireOrgContext();
   const summary = await getDashboardSummary(org.id);
+  // Keep the redesigned dashboard compatible with the deployed summary contract.
+  const upcomingAppointments = (
+    summary as DashboardSummary & {
+      upcomingAppointments?: {
+        whenLabel: string;
+        customerName: string;
+        rescheduled: boolean;
+      }[];
+    }
+  ).upcomingAppointments ?? [];
   const notices = buildSetupNotices(summary);
   const firstName = user.name.trim().split(/\s+/)[0] || user.name;
 
@@ -336,7 +346,7 @@ export default async function DashboardPage() {
             <CardDescription>Los siguientes de la agenda.</CardDescription>
           </CardHeader>
           <CardContent>
-            {summary.upcomingAppointments.length === 0 ? (
+            {upcomingAppointments.length === 0 ? (
               <p className="py-2 text-sm text-muted-foreground">
                 No hay turnos próximos.{" "}
                 <Link
@@ -348,7 +358,7 @@ export default async function DashboardPage() {
               </p>
             ) : (
               <ul className="space-y-2.5">
-                {summary.upcomingAppointments.map((appointment, index) => (
+                {upcomingAppointments.map((appointment, index) => (
                   <li
                     key={`${appointment.whenLabel}-${index}`}
                     className="flex items-center justify-between gap-2 text-sm"
