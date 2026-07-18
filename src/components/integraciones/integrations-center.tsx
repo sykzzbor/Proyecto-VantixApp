@@ -1207,11 +1207,8 @@ function GoogleCalendarCard({
       <CardContent className="space-y-4">
         {!data.configured ? (
           <p className="rounded-lg border border-border/70 bg-background/40 p-3 text-sm text-muted-foreground">
-            Falta configurar las credenciales de Google en el servidor. Ver{" "}
-            <span className="font-medium text-foreground">
-              docs/GOOGLE_CALENDAR_SETUP.md
-            </span>
-            .
+            {data.configurationMessage ??
+              "Google Calendar requiere completar la configuración del servidor."}
           </p>
         ) : data.connected ? (
           <dl className="grid gap-4 sm:grid-cols-2">
@@ -1350,7 +1347,7 @@ function GoogleCalendarCard({
           ) : (
             <Button
               size="sm"
-              disabled={busy !== null || !data.configured}
+              disabled={busy !== null}
               onClick={handleConnect}
             >
               {busy === "connect" && (

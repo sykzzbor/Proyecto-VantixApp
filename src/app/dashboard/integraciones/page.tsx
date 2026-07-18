@@ -23,9 +23,7 @@ export default async function IntegrationsPage() {
       />
       <IntegrationsCenter
         initialData={integrations}
-        canManage={
-          can(role, "whatsapp.manage") && can(role, "automation.manage")
-        }
+        canManage={can(role, "integrations.manage")}
       />
     </div>
   );

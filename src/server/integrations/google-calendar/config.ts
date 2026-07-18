@@ -31,18 +31,18 @@ export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutos
 /** Margen antes del vencimiento real para refrescar el access token. */
 export const ACCESS_TOKEN_EXPIRY_BUFFER_MS = 60 * 1000;
 
-function requireEnv(name: string): string {
-  const value = process.env[name]?.trim();
+function requireEnv(value: string | undefined, name: string): string {
+  value = value?.trim();
   if (!value) throw new GoogleCalendarConfigurationError(`Falta la variable ${name}.`);
   return value;
 }
 
 export function getGoogleClientId(): string {
-  return requireEnv("GOOGLE_CLIENT_ID");
+  return requireEnv(process.env.GOOGLE_CLIENT_ID, "GOOGLE_CLIENT_ID");
 }
 
 export function getGoogleClientSecret(): string {
-  return requireEnv("GOOGLE_CLIENT_SECRET");
+  return requireEnv(process.env.GOOGLE_CLIENT_SECRET, "GOOGLE_CLIENT_SECRET");
 }
 
 /**
@@ -50,7 +50,7 @@ export function getGoogleClientSecret(): string {
  * (BETTER_AUTH_URL), nunca de parámetros del navegador.
  */
 export function getGoogleRedirectUri(): string {
-  const base = requireEnv("BETTER_AUTH_URL");
+  const base = requireEnv(process.env.BETTER_AUTH_URL, "BETTER_AUTH_URL");
   let url: URL;
   try {
     url = new URL("/api/integrations/google-calendar/callback", base);
@@ -63,14 +63,50 @@ export function getGoogleRedirectUri(): string {
   return url.toString();
 }
 
+export type GoogleCalendarConfigurationIssue =
+  | "oauth_credentials"
+  | "application_url";
+
+export type GoogleCalendarConfigurationStatus =
+  | { configured: true; issue: null; message: null }
+  | {
+      configured: false;
+      issue: GoogleCalendarConfigurationIssue;
+      message: string;
+    };
+
+/**
+ * Diagnóstico seguro evaluado en runtime. Solo expone la categoría faltante;
+ * nunca nombres de variables, valores ni secretos.
+ */
+export function getGoogleCalendarConfigurationStatus(): GoogleCalendarConfigurationStatus {
+  if (
+    !process.env.GOOGLE_CLIENT_ID?.trim() ||
+    !process.env.GOOGLE_CLIENT_SECRET?.trim()
+  ) {
+    return {
+      configured: false,
+      issue: "oauth_credentials",
+      message:
+        "Falta completar las credenciales OAuth de Google para este entorno.",
+    };
+  }
+
+  try {
+    getGoogleRedirectUri();
+  } catch {
+    return {
+      configured: false,
+      issue: "application_url",
+      message:
+        "Falta configurar una URL pública válida para el callback de Google.",
+    };
+  }
+
+  return { configured: true, issue: null, message: null };
+}
+
 /** Indica si la integración está configurada, sin exponer valores. */
 export function isGoogleCalendarConfigured(): boolean {
-  try {
-    getGoogleClientId();
-    getGoogleClientSecret();
-    getGoogleRedirectUri();
-    return true;
-  } catch {
-    return false;
-  }
+  return getGoogleCalendarConfigurationStatus().configured;
 }

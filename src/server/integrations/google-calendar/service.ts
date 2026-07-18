@@ -6,8 +6,9 @@ import {
 } from "@/server/whatsapp/crypto";
 import {
   ACCESS_TOKEN_EXPIRY_BUFFER_MS,
+  getGoogleCalendarConfigurationStatus,
   hasRequiredGoogleCalendarScopes,
-  isGoogleCalendarConfigured,
+  type GoogleCalendarConfigurationIssue,
 } from "@/server/integrations/google-calendar/config";
 import {
   GoogleApiError,
@@ -26,6 +27,8 @@ import {
 
 export type GoogleCalendarView = {
   configured: boolean;
+  configurationIssue: GoogleCalendarConfigurationIssue | null;
+  configurationMessage: string | null;
   connected: boolean;
   writeAccess: boolean;
   reconnectionRequired: boolean;
@@ -41,6 +44,7 @@ export type GoogleCalendarView = {
 export async function getGoogleCalendarView(
   organizationId: string
 ): Promise<GoogleCalendarView> {
+  const configuration = getGoogleCalendarConfigurationStatus();
   const connection = await prisma.googleCalendarConnection.findUnique({
     where: { organizationId },
     select: {
@@ -57,7 +61,9 @@ export async function getGoogleCalendarView(
     ? hasRequiredGoogleCalendarScopes(connection.grantedScopes)
     : false;
   return {
-    configured: isGoogleCalendarConfigured(),
+    configured: configuration.configured,
+    configurationIssue: configuration.issue,
+    configurationMessage: configuration.message,
     connected: Boolean(connection),
     writeAccess,
     reconnectionRequired: Boolean(connection) && !writeAccess,

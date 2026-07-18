@@ -2,7 +2,7 @@ import {
   authorizeAutomationRequest,
   automationJson,
 } from "@/server/automation/http";
-import { isGoogleCalendarConfigured } from "@/server/integrations/google-calendar/config";
+import { getGoogleCalendarConfigurationStatus } from "@/server/integrations/google-calendar/config";
 import { buildGoogleAuthUrl } from "@/server/integrations/google-calendar/oauth";
 import { createGoogleOAuthState } from "@/server/integrations/google-calendar/state";
 
@@ -21,11 +21,13 @@ export async function POST(request: Request) {
   );
   if (!authorization.ok) return authorization.response;
 
-  if (!isGoogleCalendarConfigured()) {
+  const configuration = getGoogleCalendarConfigurationStatus();
+  if (!configuration.configured) {
     return automationJson(
       {
         error: "not_configured",
-        message: "Google Calendar todavía no está configurado en el servidor.",
+        reason: configuration.issue,
+        message: configuration.message,
       },
       { status: 503 }
     );
