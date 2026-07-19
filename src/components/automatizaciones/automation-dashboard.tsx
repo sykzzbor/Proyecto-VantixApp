@@ -18,7 +18,6 @@ import {
   RotateCcw,
   Search,
   Send,
-  ServerCog,
   ShieldCheck,
   Timer,
   TriangleAlert,
@@ -111,26 +110,6 @@ function formatDuration(value: number | null) {
   if (value < 1000) return `${value} ms`;
   if (value < 60_000) return `${(value / 1000).toFixed(1)} s`;
   return `${(value / 60_000).toFixed(1)} min`;
-}
-
-function ConfigIndicator({
-  configured,
-  label,
-  configuredLabel = "Configurado",
-}: {
-  configured: boolean;
-  label: string;
-  configuredLabel?: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/25 px-3 py-2">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="flex items-center gap-1.5 text-xs font-medium">
-        {configured ? <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" /> : <TriangleAlert className="size-3.5 text-amber-700 dark:text-amber-400" />}
-        {configured ? configuredLabel : "Pendiente"}
-      </span>
-    </div>
-  );
 }
 
 function Pagination({
@@ -281,7 +260,7 @@ export function AutomationDashboard({
               }
               title={
                 !infrastructure.providerConfigured
-                  ? "Completá la preparación técnica de n8n antes de probar"
+                  ? "Las automatizaciones todavía no están listas para una prueba real"
                   : undefined
               }
             >
@@ -297,13 +276,14 @@ export function AutomationDashboard({
         <CardHeader className="border-b sm:grid-cols-[1fr_auto]">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <CardTitle className="flex items-center gap-2"><ServerCog className="size-4 text-primary" />Infraestructura</CardTitle>
+              <CardTitle className="flex items-center gap-2"><Workflow className="size-4 text-primary" />Estado de automatizaciones</CardTitle>
               <Badge variant="outline" className={stateMeta.className}><StateIcon />{stateMeta.label}</Badge>
               {infrastructure.mockMode && <Badge>Modo de prueba</Badge>}
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              Proveedor activo: <span className="font-medium text-foreground">{infrastructure.provider}</span>
-              {infrastructure.mockMode && " · Modo de prueba activo. Las automatizaciones todavía no se envían a n8n."}
+              {infrastructure.mockMode
+                ? "Modo de prueba activo: los eventos se simulan sin ejecutar acciones externas."
+                : "Los flujos automáticos están conectados y listos para operar."}
             </p>
           </div>
         </CardHeader>
@@ -311,12 +291,12 @@ export function AutomationDashboard({
           {/* Resumen para negocio: qué falta, sin vocabulario técnico arriba. */}
           {infrastructure.readinessMissingCategories.length > 0 ? (
             <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
-              La conexión con n8n todavía no está lista:{" "}
+              Los flujos automáticos todavía no están listos:{" "}
               {infrastructure.readinessMissingCategories.length}{" "}
               {infrastructure.readinessMissingCategories.length === 1
                 ? "paso pendiente"
                 : "pasos pendientes"}
-              . El detalle técnico está más abajo.
+              . VantixApp mantiene esta preparación de forma interna.
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -329,30 +309,20 @@ export function AutomationDashboard({
             </p>
           )}
 
-          {/* Detalle técnico plegado: no compite con la configuración de negocio. */}
-          <details className="group rounded-lg border border-border/70 bg-background/40">
-            <summary className="cursor-pointer select-none px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-              Detalle técnico de la conexión
-            </summary>
-            <div className="grid gap-3 border-t border-border/70 p-3 md:grid-cols-2 lg:grid-cols-3">
-              <ConfigIndicator configured={infrastructure.endpointConfigured} label="Endpoint" />
-              <ConfigIndicator configured={infrastructure.outboundSignatureConfigured} label="Firma de salida" />
-              <ConfigIndicator configured={infrastructure.callbackConfigured} label="Firma de callback" />
-              <ConfigIndicator configured={infrastructure.dispatcherConfigured} label="Dispatcher" />
-              <ConfigIndicator configured={infrastructure.workflowsPublished} label="Workflows" configuredLabel="Publicados" />
-              <ConfigIndicator configured={infrastructure.probeVerified} label="Router y callback" configuredLabel="Verificados" />
-              {infrastructure.readinessMissingCategories.length > 0 && (
-                <p className="text-xs text-amber-800 dark:text-amber-200/90 md:col-span-2 lg:col-span-3">
-                  Falta completar: {infrastructure.readinessMissingCategories.map((category) => ({ endpoint: "endpoint", outbound_signature: "firma de salida", callback_signature: "firma de callback", dispatcher: "dispatcher", workflows: "workflows por publicar", connection_test: "prueba de router y callback" })[category]).join(", ")}.
-                </p>
-              )}
-              <div className="text-xs text-muted-foreground md:col-span-2 lg:col-span-3">
-                {infrastructure.mockMode ? "Último evento procesado" : "Último evento enviado"}: <span className="text-foreground">{formatDateTime(infrastructure.mockMode ? infrastructure.lastProcessedAt : infrastructure.lastEventSentAt)}</span>
-                {" · "}Último callback: <span className="text-foreground">{formatDateTime(infrastructure.lastCallbackAt)}</span>
-                {" · "}Última ejecución exitosa: <span className="text-foreground">{formatDateTime(infrastructure.lastSuccessfulRunAt)}</span>
-              </div>
+          <div className="grid gap-3 rounded-lg border border-border/70 bg-background/40 p-3 sm:grid-cols-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Último evento</p>
+              <p className="mt-1 text-xs font-medium">{formatDateTime(infrastructure.mockMode ? infrastructure.lastProcessedAt : infrastructure.lastEventSentAt)}</p>
             </div>
-          </details>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Última confirmación</p>
+              <p className="mt-1 text-xs font-medium">{formatDateTime(infrastructure.lastCallbackAt)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Última ejecución exitosa</p>
+              <p className="mt-1 text-xs font-medium">{formatDateTime(infrastructure.lastSuccessfulRunAt)}</p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

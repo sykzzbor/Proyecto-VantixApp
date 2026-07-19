@@ -74,14 +74,32 @@
   --chart-4: #805ad5;
   --chart-5: #1685bc;
   --radius: 0.75rem;
-  --sidebar: #12161d;
-  --sidebar-foreground: #eef2fb;
-  --sidebar-primary: #5b83f7;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1b2434;
+  --sidebar-primary: #3f6df2;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1d2943;
-  --sidebar-accent-foreground: #f5f7ff;
-  --sidebar-border: #28303c;
-  --sidebar-ring: #7599ff;
+  --sidebar-accent: #edf3ff;
+  --sidebar-accent-foreground: #1d3568;
+  --sidebar-border: #e1e6ef;
+  --sidebar-ring: #4f7cff;
+  --chat-canvas: #eee8dc;
+  --chat-pattern-stroke: #766f63;
+  --chat-date-bg: rgba(255, 255, 255, 0.9);
+  --chat-date-fg: #52606b;
+  --chat-system-bg: #fff4d4;
+  --chat-system-fg: #5c5240;
+  --chat-sender-fg: #625d54;
+  --chat-customer-bg: #ffffff;
+  --chat-customer-fg: #17202a;
+  --chat-ai-bg: #dff4dc;
+  --chat-ai-fg: #164529;
+  --chat-human-bg: #3f6df2;
+  --chat-human-fg: #ffffff;
+  --chat-failed-bg: #fdecea;
+  --chat-failed-fg: #7f1d1d;
+  --chat-read: #2878d8;
+  --agent-chat-canvas: #eef2f8;
+  --agent-chat-dot: rgba(63, 109, 242, 0.12);
 }
 
 .dark {
@@ -118,6 +136,24 @@
   --sidebar-accent-foreground: #f4f7ff;
   --sidebar-border: #252b37;
   --sidebar-ring: #6b91ff;
+  --chat-canvas: #15191f;
+  --chat-pattern-stroke: #8492a7;
+  --chat-date-bg: rgba(30, 36, 47, 0.92);
+  --chat-date-fg: #c0c8d5;
+  --chat-system-bg: #332f24;
+  --chat-system-fg: #e4d7ad;
+  --chat-sender-fg: #aeb8c7;
+  --chat-customer-bg: #242a34;
+  --chat-customer-fg: #eef2f8;
+  --chat-ai-bg: #193629;
+  --chat-ai-fg: #d9f8e4;
+  --chat-human-bg: #315dcc;
+  --chat-human-fg: #ffffff;
+  --chat-failed-bg: #3d2225;
+  --chat-failed-fg: #fecaca;
+  --chat-read: #72a7ff;
+  --agent-chat-canvas: #10141c;
+  --agent-chat-dot: rgba(107, 145, 255, 0.075);
 }
 
 @layer base {
@@ -162,42 +198,56 @@
 
 @layer components {
   .conversation-canvas {
-    background-color: #eef2f8;
+    background-color: var(--agent-chat-canvas);
     background-image: radial-gradient(
       circle at center,
-      rgba(63, 109, 242, 0.12) 0.75px,
+      var(--agent-chat-dot) 0.75px,
       transparent 0.9px
     );
     background-size: 22px 22px;
   }
 
-  .dark .conversation-canvas {
-    background-color: #10141c;
-    background-image: radial-gradient(
-      circle at center,
-      rgba(107, 145, 255, 0.075) 0.75px,
-      transparent 0.9px
-    );
-  }
-
-  /* El inbox usa un lienzo claro y familiar; el chat de prueba conserva su tema. */
+  /* Patrón propio de Vantix: conversación, agenda y destellos, sin recursos externos. */
   .inbox-conversation-canvas {
-    background-color: #ece5da;
-    background-image: radial-gradient(
-      circle at center,
-      rgba(93, 77, 55, 0.11) 0.8px,
-      transparent 1px
-    );
-    background-size: 20px 20px;
+    background-color: var(--chat-canvas);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cg fill='none' stroke='%23766f63' stroke-width='1.25' opacity='.1' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 28h25a7 7 0 0 1 7 7v10a7 7 0 0 1-7 7H34l-8 6v-6h-5a7 7 0 0 1-7-7V35a7 7 0 0 1 7-7Z'/%3E%3Cpath d='m109 19 2.4 6.1 6.1 2.4-6.1 2.4-2.4 6.1-2.4-6.1-6.1-2.4 6.1-2.4Z'/%3E%3Crect x='112' y='86' width='35' height='31' rx='6'/%3E%3Cpath d='M119 80v12m21-12v12m-21 10h21'/%3E%3Cpath d='m37 124 7 7 14-17'/%3E%3Ccircle cx='48' cy='126' r='22'/%3E%3Cpath d='M151 148h14m-7-7v14'/%3E%3C/g%3E%3C/svg%3E");
+    background-size: 180px 180px;
   }
 
   .dark .inbox-conversation-canvas {
-    background-color: #131821;
-    background-image: radial-gradient(
-      circle at center,
-      rgba(132, 151, 186, 0.11) 0.8px,
-      transparent 1px
-    );
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cg fill='none' stroke='%238492a7' stroke-width='1.25' opacity='.1' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 28h25a7 7 0 0 1 7 7v10a7 7 0 0 1-7 7H34l-8 6v-6h-5a7 7 0 0 1-7-7V35a7 7 0 0 1 7-7Z'/%3E%3Cpath d='m109 19 2.4 6.1 6.1 2.4-6.1 2.4-2.4 6.1-2.4-6.1-6.1-2.4 6.1-2.4Z'/%3E%3Crect x='112' y='86' width='35' height='31' rx='6'/%3E%3Cpath d='M119 80v12m21-12v12m-21 10h21'/%3E%3Cpath d='m37 124 7 7 14-17'/%3E%3Ccircle cx='48' cy='126' r='22'/%3E%3Cpath d='M151 148h14m-7-7v14'/%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  .chat-date-label {
+    background: var(--chat-date-bg);
+    color: var(--chat-date-fg);
+  }
+  .chat-system-message {
+    background: var(--chat-system-bg);
+    color: var(--chat-system-fg);
+  }
+  .chat-sender-label,
+  .chat-message-meta {
+    color: var(--chat-sender-fg);
+  }
+  .chat-bubble-customer {
+    background: var(--chat-customer-bg);
+    color: var(--chat-customer-fg);
+  }
+  .chat-bubble-ai {
+    background: var(--chat-ai-bg);
+    color: var(--chat-ai-fg);
+  }
+  .chat-bubble-human {
+    background: var(--chat-human-bg);
+    color: var(--chat-human-fg);
+  }
+  .chat-bubble-failed {
+    background: var(--chat-failed-bg);
+    color: var(--chat-failed-fg);
+  }
+  .chat-delivery-read {
+    color: var(--chat-read);
   }
 }
 

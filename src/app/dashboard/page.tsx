@@ -350,7 +350,7 @@ export default async function DashboardPage() {
               <p className="py-2 text-sm text-muted-foreground">
                 No hay turnos próximos.{" "}
                 <Link
-                  href="/dashboard/turnos"
+                  href="/dashboard/integraciones/google-calendar#reservas"
                   className="text-primary underline-offset-2 hover:underline"
                 >
                   Ver agenda
@@ -374,7 +374,7 @@ export default async function DashboardPage() {
                 ))}
                 <li className="pt-1">
                   <Link
-                    href="/dashboard/turnos"
+                    href="/dashboard/integraciones/google-calendar#reservas"
                     className="text-xs text-primary underline-offset-2 hover:underline"
                   >
                     Ver toda la agenda →

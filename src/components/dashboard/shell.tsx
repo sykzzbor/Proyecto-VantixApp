@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, Menu } from "lucide-react";
+import { ChevronRight, CircleHelp, Menu, Sparkles } from "lucide-react";
 import type { MemberRole } from "@/generated/prisma/enums";
 import { NAV_GROUPS, NAV_ITEMS, isNavItemActive } from "@/lib/navigation";
 import { ROLE_LABELS } from "@/lib/permissions";
@@ -18,14 +18,32 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { UserMenu } from "@/components/dashboard/user-menu";
-import { ThemeSwitcher } from "@/components/theme/theme-switcher";
 
 type DashboardShellProps = {
   orgName: string;
-  user: { name: string; email: string };
+  user: { name: string; email: string; image: string | null };
   role: MemberRole;
   children: React.ReactNode;
 };
+
+const CONTEXTUAL_ROUTE_LABELS = [
+  { href: "/dashboard/integraciones/google-calendar", label: "Google Calendar" },
+  { href: "/dashboard/configuracion", label: "Configuración" },
+  { href: "/dashboard/conocimiento", label: "Conocimiento" },
+  { href: "/dashboard/automatizaciones", label: "Automatizaciones" },
+  { href: "/dashboard/conversaciones", label: "Conversaciones" },
+  { href: "/dashboard/integraciones", label: "Integraciones" },
+  { href: "/dashboard/productos", label: "Productos" },
+  { href: "/dashboard/servicios", label: "Servicios" },
+  { href: "/dashboard/preguntas", label: "Preguntas frecuentes" },
+  { href: "/dashboard/clientes", label: "Clientes" },
+  { href: "/dashboard/novedades", label: "Novedades" },
+  { href: "/dashboard/perfil", label: "Perfil" },
+  { href: "/dashboard/planes", label: "Plan y facturación" },
+  { href: "/dashboard/negocio", label: "Negocio" },
+  { href: "/dashboard/equipo", label: "Equipo" },
+  { href: "/dashboard/ayuda", label: "Centro de ayuda" },
+] as const;
 
 function NavLinks({
   pathname,
@@ -80,15 +98,49 @@ function SidebarFooter({
   orgName,
   user,
   role,
-}: Pick<DashboardShellProps, "orgName" | "user" | "role">) {
+  pathname,
+  onNavigate,
+}: Pick<DashboardShellProps, "orgName" | "user" | "role"> & {
+  pathname: string;
+  onNavigate?: () => void;
+}) {
+  const footerLinks = [
+    { href: "/dashboard/ayuda", label: "Centro de ayuda", icon: CircleHelp },
+    { href: "/dashboard/novedades", label: "Novedades", icon: Sparkles },
+  ];
+
   return (
-    <div className="space-y-2 border-t border-sidebar-border bg-black/10 p-3">
+    <div className="space-y-2 border-t border-sidebar-border bg-sidebar p-3">
+      <div className="space-y-0.5 pb-1">
+        {footerLinks.map((item) => {
+          const Icon = item.icon;
+          const active = pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onNavigate}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                "flex min-h-9 items-center gap-3 rounded-lg px-3 text-[13px] font-medium transition-colors focus-visible:ring-2 focus-visible:ring-sidebar-ring/40",
+                active
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+              )}
+            >
+              <Icon className="size-4 shrink-0" aria-hidden />
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
       <p className="truncate px-2 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
         {orgName}
       </p>
       <UserMenu
         name={user.name}
         email={user.email}
+        image={user.image}
         roleLabel={ROLE_LABELS[role]}
         placement="sidebar"
       />
@@ -108,7 +160,10 @@ export function DashboardShell({
   const currentItem = [...NAV_ITEMS]
     .sort((a, b) => b.href.length - a.href.length)
     .find((item) => isNavItemActive(item, pathname));
-  const showCurrentSection = currentItem?.href !== "/dashboard";
+  const contextualLabel = CONTEXTUAL_ROUTE_LABELS.find((item) =>
+    pathname.startsWith(item.href)
+  )?.label;
+  const showCurrentSection = pathname !== "/dashboard";
 
   return (
     // Altura fija del viewport: la sidebar nunca crece con el contenido y el
@@ -117,7 +172,7 @@ export function DashboardShell({
       <aside className="hidden h-full w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
         <div className="flex h-16 shrink-0 items-center border-b border-sidebar-border bg-sidebar px-5">
           <Link href="/dashboard" aria-label="Ir al dashboard de Vantix">
-            <VantixLogo priority className="w-[7.75rem]" />
+            <VantixLogo priority className="w-[7.75rem] invert dark:invert-0" />
           </Link>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -125,7 +180,12 @@ export function DashboardShell({
         </div>
         {/* Usuario siempre visible abajo, sin importar el largo de la página. */}
         <div className="shrink-0">
-          <SidebarFooter orgName={orgName} user={user} role={role} />
+          <SidebarFooter
+            orgName={orgName}
+            user={user}
+            role={role}
+            pathname={pathname}
+          />
         </div>
       </aside>
 
@@ -145,7 +205,7 @@ export function DashboardShell({
             <SheetContent side="left" className="flex w-72 flex-col p-0">
               <SheetHeader className="border-b border-sidebar-border bg-sidebar px-5 py-4 text-left">
                 <SheetTitle>
-                  <VantixLogo className="w-28" />
+                  <VantixLogo className="w-28 invert dark:invert-0" />
                   <span className="sr-only">Vantix</span>
                 </SheetTitle>
                 <p className="truncate text-xs text-muted-foreground">{orgName}</p>
@@ -156,7 +216,13 @@ export function DashboardShell({
                   onNavigate={() => setMobileOpen(false)}
                 />
               </div>
-              <SidebarFooter orgName={orgName} user={user} role={role} />
+              <SidebarFooter
+                orgName={orgName}
+                user={user}
+                role={role}
+                pathname={pathname}
+                onNavigate={() => setMobileOpen(false)}
+              />
             </SheetContent>
           </Sheet>
 
@@ -179,7 +245,7 @@ export function DashboardShell({
               )}
               aria-current={!showCurrentSection ? "page" : undefined}
             >
-              Dashboard
+              Inicio
             </Link>
             {showCurrentSection && (
               <>
@@ -188,23 +254,36 @@ export function DashboardShell({
                   className="truncate font-medium text-foreground"
                   aria-current="page"
                 >
-                  {currentItem?.label ?? "Panel"}
+                  {contextualLabel ?? currentItem?.label ?? "Panel"}
                 </span>
               </>
             )}
           </nav>
 
-          <ThemeSwitcher />
-          <p className="hidden max-w-48 truncate text-xs text-muted-foreground lg:block">
+          <p className="ml-auto hidden max-w-48 truncate text-xs text-muted-foreground lg:block">
             {orgName}
           </p>
-          <div className="lg:hidden">
-            <UserMenu name={user.name} email={user.email} />
+          <div className="ml-auto lg:hidden">
+            <UserMenu name={user.name} email={user.email} image={user.image} />
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto bg-background p-4 sm:p-5 md:p-6 lg:p-8">
-          <div className="mx-auto flex min-h-full w-full max-w-[1440px] flex-col">
+        <main
+          className={cn(
+            "min-h-0 flex-1 overflow-y-auto bg-background",
+            pathname.startsWith("/dashboard/conversaciones")
+              ? "p-0"
+              : "p-4 sm:p-5 md:p-6 lg:p-8"
+          )}
+        >
+          <div
+            className={cn(
+              "flex w-full flex-col",
+              pathname.startsWith("/dashboard/conversaciones")
+                ? "h-full min-h-0"
+                : "mx-auto min-h-full max-w-[1440px]"
+            )}
+          >
             {children}
           </div>
         </main>

@@ -9,7 +9,7 @@ export default async function DashboardLayout({
   return (
     <DashboardShell
       orgName={org.name}
-      user={{ name: user.name, email: user.email }}
+      user={{ name: user.name, email: user.email, image: user.image }}
       role={role}
     >
       {children}

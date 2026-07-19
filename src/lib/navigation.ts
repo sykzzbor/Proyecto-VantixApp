@@ -2,19 +2,9 @@ import {
   BarChart3,
   BookOpen,
   Bot,
-  Briefcase,
-  CalendarClock,
-  CircleHelp,
-  CreditCard,
   Inbox,
   LayoutDashboard,
-  MessageCircleQuestion,
-  Package,
   Plug,
-  Settings,
-  Store,
-  UserRound,
-  Users,
   Workflow,
 } from "lucide-react";
 
@@ -31,16 +21,16 @@ export type NavGroup = {
 };
 
 /**
- * Navegación agrupada por área de trabajo. Solo rutas reales:
- * no se listan secciones que todavía no existen.
+ * Navegación primaria deliberadamente corta. Las rutas de configuración,
+ * cuenta, agenda y catálogo siguen existiendo, pero se abren desde el lugar
+ * contextual correspondiente en vez de competir en la sidebar.
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
-    label: "Operación",
+    label: "Principal",
     items: [
-      { href: "/dashboard", label: "Resumen", icon: LayoutDashboard, exact: true },
+      { href: "/dashboard", label: "Inicio", icon: LayoutDashboard, exact: true },
       { href: "/dashboard/conversaciones", label: "Conversaciones", icon: Inbox },
-      { href: "/dashboard/turnos", label: "Turnos", icon: CalendarClock },
     ],
   },
   {
@@ -48,54 +38,23 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/agente", label: "Agente", icon: Bot },
       { href: "/dashboard/conocimiento", label: "Conocimiento", icon: BookOpen },
-    ],
-  },
-  {
-    label: "Negocio",
-    items: [
-      { href: "/dashboard/negocio", label: "Información", icon: Store },
-      { href: "/dashboard/productos", label: "Productos", icon: Package },
-      { href: "/dashboard/servicios", label: "Servicios", icon: Briefcase },
-      {
-        href: "/dashboard/preguntas",
-        label: "Preguntas frecuentes",
-        icon: MessageCircleQuestion,
-      },
-    ],
-  },
-  {
-    label: "Automatización",
-    items: [
       {
         href: "/dashboard/automatizaciones",
         label: "Automatizaciones",
         icon: Workflow,
       },
+    ],
+  },
+  {
+    label: "Gestión",
+    items: [
       { href: "/dashboard/integraciones", label: "Integraciones", icon: Plug },
-    ],
-  },
-  {
-    label: "Análisis",
-    items: [{ href: "/dashboard/metricas", label: "Métricas", icon: BarChart3 }],
-  },
-  {
-    label: "Administración",
-    items: [
-      { href: "/dashboard/equipo", label: "Equipo", icon: Users },
-      { href: "/dashboard/configuracion", label: "Configuración", icon: Settings },
-    ],
-  },
-  {
-    label: "Cuenta",
-    items: [
-      { href: "/dashboard/perfil", label: "Perfil", icon: UserRound },
-      { href: "/dashboard/planes", label: "Planes", icon: CreditCard },
-      { href: "/dashboard/ayuda", label: "Centro de ayuda", icon: CircleHelp },
+      { href: "/dashboard/metricas", label: "Métricas", icon: BarChart3 },
     ],
   },
 ];
 
-/** Lista plana para breadcrumbs y búsqueda de sección activa. */
+/** Lista plana para navegación activa y breadcrumbs principales. */
 export const NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((group) => group.items);
 
 export function isNavItemActive(item: NavItem, pathname: string): boolean {

@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowUpRight, KeyRound, Palette, Plug, ScrollText, UserRound, Users } from "lucide-react";
+import { ArrowUpRight, KeyRound, Palette, Plug, ScrollText, Store, Users } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/page-header";
-import {
-  ChangePasswordForm,
-  ProfileNameForm,
-} from "@/components/configuracion/account-forms";
+import { ChangePasswordForm } from "@/components/configuracion/account-forms";
 import { OrganizationSettings } from "@/components/configuracion/organization-settings";
 import {
   Card,
@@ -14,8 +11,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -35,7 +30,7 @@ export const metadata: Metadata = {
 };
 
 export default async function ConfiguracionPage() {
-  const { user, org, role } = await requireOrgContext();
+  const { org, role } = await requireOrgContext();
   const canUpdateOrg = can(role, "org.update");
   const canDeleteOrg = can(role, "org.delete");
   const canReadAudit = can(role, "audit.read");
@@ -49,9 +44,8 @@ export default async function ConfiguracionPage() {
         description="Administrá tu cuenta, el espacio de trabajo y la actividad de la organización."
       />
 
-      <Tabs defaultValue="cuenta" className="space-y-4">
+      <Tabs defaultValue="organizacion" className="space-y-4">
         <TabsList className="w-full justify-start overflow-x-auto sm:w-fit">
-          <TabsTrigger value="cuenta">Cuenta</TabsTrigger>
           <TabsTrigger value="organizacion">Organización</TabsTrigger>
           <TabsTrigger value="apariencia">Apariencia</TabsTrigger>
           <TabsTrigger value="accesos">Accesos</TabsTrigger>
@@ -60,35 +54,6 @@ export default async function ConfiguracionPage() {
             <TabsTrigger value="actividad">Actividad</TabsTrigger>
           )}
         </TabsList>
-
-        <TabsContent value="cuenta" className="max-w-3xl">
-          <Card>
-            <CardHeader>
-              <div className="flex size-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
-                <UserRound className="size-4 text-primary" aria-hidden />
-              </div>
-              <CardTitle className="mt-2 text-base">Perfil</CardTitle>
-              <CardDescription>
-                Tu nombre y el email con el que iniciás sesión.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="account-email">Email</Label>
-                <Input
-                  id="account-email"
-                  value={user.email}
-                  disabled
-                  readOnly
-                />
-                <p className="text-xs text-muted-foreground">
-                  El email no se puede cambiar en esta etapa.
-                </p>
-              </div>
-              <ProfileNameForm currentName={user.name} />
-            </CardContent>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="seguridad" className="max-w-3xl">
           <Card>
@@ -108,12 +73,27 @@ export default async function ConfiguracionPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="organizacion">
+        <TabsContent value="organizacion" className="space-y-4">
           <OrganizationSettings
             orgName={org.name}
             canUpdate={canUpdateOrg}
             canDelete={canDeleteOrg}
           />
+          <Link
+            href="/dashboard/negocio"
+            className="group flex max-w-3xl items-center gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/30 hover:bg-accent/25 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-primary/20"
+          >
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10 text-primary">
+              <Store className="size-4.5" aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold">Información pública del negocio</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Datos de contacto, horarios y contexto que utiliza el agente.
+              </span>
+            </span>
+            <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-primary" aria-hidden />
+          </Link>
         </TabsContent>
 
         <TabsContent value="apariencia">

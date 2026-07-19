@@ -194,7 +194,7 @@ export function GoogleCalendarAppointmentSettings({
             Configuración de turnos
           </h3>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Define cuándo puede ofrecerse disponibilidad. Esta etapa todavía no crea eventos.
+            Definí cuándo puede ofrecerse disponibilidad y cómo se preparan las reservas.
           </p>
         </div>
         <Badge variant="outline">{STATUS_LABELS[view.status]}</Badge>

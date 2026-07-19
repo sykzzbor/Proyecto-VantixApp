@@ -22,7 +22,10 @@ export default async function IntegrationsPage() {
         description="Revisá qué servicios están operativos, cuáles necesitan atención y dónde continuar cada configuración."
       />
       <IntegrationsCenter
-        initialData={integrations}
+        initialData={{
+          whatsapp: integrations.whatsapp,
+          googleCalendar: integrations.googleCalendar,
+        }}
         canManage={can(role, "integrations.manage")}
       />
     </div>

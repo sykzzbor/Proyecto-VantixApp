@@ -312,7 +312,7 @@ function HandoffRuleCard({
             disabled={!canManage || saving}
           />
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Debe coincidir con una plantilla estática ya aprobada en Meta. Usá solo minúsculas, números y guiones bajos; no se aceptan mensajes ni variables enviados por n8n.
+            Debe coincidir con una plantilla estática ya aprobada en Meta. Usá solo minúsculas, números y guiones bajos; no se aceptan mensajes ni variables externas.
           </p>
         </div>
 

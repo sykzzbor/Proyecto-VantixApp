@@ -9,7 +9,7 @@ const GUIDES = [
   { title: "Conectar un canal de WhatsApp", description: "Revisá los métodos disponibles y el estado del webhook.", href: "/dashboard/integraciones", category: "Integraciones", icon: Plug },
   { title: "Configurar el agente", description: "Definí identidad, mensajes base y reglas de derivación.", href: "/dashboard/agente", category: "Agente IA", icon: Bot },
   { title: "Cargar conocimiento", description: "Prepará documentos que el agente puede consultar.", href: "/dashboard/conocimiento", category: "Agente IA", icon: BookOpen },
-  { title: "Preparar Google Calendar", description: "Conectá la cuenta y definí la disponibilidad para turnos.", href: "/dashboard/integraciones/google-calendar", category: "Turnos", icon: CalendarClock },
+  { title: "Preparar Google Calendar", description: "Conectá la cuenta, definí la disponibilidad y administrá reservas.", href: "/dashboard/integraciones/google-calendar", category: "Integraciones", icon: CalendarClock },
   { title: "Probar una conversación", description: "Validá respuestas del agente antes de atender clientes.", href: "/dashboard/agente?vista=chat", category: "Primeros pasos", icon: MessageSquareText },
   { title: "Administrar la organización", description: "Actualizá cuenta, apariencia y seguridad del espacio.", href: "/dashboard/configuracion", category: "Configuración", icon: Settings2 },
 ] as const;

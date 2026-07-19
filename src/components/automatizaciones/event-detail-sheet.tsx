@@ -250,7 +250,7 @@ export function EventDetailSheet({
             {Object.prototype.hasOwnProperty.call(event, "payload") && (
               <section>
                 <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Payload sanitizado</h4>
-                <pre className="max-h-64 overflow-auto rounded-lg border bg-[#0b0e13] p-3 font-mono text-xs leading-relaxed text-slate-300">
+                <pre className="max-h-64 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs leading-relaxed text-foreground">
                   {JSON.stringify(event.payload, null, 2)}
                 </pre>
               </section>

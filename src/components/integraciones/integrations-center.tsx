@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
-  Bot,
   CalendarDays,
   Check,
   CircleAlert,
@@ -17,8 +16,10 @@ import {
   PlugZap,
   RefreshCcw,
   ShieldCheck,
+  ShoppingBag,
+  Store,
+  Table2,
   Unplug,
-  Workflow,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -809,263 +810,6 @@ function WhatsappCard({
   );
 }
 
-const N8N_STATUS = {
-  mock: {
-    label: "Modo de prueba",
-    className: "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-300",
-  },
-  incomplete: {
-    label: "Configuración incompleta",
-    className: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  },
-  ready: {
-    label: "Listo para activar",
-    className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  },
-  operational: {
-    label: "Operativo",
-    className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  },
-  error: {
-    label: "Con error",
-    className: "border-destructive/30 bg-destructive/10 text-destructive",
-  },
-} as const;
-
-const N8N_ACTIVATION_STEPS = [
-  "Publicar los subworkflows.",
-  "Publicar el router.",
-  "Obtener el webhook de producción.",
-  "Configurar las firmas en ambos sistemas.",
-  "Ejecutar una prueba firmada.",
-  "Confirmar el callback.",
-  "Cambiar el proveedor.",
-  "Probar una derivación humana.",
-  "Probar un seguimiento automático.",
-] as const;
-
-function N8nCard({
-  data,
-  canManage,
-}: {
-  data: IntegrationsCenterView["n8n"];
-  canManage: boolean;
-}) {
-  const router = useRouter();
-  const [testing, setTesting] = useState(false);
-  const status = N8N_STATUS[data.status];
-  const canTest =
-    data.endpointConfigured &&
-    data.outboundSignatureConfigured &&
-    data.callbackConfigured &&
-    data.dispatcherConfigured &&
-    data.workflowsPublished;
-
-  async function waitForProbe(eventId: string) {
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      if (attempt > 0) {
-        await new Promise((resolve) => window.setTimeout(resolve, 1_500));
-      }
-      const response = await fetch(`/api/automation/events/${eventId}`, {
-        credentials: "same-origin",
-        cache: "no-store",
-      });
-      if (!response.ok) continue;
-      const body = (await readJson(response)) as {
-        event?: { status?: string };
-      };
-      const eventStatus = body.event?.status;
-      if (eventStatus === "SUCCEEDED") {
-        toast.success("Conexión verificada mediante callback firmado.");
-        router.refresh();
-        return;
-      }
-      if (
-        eventStatus === "FAILED" ||
-        eventStatus === "DEAD_LETTER" ||
-        eventStatus === "CANCELLED"
-      ) {
-        toast.error("La prueba no recibió una confirmación válida.");
-        router.refresh();
-        return;
-      }
-    }
-    toast.info(
-      "La prueba sigue esperando el callback. Podés actualizar el panel más tarde."
-    );
-    router.refresh();
-  }
-
-  async function testConnection() {
-    setTesting(true);
-    try {
-      const result = await postAction("/api/automation/test-connection");
-      if (typeof result.eventId !== "string") {
-        throw new Error("No se pudo crear la prueba de conexión.");
-      }
-      toast.info(
-        "Prueba enviada. La conexión se confirmará únicamente cuando llegue el callback firmado."
-      );
-      await waitForProbe(result.eventId);
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "No se pudo probar la conexión."
-      );
-    } finally {
-      setTesting(false);
-    }
-  }
-
-  return (
-    <Card className="min-w-0">
-      <CardHeader className="border-b">
-        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-300">
-              <Workflow className="size-5" aria-hidden />
-            </span>
-            <div className="min-w-0 space-y-1">
-              <CardTitle>n8n</CardTitle>
-              <CardDescription>
-                Orquestación firmada para derivaciones y seguimientos.
-              </CardDescription>
-            </div>
-          </div>
-          <Badge variant="outline" className={status.className}>
-            {data.status === "error" ? (
-              <CircleAlert aria-hidden />
-            ) : data.status === "operational" ? (
-              <CircleCheck aria-hidden />
-            ) : (
-              <Bot aria-hidden />
-            )}
-            {status.label}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 text-sm leading-relaxed">
-          <p className="font-medium">
-            Proveedor activo: {data.provider === "mock" ? "modo de prueba" : "n8n"}
-          </p>
-          {data.provider === "mock" && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Los eventos reales todavía no se envían a n8n. La prueba controlada
-              no cambia este estado.
-            </p>
-          )}
-        </div>
-
-        {data.lastConnectionAt || data.lastEventSentAt || data.lastCallbackAt ? (
-          <dl className="grid gap-4 sm:grid-cols-2">
-            <Detail
-              label="Última conexión"
-              value={formatDate(data.lastConnectionAt)}
-            />
-            <Detail
-              label="Último evento enviado"
-              value={formatDate(data.lastEventSentAt)}
-            />
-            <Detail
-              label="Último callback"
-              value={formatDate(data.lastCallbackAt)}
-            />
-            <Detail
-              label="Workflows"
-              value={data.workflowsPublished ? "Publicados" : "Pendientes de publicar"}
-            />
-            <Detail
-              label="Router y callback"
-              value={data.connectionTestVerified ? "Verificados" : "Pendientes de probar"}
-            />
-          </dl>
-        ) : (
-          <p className="rounded-lg border border-border/70 bg-background/40 p-3 text-sm text-muted-foreground">
-            Todavía no hubo actividad con n8n. Cuando la conexión esté activa,
-            acá vas a ver los últimos eventos y callbacks.
-          </p>
-        )}
-
-        {data.lastError && (
-          <div className="flex gap-2 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">
-            <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-            <div className="min-w-0">
-              <p className="font-medium">Último error</p>
-              <p className="mt-0.5 break-words text-xs leading-relaxed">
-                {data.lastError}
-              </p>
-            </div>
-          </div>
-        )}
-
-        <details className="group rounded-lg border border-border/70 bg-muted/20">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium marker:hidden">
-            <span>Preparación y activación</span>
-            <span className="text-xs font-normal text-muted-foreground">
-              {data.diagnostics.missingCount === 0
-                ? "Lista para revisar"
-                : `${data.diagnostics.missingCount} pendiente${data.diagnostics.missingCount === 1 ? "" : "s"}`}
-            </span>
-          </summary>
-          <div className="space-y-5 border-t border-border/70 p-3">
-            <DiagnosticList diagnostic={data.diagnostics} />
-            <div className="space-y-3 rounded-lg border border-border/70 bg-card p-4">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="size-4 text-primary" aria-hidden />
-                <p className="text-sm font-semibold">Checklist de activación</p>
-              </div>
-              <ol className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                {N8N_ACTIVATION_STEPS.map((step, index) => (
-                  <li key={step} className="flex min-w-0 items-start gap-2">
-                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
-                      {index + 1}
-                    </span>
-                    <span className="pt-0.5 leading-relaxed">{step}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          </div>
-        </details>
-      </CardContent>
-      <CardFooter className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
-        {canManage ? (
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={testConnection}
-              disabled={!canTest || testing}
-              title={
-                canTest
-                  ? "La prueba mantiene el proveedor en modo mock"
-                  : "Completá la preparación técnica antes de probar"
-              }
-            >
-              {testing ? (
-                <Loader2 className="animate-spin" aria-hidden />
-              ) : (
-                <PlugZap aria-hidden />
-              )}
-              Probar conexión
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Activación manual bloqueada hasta completar todos los pasos.
-            </p>
-          </>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            Vista de solo lectura. Un propietario o administrador puede ejecutar
-            pruebas.
-          </p>
-        )}
-      </CardFooter>
-    </Card>
-  );
-}
-
 type GoogleCalendarData = IntegrationsCenterView["googleCalendar"];
 
 function GoogleCalendarCard({
@@ -1446,11 +1190,45 @@ function GoogleCalendarCard({
   );
 }
 
+function UpcomingIntegrationCard({
+  name,
+  description,
+  icon: Icon,
+  status,
+}: {
+  name: string;
+  description: string;
+  icon: React.ComponentType<{ className?: string }>;
+  status: "En desarrollo" | "Próximamente";
+}) {
+  return (
+    <Card className="min-w-0 border-dashed bg-card/65">
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-muted text-muted-foreground">
+            <Icon className="size-5" aria-hidden />
+          </span>
+          <Badge variant="outline" className="bg-muted/55 text-muted-foreground">
+            {status}
+          </Badge>
+        </div>
+        <CardTitle className="pt-2">{name}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardFooter>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Todavía no requiere configuración ni credenciales de tu parte.
+        </p>
+      </CardFooter>
+    </Card>
+  );
+}
+
 export function IntegrationsCenter({
   initialData,
   canManage,
 }: {
-  initialData: IntegrationsCenterView;
+  initialData: Pick<IntegrationsCenterView, "whatsapp" | "googleCalendar">;
   canManage: boolean;
 }) {
   const whatsappOperational = initialData.whatsapp.status === "connected";
@@ -1458,12 +1236,7 @@ export function IntegrationsCenter({
     initialData.googleCalendar.connected &&
     !initialData.googleCalendar.reconnectionRequired &&
     initialData.googleCalendar.status !== "ERROR";
-  const n8nOperational = initialData.n8n.status === "operational";
-  const operationalCount = [
-    whatsappOperational,
-    googleOperational,
-    n8nOperational,
-  ].filter(Boolean).length;
+  const operationalCount = [whatsappOperational, googleOperational].filter(Boolean).length;
 
   return (
     <div className="space-y-7" aria-label="Integraciones de la organización">
@@ -1474,11 +1247,11 @@ export function IntegrationsCenter({
         </div>
         <div className="rounded-xl border border-border bg-card p-4">
           <p className="text-xs font-medium text-muted-foreground">Disponibles</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums">3</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums">2</p>
         </div>
         <div className="rounded-xl border border-border bg-card p-4">
           <p className="text-xs font-medium text-muted-foreground">Requieren atención</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums">{3 - operationalCount}</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums">{2 - operationalCount}</p>
         </div>
       </div>
 
@@ -1491,12 +1264,11 @@ export function IntegrationsCenter({
           <div className="grid min-w-0 gap-4 xl:grid-cols-2">
             {whatsappOperational && <WhatsappCard data={initialData.whatsapp} canManage={canManage} />}
             {googleOperational && <GoogleCalendarCard data={initialData.googleCalendar} canManage={canManage} />}
-            {n8nOperational && <N8nCard data={initialData.n8n} canManage={canManage} />}
           </div>
         </section>
       )}
 
-      {operationalCount < 3 && (
+      {operationalCount < 2 && (
         <section className="space-y-3" aria-labelledby="integrations-pending">
           <div>
             <h3 id="integrations-pending" className="text-sm font-semibold">Disponibles y pendientes</h3>
@@ -1505,10 +1277,40 @@ export function IntegrationsCenter({
           <div className="grid min-w-0 gap-4 xl:grid-cols-2">
             {!whatsappOperational && <WhatsappCard data={initialData.whatsapp} canManage={canManage} />}
             {!googleOperational && <GoogleCalendarCard data={initialData.googleCalendar} canManage={canManage} />}
-            {!n8nOperational && <N8nCard data={initialData.n8n} canManage={canManage} />}
           </div>
         </section>
       )}
+
+      <section className="space-y-3" aria-labelledby="integrations-upcoming">
+        <div>
+          <h3 id="integrations-upcoming" className="text-sm font-semibold">
+            Próximamente
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Integraciones en desarrollo que todavía no están disponibles para conectar.
+          </p>
+        </div>
+        <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <UpcomingIntegrationCard
+            name="Tiendanube"
+            description="Catálogo y operación comercial conectados con tu tienda."
+            icon={Store}
+            status="En desarrollo"
+          />
+          <UpcomingIntegrationCard
+            name="Google Sheets"
+            description="Sincronización controlada de datos operativos con hojas de cálculo."
+            icon={Table2}
+            status="Próximamente"
+          />
+          <UpcomingIntegrationCard
+            name="WooCommerce"
+            description="Productos y pedidos conectados con tu operación en VantixApp."
+            icon={ShoppingBag}
+            status="Próximamente"
+          />
+        </div>
+      </section>
     </div>
   );
 }

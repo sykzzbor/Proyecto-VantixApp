@@ -17,6 +17,8 @@ import {
   MapPin,
   Mic,
   MoreVertical,
+  PanelRightClose,
+  PanelRightOpen,
   RotateCw,
   SendHorizonal,
   UserRound,
@@ -112,7 +114,7 @@ function DeliveryStatus({ message }: { message: ThreadMessage }) {
     <span
       className={cn(
         "inline-flex items-center gap-1",
-        message.deliveryStatus === "read" && "text-[#3b82f6]",
+        message.deliveryStatus === "read" && "chat-delivery-read",
         message.deliveryStatus === "failed" && "text-destructive"
       )}
     >
@@ -150,7 +152,7 @@ function MessageContent({ message }: { message: ThreadMessage }) {
   return (
     <div className="space-y-1.5">
       <span className="flex items-center gap-2 font-medium">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-black/[0.08]">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground/[0.08]">
           <Icon className="size-4" aria-hidden />
         </span>
         <span className="min-w-0">
@@ -187,6 +189,7 @@ export function ConversationThread({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(true);
   const [isPending, startTransition] = useTransition();
 
   // El servidor revalida tras cada acción: si llegan mensajes nuevos desde
@@ -486,6 +489,23 @@ export function ConversationThread({
             </Sheet>
           </div>
 
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="hidden xl:inline-flex"
+            title={detailsOpen ? "Ocultar información del cliente" : "Mostrar información del cliente"}
+            aria-label={detailsOpen ? "Ocultar información del cliente" : "Mostrar información del cliente"}
+            aria-pressed={detailsOpen}
+            onClick={() => setDetailsOpen((current) => !current)}
+          >
+            {detailsOpen ? (
+              <PanelRightClose className="size-4" />
+            ) : (
+              <PanelRightOpen className="size-4" />
+            )}
+          </Button>
+
           {canManage && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -632,11 +652,11 @@ export function ConversationThread({
             </p>
           </div>
         ) : (
-          <div className="mx-auto w-full max-w-4xl space-y-5">
+          <div className="mx-auto w-full max-w-5xl space-y-5">
             {groups.map((group) => (
               <div key={group.dateLabel} className="space-y-3">
                 <div className="flex items-center justify-center py-1">
-                  <span className="rounded-lg bg-white/85 px-2.5 py-1 text-[10px] font-medium text-[#54656f] shadow-sm">
+                  <span className="chat-date-label rounded-lg px-2.5 py-1 text-[10px] font-medium shadow-sm">
                     {group.dateLabel}
                   </span>
                 </div>
@@ -645,7 +665,7 @@ export function ConversationThread({
                     return (
                       <p
                         key={message.id}
-                        className="mx-auto w-fit max-w-[90%] rounded-lg bg-[#fdf3d0] px-3 py-1.5 text-center text-[11px] leading-relaxed text-[#5c5240] shadow-sm"
+                        className="chat-system-message mx-auto w-fit max-w-[90%] rounded-lg px-3 py-1.5 text-center text-[11px] leading-relaxed shadow-sm"
                       >
                         {message.content} · {message.timeLabel}
                       </p>
@@ -663,7 +683,7 @@ export function ConversationThread({
                         fromCustomer ? "items-start" : "items-end"
                       )}
                     >
-                      <span className="mb-1 flex items-center gap-1 px-1 text-[10px] font-medium text-[#6b6255]">
+                      <span className="chat-sender-label mb-1 flex items-center gap-1 px-1 text-[10px] font-medium">
                         {message.senderType === "ai" && (
                           <Bot className="size-3 text-emerald-700" aria-hidden />
                         )}
@@ -676,24 +696,24 @@ export function ConversationThread({
                         className={cn(
                           "max-w-[90%] whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm sm:max-w-[76%]",
                           // Entrantes: burbuja blanca sobre el lienzo claro.
-                          fromCustomer && "rounded-bl-md bg-white text-[#111b21]",
+                          fromCustomer && "chat-bubble-customer rounded-bl-md",
                           !fromCustomer &&
                             failed &&
-                            "rounded-br-md border border-destructive/50 bg-[#fdecea] text-[#7f1d1d]",
+                            "chat-bubble-failed rounded-br-md border border-destructive/50",
                           // IA: verde suave, con el indicador Bot en la etiqueta.
                           !failed &&
                             message.senderType === "ai" &&
-                            "rounded-br-md bg-[#d9fdd3] text-[#0b3d1f]",
+                            "chat-bubble-ai rounded-br-md",
                           // Humanos: azul Vantix.
                           !failed &&
                             message.senderType === "human" &&
-                            "rounded-br-md bg-primary text-primary-foreground shadow-[0_10px_28px_-18px_rgba(79,124,255,0.95)]"
+                            "chat-bubble-human rounded-br-md shadow-[0_10px_28px_-18px_var(--primary)]"
                         )}
                       >
                         <MessageContent message={message} />
                       </div>
                       {message.deliveryStatus && (
-                        <div className="mt-1 flex max-w-[85%] items-center justify-end gap-1.5 px-1 text-[10px] text-[#6b6255] sm:max-w-[70%]">
+                        <div className="chat-message-meta mt-1 flex max-w-[85%] items-center justify-end gap-1.5 px-1 text-[10px] sm:max-w-[70%]">
                           <DeliveryStatus message={message} />
                           {canRetry && (
                             <Button
@@ -845,7 +865,12 @@ export function ConversationThread({
       )}
       </div>
 
-      <aside className="hidden w-60 shrink-0 overflow-y-auto border-l border-border bg-muted/25 xl:block 2xl:w-[17rem]">
+      <aside
+        className={cn(
+          "hidden w-[18.75rem] shrink-0 overflow-y-auto border-l border-border bg-muted/25 xl:block",
+          !detailsOpen && "xl:hidden"
+        )}
+      >
         <div className="sticky top-0 z-10 border-b border-border bg-card/95 px-4 py-4 backdrop-blur">
           <p className="text-sm font-semibold">Cliente</p>
           <p className="mt-0.5 text-xs text-muted-foreground">

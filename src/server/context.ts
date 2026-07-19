@@ -5,9 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { can, type Permission } from "@/lib/permissions";
 import type { MemberRole } from "@/generated/prisma/enums";
 import { ActionError } from "@/server/errors";
+import { safeUserImageUrl } from "@/server/profile/avatar";
 
 export type OrgContext = {
-  user: { id: string; name: string; email: string };
+  user: { id: string; name: string; email: string; image: string | null };
   org: { id: string; name: string; slug: string };
   role: MemberRole;
 };
@@ -45,7 +46,12 @@ export async function getOrgContext(): Promise<OrgContext> {
     throw new ActionError("Tu usuario todavía no pertenece a ninguna organización.");
   }
   return {
-    user: { id: user.id, name: user.name, email: user.email },
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      image: safeUserImageUrl(user.image),
+    },
     org: {
       id: membership.organization.id,
       name: membership.organization.name,
@@ -69,6 +75,7 @@ export async function requireOrgContext(): Promise<OrgContext> {
       id: session.user.id,
       name: session.user.name,
       email: session.user.email,
+      image: safeUserImageUrl(session.user.image),
     },
     org: {
       id: membership.organization.id,
