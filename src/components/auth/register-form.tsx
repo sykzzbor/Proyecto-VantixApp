@@ -53,29 +53,39 @@ export function RegisterForm({
 
   async function onSubmit(values: RegisterInput) {
     setFormError(null);
-    const { error } = await authClient.signUp.email({
-      name: values.name,
-      email: values.email,
-      password: values.password,
-    });
-    if (error) {
-      setFormError(translateAuthError(error));
-      return;
-    }
+    try {
+      const { error } = await authClient.signUp.email({
+        name: values.name,
+        email: values.email,
+        password: values.password,
+      });
+      if (error) {
+        setFormError(translateAuthError(error));
+        return;
+      }
 
-    if (invited && invitationToken) {
-      router.push(`/invitacion/${encodeURIComponent(invitationToken)}`);
+      if (invited && invitationToken) {
+        router.push(`/invitacion/${encodeURIComponent(invitationToken)}`);
+        router.refresh();
+        return;
+      }
+
+      const result = await createOrganization({ name: values.businessName });
+      if (!result || typeof result.ok !== "boolean") {
+        setFormError("El servidor devolvió una respuesta inesperada. Intentá de nuevo.");
+        return;
+      }
+      if (!result.ok) {
+        setFormError(result.error);
+        return;
+      }
+      router.push("/dashboard");
       router.refresh();
-      return;
+    } catch {
+      setFormError(
+        "No pudimos completar el registro. Revisá tu conexión e intentá nuevamente."
+      );
     }
-
-    const result = await createOrganization({ name: values.businessName });
-    if (!result.ok) {
-      setFormError(result.error);
-      return;
-    }
-    router.push("/dashboard");
-    router.refresh();
   }
 
   return (

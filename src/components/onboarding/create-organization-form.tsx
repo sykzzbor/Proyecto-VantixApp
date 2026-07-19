@@ -1,15 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { authClient } from "@/lib/auth-client";
 import {
-  createOrganizationSchema,
-  type CreateOrganizationInput,
-} from "@/lib/validations/business";
-import { createOrganization } from "@/server/actions/organization";
+  submitCreateOrganization,
+  type CreateOrganizationFormState,
+} from "@/server/actions/organization";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -27,25 +24,53 @@ import { SubmitButton } from "@/components/forms/submit-button";
 
 export function CreateOrganizationForm({ userName }: { userName: string }) {
   const router = useRouter();
-  const [formError, setFormError] = useState<string | null>(null);
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<CreateOrganizationInput>({
-    resolver: zodResolver(createOrganizationSchema),
-    defaultValues: { name: "" },
-  });
+  const inputRef = useRef<HTMLInputElement>(null);
+  const formErrorRef = useRef<HTMLDivElement>(null);
+  const [clientFieldError, setClientFieldError] = useState<string | null>(null);
+  const initialState: CreateOrganizationFormState = {
+    status: "idle",
+    error: null,
+    fieldError: null,
+    submittedName: "",
+    attempt: 0,
+  };
+  const [state, formAction, pending] = useActionState(
+    submitCreateOrganization,
+    initialState
+  );
 
-  async function onSubmit(values: CreateOrganizationInput) {
-    setFormError(null);
-    const result = await createOrganization(values);
-    if (!result.ok) {
-      setFormError(result.error);
+  useEffect(() => {
+    if (state.attempt === 0) return;
+    if (state.fieldError) {
+      inputRef.current?.focus();
       return;
     }
-    router.push("/dashboard");
-    router.refresh();
+    if (state.error) formErrorRef.current?.focus();
+  }, [state.attempt, state.error, state.fieldError]);
+
+  function validateBeforeSubmit(event: React.FormEvent<HTMLFormElement>) {
+    if (pending) {
+      event.preventDefault();
+      return;
+    }
+
+    const input = inputRef.current;
+    const name = input?.value.trim() ?? "";
+    if (input) input.value = name;
+
+    if (name.length < 2) {
+      event.preventDefault();
+      setClientFieldError("Ingresá el nombre de tu negocio.");
+      input?.focus();
+      return;
+    }
+    if (name.length > 120) {
+      event.preventDefault();
+      setClientFieldError("El nombre es demasiado largo.");
+      input?.focus();
+      return;
+    }
+    setClientFieldError(null);
   }
 
   async function handleSignOut() {
@@ -64,26 +89,45 @@ export function CreateOrganizationForm({ userName }: { userName: string }) {
           Asignale un nombre al espacio donde vas a gestionar clientes, equipo e integraciones.
         </CardDescription>
       </CardHeader>
-      <form onSubmit={handleSubmit(onSubmit)} noValidate>
+      <form
+        action={formAction}
+        onSubmit={validateBeforeSubmit}
+        noValidate
+        aria-busy={pending}
+      >
         <CardContent className="space-y-5 px-0">
-          <FormAlert message={formError} />
+          <div ref={formErrorRef} tabIndex={-1} className="outline-none">
+            <FormAlert message={state.error} />
+          </div>
           <div className="space-y-2">
             <Label htmlFor="name">Nombre del negocio</Label>
             <Input
               id="name"
+              name="name"
               placeholder="Estética Aurora"
+              autoComplete="organization"
               autoFocus
-              {...register("name")}
+              defaultValue={state.submittedName}
+              ref={inputRef}
+              minLength={2}
+              maxLength={120}
+              aria-invalid={Boolean(clientFieldError || state.fieldError)}
+              aria-describedby="name-error name-help"
+              onChange={() => {
+                if (clientFieldError) setClientFieldError(null);
+              }}
             />
-            <FieldError message={errors.name?.message} />
-            <p className="text-xs leading-relaxed text-muted-foreground">
+            <div id="name-error" aria-live="polite">
+              <FieldError message={clientFieldError ?? state.fieldError ?? undefined} />
+            </div>
+            <p id="name-help" className="text-xs leading-relaxed text-muted-foreground">
               Podés cambiarlo más adelante desde Configuración. No tiene que coincidir con el nombre público del negocio.
             </p>
           </div>
         </CardContent>
         <CardFooter className="mt-6 flex-col gap-3 border-0 bg-transparent px-0 pt-0">
-          <SubmitButton loading={isSubmitting} className="w-full">
-            Crear negocio
+          <SubmitButton loading={pending} className="w-full">
+            {pending ? "Creando negocio…" : "Crear negocio"}
           </SubmitButton>
           <Button
             type="button"

@@ -6,6 +6,8 @@ import { can, type Permission } from "@/lib/permissions";
 import type { MemberRole } from "@/generated/prisma/enums";
 import { ActionError } from "@/server/errors";
 import { safeUserImageUrl } from "@/server/profile/avatar";
+import { requireActiveSubscription } from "@/server/billing/entitlement";
+import { selectActiveMembership } from "@/server/organizations/active";
 
 export type OrgContext = {
   user: { id: string; name: string; email: string; image: string | null };
@@ -17,12 +19,22 @@ export async function getSession() {
   return auth.api.getSession({ headers: await headers() });
 }
 
-function findMembership(userId: string) {
-  return prisma.organizationMember.findFirst({
-    where: { userId },
-    orderBy: { createdAt: "asc" },
-    include: { organization: true },
-  });
+export async function findActiveMembership(userId: string) {
+  const [selection, memberships] = await Promise.all([
+    prisma.activeOrganizationSelection.findUnique({
+      where: { userId },
+      select: { organizationId: true },
+    }),
+    prisma.organizationMember.findMany({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+      include: { organization: true },
+    }),
+  ]);
+  return selectActiveMembership(
+    memberships,
+    selection?.organizationId ?? null
+  );
 }
 
 /**
@@ -39,13 +51,15 @@ export async function getSessionUser() {
  * Para server actions. La organización se resuelve SIEMPRE desde la sesión
  * autenticada: nunca se acepta un organization_id enviado por el navegador.
  */
-export async function getOrgContext(): Promise<OrgContext> {
+export async function getOrgContext(options?: {
+  allowInactiveSubscription?: boolean;
+}): Promise<OrgContext> {
   const user = await getSessionUser();
-  const membership = await findMembership(user.id);
+  const membership = await findActiveMembership(user.id);
   if (!membership) {
     throw new ActionError("Tu usuario todavía no pertenece a ninguna organización.");
   }
-  return {
+  const context = {
     user: {
       id: user.id,
       name: user.name,
@@ -58,7 +72,11 @@ export async function getOrgContext(): Promise<OrgContext> {
       slug: membership.organization.slug,
     },
     role: membership.role,
-  };
+  } satisfies OrgContext;
+  if (!options?.allowInactiveSubscription) {
+    await requireActiveSubscription(context.org.id);
+  }
+  return context;
 }
 
 /**
@@ -68,7 +86,7 @@ export async function getOrgContext(): Promise<OrgContext> {
 export async function requireOrgContext(): Promise<OrgContext> {
   const session = await getSession();
   if (!session) redirect("/login");
-  const membership = await findMembership(session.user.id);
+  const membership = await findActiveMembership(session.user.id);
   if (!membership) redirect("/onboarding");
   return {
     user: {

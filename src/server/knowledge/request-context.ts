@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import type { MemberRole } from "@/generated/prisma/enums";
+import { findActiveMembership } from "@/server/context";
+import { getOrganizationEntitlement } from "@/server/billing/entitlement";
 
 /**
  * Resuelve la organización y el rol para una petición HTTP (route handlers).
@@ -29,17 +30,24 @@ export async function resolveKnowledgeRequestContext(
       message: "Tenés que iniciar sesión.",
     };
   }
-  const membership = await prisma.organizationMember.findFirst({
-    where: { userId: session.user.id },
-    orderBy: { createdAt: "asc" },
-    select: { organizationId: true, role: true },
-  });
+  const membership = await findActiveMembership(session.user.id);
   if (!membership) {
     return {
       ok: false,
       status: 403,
       code: "no_organization",
       message: "Tu usuario no pertenece a ninguna organización.",
+    };
+  }
+  const entitlement = await getOrganizationEntitlement(
+    membership.organizationId
+  );
+  if (!entitlement.accessAllowed) {
+    return {
+      ok: false,
+      status: 402,
+      code: "subscription_required",
+      message: "Tu prueba o período contratado terminó. Elegí un plan para continuar.",
     };
   }
   return {

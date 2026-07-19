@@ -22,6 +22,7 @@ import {
   WhatsappOutboundValidationError,
 } from "@/server/whatsapp/outbound";
 import type { WhatsappAutomationJob } from "@/server/whatsapp/processing";
+import { getOrganizationEntitlement } from "@/server/billing/entitlement";
 
 export function getWhatsappAgentFallbackReason(
   provider = getAIProviderMode(),
@@ -61,6 +62,12 @@ export async function handleWhatsappAutomaticResponse(
 ) {
   const organizationId = job.integration.organizationId;
   const conversationId = job.persisted.conversationId;
+
+  // Los mensajes entrantes se conservan, pero una cuenta vencida nunca genera
+  // consumo de IA ni envíos automáticos. El pago válido reactiva este camino
+  // inmediatamente porque el entitlement se vuelve a resolver en cada job.
+  const entitlement = await getOrganizationEntitlement(organizationId);
+  if (!entitlement.accessAllowed) return;
 
   const unavailableReason = getWhatsappAgentFallbackReason();
   if (unavailableReason) {

@@ -1,6 +1,7 @@
 import type { MemberRole } from "@/generated/prisma/enums";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { findActiveMembership } from "@/server/context";
+import { getOrganizationEntitlement } from "@/server/billing/entitlement";
 
 export type AutomationRequestContext = {
   userId: string;
@@ -12,8 +13,8 @@ export type AutomationContextResult =
   | { ok: true; ctx: AutomationRequestContext }
   | {
       ok: false;
-      status: 401 | 403;
-      code: "unauthorized" | "no_organization";
+      status: 401 | 402 | 403;
+      code: "unauthorized" | "no_organization" | "subscription_required";
       message: string;
     };
 
@@ -31,17 +32,25 @@ export async function resolveAutomationRequestContext(
     };
   }
 
-  const membership = await prisma.organizationMember.findFirst({
-    where: { userId: session.user.id },
-    orderBy: { createdAt: "asc" },
-    select: { organizationId: true, role: true },
-  });
+  const membership = await findActiveMembership(session.user.id);
   if (!membership) {
     return {
       ok: false,
       status: 403,
       code: "no_organization",
       message: "Tu usuario todavía no pertenece a una organización.",
+    };
+  }
+
+  const entitlement = await getOrganizationEntitlement(
+    membership.organizationId
+  );
+  if (!entitlement.accessAllowed) {
+    return {
+      ok: false,
+      status: 402,
+      code: "subscription_required",
+      message: "Tu prueba o período contratado terminó. Elegí un plan para continuar.",
     };
   }
 

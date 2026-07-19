@@ -25,6 +25,7 @@ import {
   WhatsappOutboundValidationError,
 } from "@/server/whatsapp/outbound";
 import { recordAudit } from "@/server/audit";
+import { getOrganizationEntitlement } from "@/server/billing/entitlement";
 
 const SENT_DELIVERY_STATUSES = ["SENT", "DELIVERED", "READ"] as const;
 
@@ -1031,6 +1032,15 @@ export async function executeFollowUpAction(input: {
       ok: false,
       code: "not_executable",
       message: "El proveedor de automatización no está habilitado para esta acción.",
+      retryable: false,
+    };
+  }
+  const entitlement = await getOrganizationEntitlement(input.organizationId);
+  if (!entitlement.accessAllowed) {
+    return {
+      ok: false,
+      code: "not_executable",
+      message: "La suscripción de la organización no permite ejecutar esta acción.",
       retryable: false,
     };
   }

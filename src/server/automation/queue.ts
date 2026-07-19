@@ -35,6 +35,7 @@ import type {
 } from "@/server/automation/types";
 import { resolveStaleFollowUpAction } from "@/server/automation/follow-up-action";
 import { preflightHandoffForDispatchTx } from "@/server/automation/handoff";
+import { getOrganizationEntitlement } from "@/server/billing/entitlement";
 
 const HANDOFF_EVENT_TYPE = "conversation.handoff_requested";
 
@@ -426,6 +427,11 @@ async function processOneEvent(
     select: { organizationId: true, type: true, payload: true },
   });
   if (!candidate) return false;
+
+  const entitlement = await getOrganizationEntitlement(
+    candidate.organizationId
+  );
+  if (!entitlement.accessAllowed) return false;
 
   const connectionProbe = isN8nConnectionProbeEvent(candidate);
   if (options.allowUnverifiedN8nProbe === true && !connectionProbe) {

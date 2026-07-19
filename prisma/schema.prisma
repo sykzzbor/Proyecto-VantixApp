@@ -31,7 +31,8 @@ model User {
   createdAutomationRules OrganizationAutomationRule[]    @relation("AutomationRuleCreatedBy")
   updatedAutomationRules OrganizationAutomationRule[]    @relation("AutomationRuleUpdatedBy")
   whatsappSignupAttempts WhatsappEmbeddedSignupAttempt[]
-  createdAppointments     Appointment[]                    @relation("AppointmentCreatedBy")
+  createdAppointments    Appointment[]                   @relation("AppointmentCreatedBy")
+  billingPriceSnapshots  PlanPriceSnapshot[]             @relation("PlanPriceSnapshotCreatedBy")
 
   @@map("users")
 }
@@ -130,6 +131,9 @@ model Organization {
   googleOAuthStates          GoogleOAuthState[]
   appointmentSettings        AppointmentSettings?
   appointments               Appointment[]
+  subscription               OrganizationSubscription?
+  billingEvents              BillingEvent[]
+  planPriceSnapshots         PlanPriceSnapshot[]
 
   @@map("organizations")
 }
@@ -142,12 +146,25 @@ model OrganizationMember {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization    Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user            User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeSelection ActiveOrganizationSelection?
 
   @@unique([organizationId, userId])
   @@index([userId])
   @@map("organization_members")
+}
+
+model ActiveOrganizationSelection {
+  userId         String   @id
+  organizationId String
+  updatedAt      DateTime @updatedAt
+
+  membership OrganizationMember @relation(fields: [organizationId, userId], references: [organizationId, userId], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@map("active_organization_selections")
 }
 
 enum InvitationStatus {
@@ -173,6 +190,128 @@ model Invitation {
 
   @@index([organizationId])
   @@map("invitations")
+}
+
+// ============================================================
+// Planes, prueba gratuita y facturación
+// ============================================================
+
+enum BillingPlan {
+  STANDARD
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+  INCOMPLETE
+}
+
+enum PaymentProvider {
+  MERCADO_PAGO
+}
+
+enum BillingEventStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
+enum BillingCheckoutStatus {
+  QUOTED
+  PENDING
+  CONFIRMED
+  FAILED
+  EXPIRED
+}
+
+model OrganizationSubscription {
+  id                     String             @id @default(cuid())
+  organizationId         String             @unique
+  plan                   BillingPlan        @default(STANDARD)
+  status                 SubscriptionStatus @default(TRIALING)
+  trialStartedAt         DateTime           @default(now())
+  trialEndsAt            DateTime
+  subscriptionStartedAt  DateTime?
+  currentPeriodEndsAt    DateTime?
+  nextBillingAt          DateTime?
+  provider               PaymentProvider?
+  externalSubscriptionId String?            @unique
+  externalCustomerId     String?
+  canceledAt             DateTime?
+  endedAt                DateTime?
+  lastSyncedAt           DateTime?
+  lastError              String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  events         BillingEvent[]
+  priceSnapshots PlanPriceSnapshot[]
+
+  @@unique([organizationId, id])
+  @@index([status, trialEndsAt])
+  @@index([provider, status])
+  @@map("organization_subscriptions")
+}
+
+model BillingEvent {
+  id              String              @id @default(cuid())
+  organizationId  String
+  subscriptionId  String
+  provider        PaymentProvider?
+  idempotencyKey  String              @unique
+  externalEventId String?
+  eventType       String
+  previousStatus  SubscriptionStatus?
+  nextStatus      SubscriptionStatus?
+  payloadHash     String
+  status          BillingEventStatus  @default(RECEIVED)
+  errorCode       String?
+  occurredAt      DateTime?
+  processedAt     DateTime?
+  createdAt       DateTime            @default(now())
+
+  organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subscription OrganizationSubscription @relation(fields: [organizationId, subscriptionId], references: [organizationId, id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([subscriptionId, createdAt(sort: Desc)])
+  @@index([provider, externalEventId])
+  @@map("billing_events")
+}
+
+model PlanPriceSnapshot {
+  id                     String                @id @default(cuid())
+  organizationId         String
+  subscriptionId         String
+  createdByUserId        String?
+  plan                   BillingPlan
+  usdAmount              Decimal               @db.Decimal(10, 2)
+  arsAmount              Decimal               @db.Decimal(14, 2)
+  exchangeRate           Decimal               @db.Decimal(14, 4)
+  exchangeSource         String
+  quotedAt               DateTime
+  renewalPolicy          String                @default("FIXED_UNTIL_EXPLICIT_CHANGE")
+  idempotencyKey         String                @unique
+  checkoutStatus         BillingCheckoutStatus @default(QUOTED)
+  externalSubscriptionId String?               @unique
+  checkoutUrl            String?               @db.Text
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+
+  organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subscription OrganizationSubscription @relation(fields: [organizationId, subscriptionId], references: [organizationId, id], onDelete: Cascade)
+  createdBy    User?                    @relation("PlanPriceSnapshotCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([subscriptionId, checkoutStatus])
+  @@map("plan_price_snapshots")
 }
 
 // ============================================================

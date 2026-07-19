@@ -12,6 +12,7 @@ import {
   MetaApiError,
   sendWhatsappTemplateMessage,
 } from "@/server/whatsapp/meta-client";
+import { getOrganizationEntitlement } from "@/server/billing/entitlement";
 
 export const HANDOFF_ALERT_EVENT_TYPE = "conversation.handoff_requested";
 
@@ -460,6 +461,14 @@ export async function executeHandoffAlertAction(
     return notExecutable(
       "not_executable",
       "El proveedor de automatización no está habilitado para esta acción."
+    );
+  }
+
+  const entitlement = await getOrganizationEntitlement(input.organizationId);
+  if (!entitlement.accessAllowed) {
+    return notExecutable(
+      "not_executable",
+      "La suscripción de la organización no permite ejecutar esta acción."
     );
   }
 

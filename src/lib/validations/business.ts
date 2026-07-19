@@ -26,6 +26,7 @@ export type BusinessProfileInput = z.infer<typeof businessProfileSchema>;
 export const createOrganizationSchema = z.object({
   name: z
     .string()
+    .trim()
     .min(2, "Ingresá el nombre de tu negocio.")
     .max(120, "El nombre es demasiado largo."),
 });

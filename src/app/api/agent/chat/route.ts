@@ -20,6 +20,8 @@ import {
 } from "@/server/conversations";
 import { checkRateLimit } from "@/server/rate-limit";
 import { formatTime } from "@/lib/format";
+import { findActiveMembership } from "@/server/context";
+import { getOrganizationEntitlement } from "@/server/billing/entitlement";
 
 const RATE_LIMIT_MESSAGES = 20;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -38,11 +40,7 @@ export async function POST(request: NextRequest) {
 
     // 2. La organización sale SIEMPRE de la membresía del usuario,
     //    nunca del cuerpo de la petición.
-    const membership = await prisma.organizationMember.findFirst({
-      where: { userId: session.user.id },
-      orderBy: { createdAt: "asc" },
-      select: { organizationId: true },
-    });
+    const membership = await findActiveMembership(session.user.id);
     if (!membership) {
       return jsonError(
         403,
@@ -51,6 +49,14 @@ export async function POST(request: NextRequest) {
       );
     }
     const organizationId = membership.organizationId;
+    const entitlement = await getOrganizationEntitlement(organizationId);
+    if (!entitlement.accessAllowed) {
+      return jsonError(
+        402,
+        "subscription_required",
+        "Tu prueba o período contratado terminó. Elegí un plan para continuar."
+      );
+    }
 
     // 3. Rate limiting por organización y usuario.
     const rate = checkRateLimit(

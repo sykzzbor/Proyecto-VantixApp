@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/permissions";
+import { findActiveMembership } from "@/server/context";
+import { getOrganizationEntitlement } from "@/server/billing/entitlement";
 import { exchangeAuthorizationCode, fetchCalendarList } from "@/server/integrations/google-calendar/oauth";
 import { saveGoogleConnection } from "@/server/integrations/google-calendar/service";
 import { consumeGoogleOAuthState } from "@/server/integrations/google-calendar/state";
@@ -27,13 +28,15 @@ export async function GET(request: Request) {
   // 1. Sesión y organización desde la membresía (nunca de la URL).
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) return redirectWithResult(request, "sesion_requerida");
-  const membership = await prisma.organizationMember.findFirst({
-    where: { userId: session.user.id },
-    orderBy: { createdAt: "asc" },
-    select: { organizationId: true, role: true },
-  });
+  const membership = await findActiveMembership(session.user.id);
   if (!membership || !can(membership.role, "integrations.manage")) {
     return redirectWithResult(request, "sin_permisos");
+  }
+  const entitlement = await getOrganizationEntitlement(
+    membership.organizationId
+  );
+  if (!entitlement.accessAllowed) {
+    return redirectWithResult(request, "suscripcion_requerida");
   }
 
   const params = new URL(request.url).searchParams;

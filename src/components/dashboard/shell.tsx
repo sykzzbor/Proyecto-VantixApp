@@ -18,11 +18,17 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { UserMenu } from "@/components/dashboard/user-menu";
+import type { OrganizationEntitlement } from "@/server/billing/entitlement";
+import {
+  SubscriptionAccessGate,
+  TrialBanner,
+} from "@/components/billing/subscription-access";
 
 type DashboardShellProps = {
   orgName: string;
   user: { name: string; email: string; image: string | null };
   role: MemberRole;
+  entitlement: OrganizationEntitlement;
   children: React.ReactNode;
 };
 
@@ -152,6 +158,7 @@ export function DashboardShell({
   orgName,
   user,
   role,
+  entitlement,
   children,
 }: DashboardShellProps) {
   const pathname = usePathname();
@@ -268,6 +275,7 @@ export function DashboardShell({
           </div>
         </header>
 
+        <TrialBanner entitlement={entitlement} />
         <main
           className={cn(
             "min-h-0 flex-1 overflow-y-auto bg-background",
@@ -285,7 +293,12 @@ export function DashboardShell({
                 : "mx-auto min-h-full max-w-[1440px]"
             )}
           >
-            {children}
+            <SubscriptionAccessGate
+              pathname={pathname}
+              entitlement={entitlement}
+            >
+              {children}
+            </SubscriptionAccessGate>
           </div>
         </main>
       </div>
