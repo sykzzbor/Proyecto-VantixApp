@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Clock3, CreditCard, LockKeyhole } from "lucide-react";
+import { Check, CreditCard, LockKeyhole } from "lucide-react";
 import type { OrganizationEntitlement } from "@/server/billing/entitlement";
 import { isSubscriptionSafeDashboardPath } from "@/lib/billing/entitlement";
 import { BILLING_PLAN_LIST } from "@/lib/billing/plans";
@@ -31,28 +31,25 @@ export function TrialBanner({
   }
   const expiresToday = entitlement.remainingMs < 24 * 60 * 60 * 1_000;
   const remainingLabel = expiresToday
-    ? `Tu prueba gratuita vence hoy. Te quedan ${entitlement.remainingHours} horas.`
-    : `Te quedan ${entitlement.remainingDays} días.`;
+    ? `Te quedan ${entitlement.remainingHours} horas gratis.`
+    : `Te quedan ${entitlement.remainingDays} días gratis.`;
 
   return (
     <aside
-      className="shrink-0 border-b border-primary/20 bg-primary/[0.07] px-4 py-2.5 text-foreground md:px-6"
-      aria-label="Estado de la prueba gratuita"
+      className="shrink-0 border-b border-primary-foreground/10 bg-primary px-3 py-2 text-primary-foreground"
+      aria-label={`Período de prueba del plan ${entitlement.planName}. ${remainingLabel} Finaliza el ${formatDate(entitlement.trialEndsAt)}.`}
     >
-      <div className="mx-auto flex max-w-[1440px] flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="flex min-w-0 items-start gap-2.5 sm:items-center">
-          <Clock3 className="mt-0.5 size-4 shrink-0 text-primary sm:mt-0" aria-hidden />
-          <p className="min-w-0 text-xs leading-relaxed sm:text-sm">
-            <span className="font-semibold">Prueba gratuita · {entitlement.planName}.</span>{" "}
-            {remainingLabel}{" "}
-            <span className="text-muted-foreground">
-              Finaliza el {formatDate(entitlement.trialEndsAt)}.
-            </span>
-          </p>
-        </div>
-        <Button asChild size="sm" className="h-8 shrink-0 sm:ml-auto">
-          <Link href="/dashboard/planes">Elegir un plan</Link>
-        </Button>
+      <div className="mx-auto flex min-h-5 max-w-[1440px] items-center justify-center gap-1.5 text-center text-[11px] leading-4 sm:text-xs">
+        <p>
+          <span className="font-semibold">Período de prueba:</span>{" "}
+          {remainingLabel}
+        </p>
+        <Link
+          href="/dashboard/planes"
+          className="shrink-0 font-medium underline underline-offset-2 transition-opacity hover:opacity-80 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-foreground/70"
+        >
+          Ver planes
+        </Link>
       </div>
     </aside>
   );
@@ -102,6 +99,20 @@ export function SubscriptionAccessGate({
                 </div>
                 <p className="text-2xl font-semibold">USD {plan.usdMonthly}</p>
                 <p className="text-xs text-muted-foreground">por mes</p>
+                <ul className="space-y-2 border-t border-border pt-3">
+                  {plan.features.map((feature) => (
+                    <li
+                      key={feature}
+                      className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground"
+                    >
+                      <Check
+                        className="mt-0.5 size-3.5 shrink-0 text-primary"
+                        aria-hidden
+                      />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
               </CardContent>
             </Card>
           ))}

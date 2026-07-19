@@ -67,7 +67,7 @@ test("los planes definitivos usan IDs estables, nombres y precios únicos", () =
     [
       { id: "STANDARD", name: "Standard", usdMonthly: 90 },
       { id: "PROFESSIONAL", name: "Profesional", usdMonthly: 179 },
-      { id: "ENTERPRISE", name: "Empresarial", usdMonthly: 400 },
+      { id: "ENTERPRISE", name: "Empresarial", usdMonthly: 350 },
     ]
   );
   assert.equal(BILLING_PLANS.PROFESSIONAL.recommended, true);
@@ -76,7 +76,7 @@ test("los planes definitivos usan IDs estables, nombres y precios únicos", () =
 test("convierte y redondea comercialmente los tres planes a ARS", () => {
   assert.equal(convertUsdToArs(90, 1_500), 135_000);
   assert.equal(convertUsdToArs(179, 1_500), 269_000);
-  assert.equal(convertUsdToArs(400, 1_500), 600_000);
+  assert.equal(convertUsdToArs(350, 1_500), 525_000);
 });
 
 test("la prueba vigente calcula días y horas desde tiempo de servidor", () => {

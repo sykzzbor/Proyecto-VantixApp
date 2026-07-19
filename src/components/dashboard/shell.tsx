@@ -197,6 +197,7 @@ export function DashboardShell({
       </aside>
 
       <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+        <TrialBanner entitlement={entitlement} />
         <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-border/80 bg-background/95 px-4 backdrop-blur-md md:px-6">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
@@ -275,7 +276,6 @@ export function DashboardShell({
           </div>
         </header>
 
-        <TrialBanner entitlement={entitlement} />
         <main
           className={cn(
             "min-h-0 flex-1 overflow-y-auto bg-background",
