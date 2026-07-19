@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/auth/login-form";
-import { safeCallbackUrl } from "@/lib/auth-errors";
+import { safeCallbackUrl, translateAuthError } from "@/lib/auth-errors";
+import { isGoogleSignInConfigured } from "@/lib/google-auth";
 import { getSession } from "@/server/context";
 
 export const metadata: Metadata = {
@@ -18,6 +19,16 @@ export default async function LoginPage(props: PageProps<"/login">) {
       ? searchParams.callbackURL
       : undefined
   );
+  const oauthError =
+    typeof searchParams.error === "string"
+      ? translateAuthError({ code: searchParams.error })
+      : null;
 
-  return <LoginForm callbackURL={callbackURL} />;
+  return (
+    <LoginForm
+      callbackURL={callbackURL}
+      googleConfigured={isGoogleSignInConfigured()}
+      initialError={oauthError}
+    />
+  );
 }

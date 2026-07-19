@@ -20,14 +20,20 @@ import { FieldError } from "@/components/forms/field-error";
 import { FormAlert } from "@/components/forms/form-alert";
 import { SubmitButton } from "@/components/forms/submit-button";
 import { AuthCardHeader } from "@/components/auth/auth-card-header";
+import { GoogleAuthButton } from "@/components/auth/google-auth-button";
+import { PasswordInput } from "@/components/auth/password-input";
 
 export function RegisterForm({
   invitationToken,
+  googleConfigured,
+  initialError,
 }: {
   invitationToken?: string;
+  googleConfigured: boolean;
+  initialError?: string | null;
 }) {
   const router = useRouter();
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(initialError ?? null);
   const invited = Boolean(invitationToken);
 
   const {
@@ -86,6 +92,19 @@ export function RegisterForm({
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
         <CardContent className="space-y-4">
           <FormAlert message={formError} />
+          <GoogleAuthButton
+            mode="register"
+            configured={googleConfigured}
+            invitationToken={invitationToken}
+            onError={(message) => setFormError(message || null)}
+          />
+          <div className="flex items-center gap-3" aria-hidden>
+            <span className="h-px flex-1 bg-border" />
+            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+              o continuá con
+            </span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
           <div className="space-y-2">
             <Label htmlFor="name">Tu nombre</Label>
             <Input
@@ -124,9 +143,8 @@ export function RegisterForm({
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Contraseña</Label>
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
               autoComplete="new-password"
               placeholder="Mínimo 8 caracteres"
               aria-invalid={Boolean(errors.password)}

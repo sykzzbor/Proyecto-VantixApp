@@ -7,6 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import {
+  convertUsdToArs,
+  type PlansExchangeRate,
+} from "@/lib/plans-pricing";
 
 type Currency = "USD" | "ARS";
 
@@ -46,7 +50,7 @@ function formatUsd(value: number): string {
 }
 
 function formatArs(value: number, rate: number): string {
-  const rounded = Math.ceil((value * rate) / 1000) * 1000;
+  const rounded = convertUsdToArs(value, rate);
   return new Intl.NumberFormat("es-AR", {
     style: "currency",
     currency: "ARS",
@@ -71,13 +75,12 @@ function formatUpdatedAt(value: string | null): string {
 }
 
 export function PlansPricing({
-  exchangeRate,
-  exchangeUpdatedAt,
+  exchange,
 }: {
-  exchangeRate: number | null;
-  exchangeUpdatedAt: string | null;
+  exchange: PlansExchangeRate;
 }) {
   const [currency, setCurrency] = useState<Currency>("USD");
+  const exchangeRate = exchange.rate;
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -95,7 +98,7 @@ export function PlansPricing({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="grid gap-4 rounded-xl border border-border bg-card p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
         <div>
           <p className="text-sm font-semibold">Moneda de referencia</p>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -103,7 +106,7 @@ export function PlansPricing({
           </p>
         </div>
         <div className="inline-flex w-fit rounded-lg border border-border bg-muted p-1" role="group" aria-label="Moneda de los planes">
-          {(["ARS", "USD"] as const).map((option) => (
+          {(["USD", "ARS"] as const).map((option) => (
             <button
               key={option}
               type="button"
@@ -121,6 +124,34 @@ export function PlansPricing({
               {option}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className={cn(
+        "rounded-xl border p-4",
+        exchangeRate ? "border-border bg-muted/35" : "border-amber-500/25 bg-amber-500/[0.07]"
+      )}>
+        <div className="flex items-start gap-3">
+          {!exchangeRate && <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />}
+          <div>
+            <p className="text-sm font-semibold">Cotización utilizada</p>
+            {exchangeRate ? (
+              <>
+                <p className="mt-1 text-sm">1 USD = {formatRate(exchangeRate)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Actualizado: {formatUpdatedAt(exchange.updatedAt)}
+                  {exchange.source === "DolarHoy" ? " · Fuente: DolarHoy" : ""}
+                  {exchange.source && exchange.source !== "DolarHoy"
+                    ? ` · Fuente: ${exchange.source}`
+                    : ""}
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                ARS está temporalmente no disponible. Para evitar mostrar una cotización inventada, los planes continúan en USD.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -174,28 +205,6 @@ export function PlansPricing({
           );
         })}
       </section>
-
-      <div className={cn(
-        "rounded-xl border p-4",
-        exchangeRate ? "border-border bg-muted/35" : "border-amber-500/25 bg-amber-500/[0.07]"
-      )}>
-        <div className="flex items-start gap-3">
-          {!exchangeRate && <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />}
-          <div>
-            <p className="text-sm font-semibold">Cotización del dólar utilizada</p>
-            {exchangeRate ? (
-              <>
-                <p className="mt-1 text-sm">1 USD = {formatRate(exchangeRate)}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Actualizado: {formatUpdatedAt(exchangeUpdatedAt)}</p>
-              </>
-            ) : (
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                La cotización ARS no está configurada. Para evitar mostrar un precio inventado, los planes se mantienen en USD.
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
 
       <div className="rounded-xl border border-border bg-muted/35 px-4 py-3 text-sm text-muted-foreground">
         Las tarifas variables de mensajería de Meta y los consumos extraordinarios pueden cobrarse por separado.

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { PageHeader } from "@/components/dashboard/page-header";
+import { KnowledgeModuleHeader } from "@/components/conocimiento/knowledge-module-header";
 import { FaqsView } from "@/components/preguntas/faqs-view";
 import { can } from "@/lib/permissions";
 import { requireOrgContext } from "@/server/context";
@@ -32,7 +32,7 @@ export default async function PreguntasPage(
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <KnowledgeModuleHeader
         title="Preguntas frecuentes"
         description="Las respuestas que tu agente va a usar ante las consultas más comunes."
       />

@@ -2,6 +2,10 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { prisma } from "@/lib/prisma";
+import {
+  getGoogleSocialProviderConfig,
+  GOOGLE_ACCOUNT_LINKING,
+} from "@/lib/google-auth";
 
 /** Dominio oficial de producción: fallback estable si falta BETTER_AUTH_URL. */
 const OFFICIAL_ORIGIN = "https://proyecto-vantix-app.vercel.app";
@@ -38,6 +42,7 @@ const trustedOrigins = Array.from(
 );
 
 const allowedHosts = trustedOrigins.map((origin) => new URL(origin).host);
+const googleProvider = getGoogleSocialProviderConfig();
 
 export const auth = betterAuth({
   appName: "VantixApp",
@@ -52,6 +57,11 @@ export const auth = betterAuth({
   trustedOrigins,
   secret: process.env.BETTER_AUTH_SECRET,
   database: prismaAdapter(prisma, { provider: "postgresql" }),
+  socialProviders: googleProvider ? { google: googleProvider } : {},
+  account: {
+    encryptOAuthTokens: true,
+    accountLinking: GOOGLE_ACCOUNT_LINKING,
+  },
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,

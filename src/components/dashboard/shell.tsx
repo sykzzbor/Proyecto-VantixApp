@@ -279,7 +279,8 @@ export function DashboardShell({
           <div
             className={cn(
               "flex w-full flex-col",
-              pathname.startsWith("/dashboard/conversaciones")
+              pathname.startsWith("/dashboard/conversaciones") ||
+                pathname.startsWith("/dashboard/agente")
                 ? "h-full min-h-0"
                 : "mx-auto min-h-full max-w-[1440px]"
             )}

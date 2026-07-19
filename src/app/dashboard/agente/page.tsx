@@ -35,9 +35,10 @@ export default async function AgentePage({
   const configured = isAgentConfigured();
   const enabled = settings?.enabled ?? false;
   const canEditAgent = can(role, "agent.update");
+  const activeView = params.vista === "configuracion" ? "configuracion" : "chat";
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full min-h-0 flex-col gap-4 sm:gap-5">
       <PageHeader
         title="Agente IA"
         description="Un único lugar para definir la identidad, el comportamiento y la puesta en marcha del asistente principal."
@@ -94,9 +95,9 @@ export default async function AgentePage({
       </section>
 
       <Tabs
-        key={params.vista === "configuracion" ? "configuracion" : "chat"}
-        defaultValue={params.vista === "configuracion" ? "configuracion" : "chat"}
-        className="space-y-4"
+        key={activeView}
+        defaultValue={activeView}
+        className="flex min-h-0 flex-1 flex-col gap-4"
       >
         <TabsList className="w-full sm:w-fit">
           <TabsTrigger value="chat">
@@ -109,7 +110,7 @@ export default async function AgentePage({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="chat">
+        <TabsContent value="chat" className="mt-0 min-h-0 flex-1">
           <TestChat
             enabled={settings?.enabled ?? false}
             configured={configured}
@@ -120,7 +121,7 @@ export default async function AgentePage({
           />
         </TabsContent>
 
-        <TabsContent value="configuracion">
+        <TabsContent value="configuracion" className="mt-0">
           <AgentForm
             canEdit={canEditAgent}
             configured={configured}

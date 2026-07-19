@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { PageHeader } from "@/components/dashboard/page-header";
+import { KnowledgeModuleHeader } from "@/components/conocimiento/knowledge-module-header";
 import { ServicesView } from "@/components/servicios/services-view";
 import { can } from "@/lib/permissions";
 import { requireOrgContext } from "@/server/context";
@@ -25,7 +25,7 @@ export default async function ServiciosPage(
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <KnowledgeModuleHeader
         title="Servicios"
         description="Los servicios que ofrece tu negocio, con precios y duración."
       />

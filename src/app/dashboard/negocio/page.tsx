@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { PageHeader } from "@/components/dashboard/page-header";
+import { KnowledgeModuleHeader } from "@/components/conocimiento/knowledge-module-header";
 import { BusinessForm } from "@/components/negocio/business-form";
 import { can } from "@/lib/permissions";
 import { requireOrgContext } from "@/server/context";
@@ -15,7 +15,7 @@ export default async function NegocioPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <KnowledgeModuleHeader
         title="Negocio"
         description="La información pública de tu negocio. El agente la va a usar para responder sobre horarios, ubicación y contacto."
       />

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { PageHeader } from "@/components/dashboard/page-header";
+import { KnowledgeModuleHeader } from "@/components/conocimiento/knowledge-module-header";
 import { ProductsView } from "@/components/productos/products-view";
 import { can } from "@/lib/permissions";
 import { requireOrgContext } from "@/server/context";
@@ -32,7 +32,7 @@ export default async function ProductosPage(
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <KnowledgeModuleHeader
         title="Productos"
         description="El catálogo de productos que tu agente va a usar para responder consultas."
       />

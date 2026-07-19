@@ -60,13 +60,34 @@ export function TestChat({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const shouldStickToBottomRef = useRef(true);
+  const initialScrollDoneRef = useRef(false);
 
   const canSend = enabled && !sending;
 
   useEffect(() => {
     const container = scrollRef.current;
-    if (container) container.scrollTop = container.scrollHeight;
+    if (!container) return;
+
+    if (messages.length === 0 && !sending) {
+      container.scrollTop = 0;
+      initialScrollDoneRef.current = true;
+      return;
+    }
+
+    if (!initialScrollDoneRef.current || shouldStickToBottomRef.current) {
+      container.scrollTo({ top: container.scrollHeight });
+      initialScrollDoneRef.current = true;
+    }
   }, [messages.length, sending]);
+
+  function handleMessagesScroll() {
+    const container = scrollRef.current;
+    if (!container) return;
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    shouldStickToBottomRef.current = distanceFromBottom < 96;
+  }
 
   function autoresize() {
     const el = textareaRef.current;
@@ -79,6 +100,7 @@ export function TestChat({
     const text = input.trim();
     if (!text || !canSend) return;
 
+    shouldStickToBottomRef.current = true;
     setMessages((prev) => [
       ...prev,
       {
@@ -155,7 +177,7 @@ export function TestChat({
   }
 
   return (
-    <Card className="flex h-[calc(100dvh-20rem)] min-h-[28rem] flex-col gap-0 overflow-hidden p-0 sm:h-[min(700px,calc(100dvh-15rem))] sm:min-h-[32rem]">
+    <Card className="flex h-full min-h-0 min-w-0 flex-col gap-0 overflow-hidden p-0">
       {/* Encabezado */}
       <div className="flex min-h-16 items-center gap-3 border-b border-border bg-card/95 px-4 py-3">
         <div className="flex size-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
@@ -210,10 +232,14 @@ export function TestChat({
       )}
 
       {/* Mensajes */}
-      <div ref={scrollRef} className="conversation-canvas flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5">
+      <div
+        ref={scrollRef}
+        onScroll={handleMessagesScroll}
+        className="conversation-canvas min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4 sm:px-5"
+      >
         {messages.length === 0 && !sending ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-            <div className="flex size-12 items-center justify-center rounded-xl border border-primary/15 bg-primary/10">
+            <div className="hidden size-12 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 sm:flex">
               <Bot className="size-6 text-primary" aria-hidden />
             </div>
             <div>
@@ -246,7 +272,7 @@ export function TestChat({
                 )}
                 <div
                   className={cn(
-                    "max-w-[84%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words shadow-sm",
+                    "min-w-0 max-w-[84%] overflow-hidden rounded-xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] shadow-sm",
                     message.role === "user"
                       ? "rounded-br-sm bg-primary text-primary-foreground"
                       : "rounded-bl-sm border border-primary/20 bg-primary/10"
@@ -295,7 +321,7 @@ export function TestChat({
 
       {/* Entrada */}
       <form
-        className="flex items-end gap-2 border-t border-border bg-card p-3"
+        className="flex shrink-0 items-end gap-2 border-t border-border bg-card p-3"
         onSubmit={(event) => {
           event.preventDefault();
           send();

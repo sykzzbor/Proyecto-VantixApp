@@ -19,10 +19,20 @@ import { FieldError } from "@/components/forms/field-error";
 import { FormAlert } from "@/components/forms/form-alert";
 import { SubmitButton } from "@/components/forms/submit-button";
 import { AuthCardHeader } from "@/components/auth/auth-card-header";
+import { GoogleAuthButton } from "@/components/auth/google-auth-button";
+import { PasswordInput } from "@/components/auth/password-input";
 
-export function LoginForm({ callbackURL }: { callbackURL: string }) {
+export function LoginForm({
+  callbackURL,
+  googleConfigured,
+  initialError,
+}: {
+  callbackURL: string;
+  googleConfigured: boolean;
+  initialError?: string | null;
+}) {
   const router = useRouter();
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(initialError ?? null);
   const {
     register,
     handleSubmit,
@@ -56,6 +66,19 @@ export function LoginForm({ callbackURL }: { callbackURL: string }) {
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
         <CardContent className="space-y-4">
           <FormAlert message={formError} />
+          <GoogleAuthButton
+            mode="login"
+            configured={googleConfigured}
+            callbackURL={callbackURL}
+            onError={(message) => setFormError(message || null)}
+          />
+          <div className="flex items-center gap-3" aria-hidden>
+            <span className="h-px flex-1 bg-border" />
+            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+              o continuá con
+            </span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
@@ -78,9 +101,8 @@ export function LoginForm({ callbackURL }: { callbackURL: string }) {
                 ¿La olvidaste?
               </Link>
             </div>
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
               autoComplete="current-password"
               placeholder="Tu contraseña"
               aria-invalid={Boolean(errors.password)}

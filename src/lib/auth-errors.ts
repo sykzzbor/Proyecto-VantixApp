@@ -14,13 +14,21 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   FAILED_TO_CREATE_USER: "No se pudo crear la cuenta. Intentá de nuevo.",
   FAILED_TO_CREATE_SESSION: "No se pudo iniciar sesión. Intentá de nuevo.",
   EMAIL_NOT_VERIFIED: "Tu email todavía no fue verificado.",
+  PROVIDER_NOT_FOUND: "El acceso con Google no está configurado en este entorno.",
+  INVALID_CALLBACK_REQUEST:
+    "La respuesta de Google no es válida o venció. Intentá de nuevo.",
+  OAUTH_LINK_ERROR:
+    "No se pudo vincular esta cuenta de forma segura. Iniciá sesión con tu método habitual.",
+  EMAIL_DOESN_T_MATCH:
+    "La cuenta de Google no coincide con el email de tu cuenta.",
 };
 
 export function translateAuthError(
   error: { code?: string | undefined; message?: string | undefined } | null
 ): string {
-  if (error?.code && AUTH_ERROR_MESSAGES[error.code]) {
-    return AUTH_ERROR_MESSAGES[error.code];
+  const code = error?.code?.trim().toUpperCase().replaceAll("'", "_");
+  if (code && AUTH_ERROR_MESSAGES[code]) {
+    return AUTH_ERROR_MESSAGES[code];
   }
   return "No se pudo completar la operación. Intentá de nuevo.";
 }
