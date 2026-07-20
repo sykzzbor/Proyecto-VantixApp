@@ -16,6 +16,7 @@ import {
 } from "@/server/agent/tools";
 import {
   AgentProviderError,
+  type AgentProviderErrorCode,
   type AgentRunParams,
   type AgentRunResult,
 } from "@/server/agent/types";
@@ -23,6 +24,29 @@ import {
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_TOOL_ROUNDS = 4;
 const MAX_OUTPUT_TOKENS = 1200;
+
+/**
+ * Traduce un error del SDK de Anthropic a un código interno seguro (sin
+ * exponer mensajes, headers ni cuerpos). El código sirve para logs y para
+ * elegir el mensaje visible del chat.
+ */
+export function classifyAnthropicError(error: unknown): AgentProviderErrorCode {
+  if (error instanceof AgentProviderError) return error.code;
+  const status =
+    typeof error === "object" && error !== null && "status" in error
+      ? Number((error as { status?: unknown }).status)
+      : undefined;
+  const name = error instanceof Error ? error.name : "";
+  if (name.includes("Timeout") || name.includes("Connection")) return "timeout";
+  if (status === 401 || status === 403) return "auth_error";
+  if (status === 429) return "rate_limited";
+  if (status === 400 || status === 404 || status === 422) return "bad_request";
+  if (status === 529) return "overloaded";
+  // Créditos/saldo agotado suele llegar como 400 con tipo billing, pero el SDK
+  // lo expone en el nombre del error en algunas versiones.
+  if (/quota|credit|billing|insufficient/i.test(name)) return "insufficient_quota";
+  return "provider_error";
+}
 
 let client: Anthropic | null = null;
 let clientKey: string | null = null;
@@ -127,31 +151,43 @@ export async function runAnthropicProvider(
   let cacheWriteTokens = 0;
   let toolCallsCount = 0;
   while (true) {
-    const response = await createMessage({
-      model,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      system: params.instructions,
-      messages,
-      tools: ANTHROPIC_AGENT_TOOLS,
-    });
+    // Al agotar las rondas de herramientas se fuerza una respuesta de texto
+    // (sin tools) en vez de cortar la conversación con un error: el cliente
+    // igual recibe una respuesta útil.
+    const allowTools = toolRounds < MAX_TOOL_ROUNDS;
+    let response: Message;
+    try {
+      response = await createMessage({
+        model,
+        max_tokens: MAX_OUTPUT_TOKENS,
+        system: params.instructions,
+        messages,
+        tools: allowTools ? ANTHROPIC_AGENT_TOOLS : [],
+      });
+    } catch (error) {
+      // Cualquier error del SDK se traduce a un código seguro (sin datos).
+      throw new AgentProviderError(classifyAnthropicError(error));
+    }
     inputTokens += response.usage.input_tokens ?? 0;
     outputTokens += response.usage.output_tokens ?? 0;
     cacheReadTokens += response.usage.cache_read_input_tokens ?? 0;
     cacheWriteTokens += response.usage.cache_creation_input_tokens ?? 0;
-    const toolUses = response.content.filter(
-      (block): block is ToolUseBlock => block.type === "tool_use"
-    );
+    const toolUses = allowTools
+      ? response.content.filter(
+          (block): block is ToolUseBlock => block.type === "tool_use"
+        )
+      : [];
 
     if (response.stop_reason !== "tool_use" || toolUses.length === 0) {
       const reply = finalText(response);
-      if (
-        !reply ||
-        !["end_turn", "stop_sequence"].includes(response.stop_reason ?? "")
-      ) {
+      // Un texto no vacío es una respuesta válida aunque el motivo de parada
+      // sea "max_tokens" (respuesta larga truncada) u otro distinto de
+      // end_turn. Solo se considera error cuando no hay texto para el cliente.
+      if (!reply) {
         throw new AgentProviderError("empty_response");
       }
       console.info(
-        `[VantixApp] agente ok provider=anthropic org=${params.ctx.organizationId} tokens_in=${response.usage.input_tokens} tokens_out=${response.usage.output_tokens}`
+        `[VantixApp] agente ok provider=anthropic org=${params.ctx.organizationId} stop=${response.stop_reason} tokens_in=${response.usage.input_tokens} tokens_out=${response.usage.output_tokens}`
       );
       return {
         reply,
@@ -168,9 +204,6 @@ export async function runAnthropicProvider(
       };
     }
 
-    if (toolRounds >= MAX_TOOL_ROUNDS) {
-      throw new AgentProviderError("tool_round_limit");
-    }
     toolRounds += 1;
     toolCallsCount += toolUses.length;
     messages.push({ role: "assistant", content: assistantContent(response) });

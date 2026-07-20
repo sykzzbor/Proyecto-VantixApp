@@ -55,3 +55,20 @@ export function isAgentConfigured(
 export function getAnthropicModel(): string {
   return process.env.ANTHROPIC_MODEL?.trim() ?? "";
 }
+
+export type AgentConfigStatus = "ready" | "demo" | "misconfigured";
+
+/**
+ * Distingue tres estados para dar un mensaje preciso al chat:
+ * - `ready`: proveedor real con credenciales y modelo.
+ * - `demo`: modo demostración deliberado (no hay proveedor pago).
+ * - `misconfigured`: se eligió un proveedor real pero falta la clave o el
+ *   modelo (por ejemplo `AI_PROVIDER=anthropic` sin `ANTHROPIC_MODEL`).
+ */
+export function getAgentConfigStatus(
+  env: AIProviderEnvironment = currentEnvironment()
+): AgentConfigStatus {
+  const provider = getAIProviderMode(env);
+  if (provider === "demo") return "demo";
+  return isAIProviderConfigured(provider, env) ? "ready" : "misconfigured";
+}

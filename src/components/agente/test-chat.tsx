@@ -54,6 +54,9 @@ export function TestChat({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Texto del último mensaje que falló: habilita el botón "Reintentar" sin
+  // volver a escribirlo (la burbuja del cliente ya quedó en el hilo).
+  const [lastFailedText, setLastFailedText] = useState<string | null>(null);
   const [humanTakeover, setHumanTakeover] = useState(initialHumanTakeover);
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -96,25 +99,12 @@ export function TestChat({
     el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
   }
 
-  async function send() {
-    const text = input.trim();
-    if (!text || !canSend) return;
-
-    shouldStickToBottomRef.current = true;
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `local-${Date.now()}`,
-        role: "user",
-        content: text,
-        timeLabel: nowLabel(),
-      },
-    ]);
-    setInput("");
+  // Envía el texto al servidor y actualiza el hilo. No agrega la burbuja del
+  // cliente: de eso se encargan `send` (primer intento) y el hilo ya existente
+  // (reintento). El `finally` siempre libera el estado de carga.
+  async function deliver(text: string) {
     setError(null);
     setSending(true);
-    requestAnimationFrame(autoresize);
-
     try {
       const response = await fetch("/api/agent/chat", {
         method: "POST",
@@ -134,12 +124,14 @@ export function TestChat({
       // y la IA no responde. El banner de atención humana lo explica.
       if (response.ok && data?.humanMode) {
         setHumanTakeover(true);
+        setLastFailedText(null);
         return;
       }
 
       const reply = data?.reply;
       if (!response.ok || !reply) {
         setError(data?.message ?? "No se pudo enviar el mensaje. Probá de nuevo.");
+        setLastFailedText(text);
         return;
       }
 
@@ -152,13 +144,41 @@ export function TestChat({
           timeLabel: data?.timeLabel ?? nowLabel(),
         },
       ]);
+      setLastFailedText(null);
       if (data.humanTakeover) setHumanTakeover(true);
     } catch {
       setError("No se pudo conectar con el servidor. Revisá tu conexión.");
+      setLastFailedText(text);
     } finally {
       setSending(false);
       textareaRef.current?.focus();
     }
+  }
+
+  async function send() {
+    const text = input.trim();
+    if (!text || !canSend) return;
+
+    shouldStickToBottomRef.current = true;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `local-${Date.now()}`,
+        role: "user",
+        content: text,
+        timeLabel: nowLabel(),
+      },
+    ]);
+    setInput("");
+    requestAnimationFrame(autoresize);
+    await deliver(text);
+  }
+
+  // Reintenta el último mensaje fallido reutilizando su burbuja del hilo.
+  async function retry() {
+    if (!lastFailedText || !canSend) return;
+    shouldStickToBottomRef.current = true;
+    await deliver(lastFailedText);
   }
 
   async function handleClear() {
@@ -315,7 +335,23 @@ export function TestChat({
       {error && (
         <div className="flex items-start gap-2 border-t bg-destructive/5 px-4 py-2.5 text-sm text-destructive">
           <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <p>{error}</p>
+          <p className="flex-1">{error}</p>
+          {lastFailedText && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 shrink-0 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              disabled={sending}
+              onClick={retry}
+            >
+              <RotateCcw
+                className={cn("size-3.5", sending && "animate-spin")}
+                aria-hidden
+              />
+              Reintentar
+            </Button>
+          )}
         </div>
       )}
 

@@ -3,12 +3,17 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chatRequestSchema } from "@/lib/validations/chat";
 import {
+  getAgentConfigStatus,
   getAIProviderMode,
-  isAgentConfigured,
+  getAnthropicModel,
 } from "@/server/agent/config";
 import { buildAgentInstructions } from "@/server/agent/prompt";
 import { getAppointmentReadiness } from "@/server/appointments/service";
-import { AgentRunError, runAgent } from "@/server/agent/run";
+import {
+  AgentRunError,
+  agentErrorMessage,
+  runAgent,
+} from "@/server/agent/run";
 import type { AgentToolContext } from "@/server/agent/tools";
 import { recordAiUsage } from "@/server/agent/usage";
 import { recordAudit } from "@/server/audit";
@@ -30,7 +35,29 @@ function jsonError(status: number, error: string, message: string) {
   return NextResponse.json({ error, message }, { status });
 }
 
+/**
+ * Log estructurado del lado servidor. Solo metadatos seguros: nunca el
+ * contenido del mensaje, claves, tokens ni cuerpos de error.
+ */
+function logAgentEvent(fields: {
+  requestId: string;
+  stage: "config" | "provider" | "ok" | "human" | "error";
+  provider?: string;
+  model?: "set" | "missing";
+  organizationId?: string;
+  conversationId?: string;
+  durationMs?: number;
+  errorCode?: string;
+}) {
+  const parts = Object.entries(fields)
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(" ");
+  console.info(`[VantixApp] agent-chat ${parts}`);
+}
+
 export async function POST(request: NextRequest) {
+  const requestId = crypto.randomUUID();
   try {
     // 1. Sesión autenticada.
     const session = await auth.api.getSession({ headers: request.headers });
@@ -139,7 +166,8 @@ export async function POST(request: NextRequest) {
         "El agente está desactivado. Activalo desde la configuración del agente."
       );
     }
-    if (!isAgentConfigured()) {
+    const configStatus = getAgentConfigStatus();
+    if (configStatus !== "ready") {
       await recordAudit({
         organizationId,
         userId: session.user.id,
@@ -148,13 +176,24 @@ export async function POST(request: NextRequest) {
         entityId: conversation.id,
         details: {
           proveedor: getAIProviderMode(),
-          codigo: "not_configured",
+          codigo: configStatus === "demo" ? "demo" : "not_configured",
         },
+      });
+      logAgentEvent({
+        requestId,
+        stage: "config",
+        provider: getAIProviderMode(),
+        model: getAnthropicModel() ? "set" : "missing",
+        organizationId,
+        conversationId: conversation.id,
+        errorCode: configStatus,
       });
       return jsonError(
         503,
         "agent_not_configured",
-        "Las respuestas automáticas están en modo demo o no hay un proveedor de IA real configurado."
+        configStatus === "demo"
+          ? "Las respuestas automáticas están en modo demostración. Configurá un proveedor de IA real para probarlas."
+          : "El proveedor de IA no está configurado correctamente."
       );
     }
 
@@ -221,7 +260,7 @@ export async function POST(request: NextRequest) {
           entityId: conversation.id,
           details: {
             proveedor: getAIProviderMode(),
-            codigo: error.code,
+            codigo: error.providerCode,
           },
         });
         await recordAiUsage({
@@ -230,13 +269,19 @@ export async function POST(request: NextRequest) {
           provider: getAIProviderMode(),
           latencyMs: Date.now() - startedAt,
           success: false,
-          errorType: error.code,
+          errorType: error.providerCode,
         });
-        return jsonError(
-          502,
-          "agent_error",
-          "No se pudo generar la respuesta. Probá de nuevo en unos segundos."
-        );
+        logAgentEvent({
+          requestId,
+          stage: "provider",
+          provider: getAIProviderMode(),
+          model: getAnthropicModel() ? "set" : "missing",
+          organizationId,
+          conversationId: conversation.id,
+          durationMs: Date.now() - startedAt,
+          errorCode: error.providerCode,
+        });
+        return jsonError(502, "agent_error", agentErrorMessage(error.providerCode));
       }
       throw error;
     }
@@ -260,6 +305,16 @@ export async function POST(request: NextRequest) {
       success: true,
     });
 
+    logAgentEvent({
+      requestId,
+      stage: "ok",
+      provider: getAIProviderMode(),
+      model: getAnthropicModel() ? "set" : "missing",
+      organizationId,
+      conversationId: conversation.id,
+      durationMs: Date.now() - startedAt,
+    });
+
     return NextResponse.json({
       reply,
       humanTakeover: result.humanTakeover,
@@ -268,8 +323,8 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error(
-      "[VantixApp] Error inesperado en /api/agent/chat:",
-      error instanceof Error ? error.message : "desconocido"
+      `[VantixApp] agent-chat requestId=${requestId} stage=error`,
+      error instanceof Error ? error.name : "desconocido"
     );
     return jsonError(500, "internal_error", "Ocurrió un error inesperado.");
   }

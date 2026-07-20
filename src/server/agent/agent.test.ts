@@ -5,17 +5,19 @@ import type {
   MessageCreateParamsNonStreaming,
 } from "@anthropic-ai/sdk/resources/messages/messages";
 import {
+  getAgentConfigStatus,
   getAIProviderMode,
   isAgentConfigured,
   isAIProviderConfigured,
 } from "@/server/agent/config";
 import {
   ANTHROPIC_AGENT_TOOLS,
+  classifyAnthropicError,
   runAnthropicProvider,
   type AnthropicMessageCreator,
 } from "@/server/agent/providers/anthropic";
 import { OPENAI_AGENT_TOOLS } from "@/server/agent/providers/openai";
-import { AgentRunError, runAgent } from "@/server/agent/run";
+import { AgentRunError, agentErrorMessage, runAgent } from "@/server/agent/run";
 import type { AgentToolContext } from "@/server/agent/tools";
 import type { AgentRunParams } from "@/server/agent/types";
 import { getWhatsappAgentFallbackReason } from "@/server/whatsapp/automation";
@@ -27,7 +29,7 @@ import type {
 
 function message(
   content: Array<Record<string, unknown>>,
-  stopReason: "end_turn" | "tool_use" = "end_turn"
+  stopReason: "end_turn" | "tool_use" | "max_tokens" | "refusal" = "end_turn"
 ): Message {
   return {
     id: `msg_${Math.random()}`,
@@ -361,6 +363,131 @@ test("Anthropic mantiene aislamiento por organización", async () => {
     },
   });
   assert.equal(trustedOrganization, "org-confiable");
+});
+
+test("respuesta larga cortada por max_tokens se devuelve igual (no se descarta)", async () => {
+  // Regresión: antes se exigía stop_reason end_turn/stop_sequence y una
+  // respuesta larga (stop_reason=max_tokens) se tiraba como empty_response,
+  // dejando al chat sin respuesta.
+  const result = await runAnthropicProvider(runParams(), {
+    model: "claude-haiku-4-5-20251001",
+    createMessage: async () =>
+      message(
+        [{ type: "text", text: "Respuesta larga truncada pero útil." }],
+        "max_tokens"
+      ),
+  });
+  assert.equal(result.reply, "Respuesta larga truncada pero útil.");
+});
+
+test("respuesta realmente vacía sigue siendo empty_response", async () => {
+  await assert.rejects(
+    runAnthropicProvider(runParams(), {
+      model: "claude-haiku-4-5-20251001",
+      createMessage: async () => message([{ type: "text", text: "   " }], "max_tokens"),
+    }),
+    (error: unknown) =>
+      error instanceof Error && error.message === "empty_response"
+  );
+});
+
+test("al agotar rondas de herramientas fuerza una respuesta sin tools", async () => {
+  let call = 0;
+  const requests: Array<{ tools: unknown }> = [];
+  const result = await runAnthropicProvider(runParams(), {
+    model: "claude-haiku-4-5-20251001",
+    createMessage: async (request) => {
+      requests.push({ tools: request.tools });
+      call += 1;
+      // Las primeras 4 rondas piden herramientas; la 5ª ya llega sin tools.
+      if (call <= 4) {
+        return message(
+          [
+            {
+              type: "tool_use",
+              id: `toolu_${call}`,
+              name: "search_products",
+              input: { query: "x", category: null },
+            },
+          ],
+          "tool_use"
+        );
+      }
+      return message([{ type: "text", text: "Con lo que tengo, te confirmo esto." }]);
+    },
+    executeTool: async () => JSON.stringify({ ok: true }),
+  });
+  assert.equal(result.reply, "Con lo que tengo, te confirmo esto.");
+  // La llamada final se hizo sin herramientas disponibles.
+  assert.deepEqual(requests[requests.length - 1]?.tools, []);
+});
+
+test("classifyAnthropicError mapea estados a códigos seguros", () => {
+  assert.equal(classifyAnthropicError({ status: 401 }), "auth_error");
+  assert.equal(classifyAnthropicError({ status: 403 }), "auth_error");
+  assert.equal(classifyAnthropicError({ status: 429 }), "rate_limited");
+  assert.equal(classifyAnthropicError({ status: 400 }), "bad_request");
+  assert.equal(classifyAnthropicError({ status: 529 }), "overloaded");
+  const timeout = new Error("x");
+  timeout.name = "APIConnectionTimeoutError";
+  assert.equal(classifyAnthropicError(timeout), "timeout");
+  const quota = new Error("x");
+  quota.name = "InsufficientQuotaError";
+  assert.equal(classifyAnthropicError(quota), "insufficient_quota");
+  assert.equal(classifyAnthropicError(new Error("otra cosa")), "provider_error");
+});
+
+test("un error 401 del SDK llega como provider_error con código auth_error", async () => {
+  await assert.rejects(
+    runAgent(runParams(), {
+      provider: "anthropic",
+      configured: true,
+      anthropicRunner: (params) =>
+        runAnthropicProvider(params, {
+          model: "claude-haiku-4-5-20251001",
+          createMessage: async () => {
+            throw { status: 401, message: "no debe verse" };
+          },
+        }),
+    }),
+    (error: unknown) =>
+      error instanceof AgentRunError &&
+      error.code === "provider_error" &&
+      error.providerCode === "auth_error"
+  );
+});
+
+test("getAgentConfigStatus distingue demo, mal configurado y listo", () => {
+  assert.equal(getAgentConfigStatus({ AI_PROVIDER: "demo" }), "demo");
+  assert.equal(
+    getAgentConfigStatus({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "k" }),
+    "misconfigured"
+  );
+  assert.equal(
+    getAgentConfigStatus({
+      AI_PROVIDER: "anthropic",
+      ANTHROPIC_API_KEY: "k",
+      ANTHROPIC_MODEL: "claude-haiku-4-5-20251001",
+    }),
+    "ready"
+  );
+});
+
+test("los mensajes de error del chat son claros y sin secretos", () => {
+  for (const code of [
+    "not_configured",
+    "auth_error",
+    "rate_limited",
+    "insufficient_quota",
+    "timeout",
+    "overloaded",
+    "empty_response",
+    "provider_error",
+  ] as const) {
+    const text = agentErrorMessage(code);
+    assert.ok(text.length > 0);
+    assert.doesNotMatch(text, /key|token|status|\bsk-|api[_-]?key/i);
+  }
 });
 
 test("WhatsApp no crea jobs de IA cuando handling_mode es humano", async () => {

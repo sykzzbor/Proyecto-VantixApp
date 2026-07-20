@@ -32,14 +32,20 @@ export type AgentProviderRunner = (
   params: AgentRunParams
 ) => Promise<AgentRunResult>;
 
+export type AgentProviderErrorCode =
+  | "not_configured"
+  | "provider_error"
+  | "empty_response"
+  | "tool_round_limit"
+  | "auth_error"
+  | "rate_limited"
+  | "insufficient_quota"
+  | "timeout"
+  | "overloaded"
+  | "bad_request";
+
 export class AgentProviderError extends Error {
-  constructor(
-    public readonly code:
-      | "not_configured"
-      | "provider_error"
-      | "empty_response"
-      | "tool_round_limit"
-  ) {
+  constructor(public readonly code: AgentProviderErrorCode) {
     super(code);
     this.name = "AgentProviderError";
   }
