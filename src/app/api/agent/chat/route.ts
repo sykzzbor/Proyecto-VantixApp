@@ -28,6 +28,14 @@ import { formatTime } from "@/lib/format";
 import { findActiveMembership } from "@/server/context";
 import { getOrganizationEntitlement } from "@/server/billing/entitlement";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+// El turno del agente puede tardar más que el límite por defecto de Vercel
+// (10 s): la llamada a Anthropic tiene un timeout de 30 s y puede haber
+// varias rondas de herramientas. Sin esto, la función muere a mitad de la
+// respuesta y el chat "no responde".
+export const maxDuration = 60;
+
 const RATE_LIMIT_MESSAGES = 20;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 

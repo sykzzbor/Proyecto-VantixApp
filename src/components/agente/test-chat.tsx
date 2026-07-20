@@ -121,10 +121,13 @@ export function TestChat({
       } | null = await response.json().catch(() => null);
 
       // La conversación está en manos del equipo: el mensaje quedó guardado
-      // y la IA no responde. El banner de atención humana lo explica.
+      // y la IA no responde. Sin este aviso, para el usuario "no pasa nada".
       if (response.ok && data?.humanMode) {
         setHumanTakeover(true);
         setLastFailedText(null);
+        toast.info(
+          "Tu mensaje se guardó, pero esta conversación está en atención humana: la IA no responde. Reiniciá la conversación para volver a probar al agente."
+        );
         return;
       }
 
