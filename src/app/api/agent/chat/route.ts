@@ -257,6 +257,14 @@ export async function POST(request: NextRequest) {
             content: message.content,
           })),
         userMessage: parsed.data.message,
+        // Solo se ofrecen las herramientas que esta organización puede usar.
+        capabilities: {
+          appointments: appointmentReadiness?.ready ?? false,
+          knowledge: knowledgeCount > 0,
+        },
+        // La función serverless muere a los 60 s: el agente corta bastante
+        // antes para que el cliente reciba respuesta o error, nunca un corte.
+        deadlineMs: 25_000,
       });
     } catch (error) {
       if (error instanceof AgentRunError) {

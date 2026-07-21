@@ -160,6 +160,12 @@ export async function handleWhatsappAutomaticResponse(
           content: message.content,
         })),
       userMessage: job.event.content,
+      // Mismo criterio que el chat de prueba: solo se ofrecen las herramientas
+      // realmente disponibles, para no gastar rondas en algo que va a fallar.
+      capabilities: {
+        appointments: appointmentReadiness?.ready ?? false,
+        knowledge: knowledgeCount > 0,
+      },
     });
   } catch {
     await recordAudit({

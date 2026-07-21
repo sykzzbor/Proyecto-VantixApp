@@ -13,7 +13,9 @@ import {
 import {
   ANTHROPIC_AGENT_TOOLS,
   classifyAnthropicError,
+  isSmallTalk,
   runAnthropicProvider,
+  toolsForCapabilities,
   type AnthropicMessageCreator,
 } from "@/server/agent/providers/anthropic";
 import { OPENAI_AGENT_TOOLS } from "@/server/agent/providers/openai";
@@ -392,20 +394,18 @@ test("respuesta realmente vacía sigue siendo empty_response", async () => {
 });
 
 test("al agotar rondas de herramientas fuerza una respuesta sin tools", async () => {
-  let call = 0;
   const requests: Array<{ tools: unknown }> = [];
   const result = await runAnthropicProvider(runParams(), {
     model: "claude-haiku-4-5-20251001",
     createMessage: async (request) => {
       requests.push({ tools: request.tools });
-      call += 1;
-      // Las primeras 4 rondas piden herramientas; la 5ª ya llega sin tools.
-      if (call <= 4) {
+      // El modelo insiste con herramientas en cada ronda permitida.
+      if (Array.isArray(request.tools) && request.tools.length > 0) {
         return message(
           [
             {
               type: "tool_use",
-              id: `toolu_${call}`,
+              id: `toolu_${requests.length}`,
               name: "search_products",
               input: { query: "x", category: null },
             },
@@ -418,8 +418,187 @@ test("al agotar rondas de herramientas fuerza una respuesta sin tools", async ()
     executeTool: async () => JSON.stringify({ ok: true }),
   });
   assert.equal(result.reply, "Con lo que tengo, te confirmo esto.");
-  // La llamada final se hizo sin herramientas disponibles.
+  // Tope duro: 2 rondas con tools + 1 llamada final sin tools.
+  assert.equal(requests.length, 3);
   assert.deepEqual(requests[requests.length - 1]?.tools, []);
+});
+
+test("un saludo se responde en una sola llamada y sin herramientas", async () => {
+  const requests: Array<{ tools: unknown }> = [];
+  const result = await runAnthropicProvider(
+    { ...runParams(), userMessage: "Hola!" },
+    {
+      model: "claude-haiku-4-5-20251001",
+      createMessage: async (request) => {
+        requests.push({ tools: request.tools });
+        return message([{ type: "text", text: "¡Hola! ¿En qué te ayudo?" }]);
+      },
+      executeTool: async () => {
+        throw new Error("no debía usar herramientas para un saludo");
+      },
+    }
+  );
+  assert.equal(result.reply, "¡Hola! ¿En qué te ayudo?");
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0]?.tools, []);
+});
+
+test("isSmallTalk solo acepta el saludo puro, no una consulta real", () => {
+  for (const simple of ["hola", "Hola!", "buenas tardes", "Gracias", "  chau  "]) {
+    assert.equal(isSmallTalk(simple), true, simple);
+  }
+  for (const real of [
+    "hola, ¿tienen turnos?",
+    "gracias, ¿me reservás el martes?",
+    "si",
+    "dale",
+    "¿cuánto sale el corte?",
+  ]) {
+    assert.equal(isSmallTalk(real), false, real);
+  }
+});
+
+test("las tools se filtran según lo que la organización tiene activo", () => {
+  const sinNada = toolsForCapabilities({ appointments: false, knowledge: false }).map(
+    (tool) => tool.name
+  );
+  assert.equal(sinNada.includes("check_appointment_availability"), false);
+  assert.equal(sinNada.includes("create_appointment"), false);
+  assert.equal(sinNada.includes("search_knowledge"), false);
+  // Las de negocio siempre quedan disponibles.
+  assert.equal(sinNada.includes("search_products"), true);
+  assert.equal(sinNada.includes("request_human_support"), true);
+
+  const conTodo = toolsForCapabilities({ appointments: true, knowledge: true }).map(
+    (tool) => tool.name
+  );
+  assert.equal(conTodo.length, ANTHROPIC_AGENT_TOOLS.length);
+});
+
+test("sin agenda activa el modelo no recibe las herramientas de turnos", async () => {
+  const offered: string[][] = [];
+  await runAnthropicProvider(
+    { ...runParams(), capabilities: { appointments: false, knowledge: false } },
+    {
+      model: "claude-haiku-4-5-20251001",
+      createMessage: async (request) => {
+        offered.push((request.tools ?? []).map((tool) => tool.name));
+        return message([{ type: "text", text: "Listo." }]);
+      },
+    }
+  );
+  assert.equal(offered[0]?.includes("check_appointment_availability"), false);
+  assert.equal(offered[0]?.includes("search_products"), true);
+});
+
+test("al agotarse el presupuesto corta con deadline_exceeded antes del timeout", async () => {
+  let calls = 0;
+  await assert.rejects(
+    // Presupuesto chico (umbrales reducidos) para no esperar segundos reales.
+    runAnthropicProvider(
+      { ...runParams(), deadlineMs: 500 },
+      {
+        model: "claude-haiku-4-5-20251001",
+        budgets: { minCallMs: 100, toolsMinMs: 200 },
+        createMessage: async (request) => {
+          calls += 1;
+          // La primera llamada se come todo el presupuesto y pide otra ronda.
+          await new Promise((resolve) => setTimeout(resolve, 600));
+          const toolsOffered =
+            Array.isArray(request.tools) && request.tools.length > 0;
+          if (!toolsOffered) return message([{ type: "text", text: "listo" }]);
+          return message(
+            [
+              {
+                type: "tool_use",
+                id: "toolu_lento",
+                name: "search_products",
+                input: { query: "x", category: null },
+              },
+            ],
+            "tool_use"
+          );
+        },
+        executeTool: async () => JSON.stringify({ ok: true }),
+      }
+    ),
+    (error: unknown) =>
+      error instanceof Error && error.message === "deadline_exceeded"
+  );
+  // Cortó al agotarse el presupuesto en vez de encadenar rondas hasta morir.
+  assert.ok(calls >= 1 && calls <= 2, `llamadas=${calls}`);
+});
+
+test("sin presupuesto suficiente no se llama al proveedor en absoluto", async () => {
+  let calls = 0;
+  await assert.rejects(
+    runAnthropicProvider(
+      { ...runParams(), deadlineMs: 50 },
+      {
+        model: "claude-haiku-4-5-20251001",
+        createMessage: async () => {
+          calls += 1;
+          return message([{ type: "text", text: "no debería llamarse" }]);
+        },
+      }
+    ),
+    (error: unknown) =>
+      error instanceof Error && error.message === "deadline_exceeded"
+  );
+  assert.equal(calls, 0);
+});
+
+test("cada llamada recibe un timeout acotado al presupuesto restante", async () => {
+  const timeouts: Array<number | undefined> = [];
+  await runAnthropicProvider(
+    { ...runParams(), deadlineMs: 5_000 },
+    {
+      model: "claude-haiku-4-5-20251001",
+      createMessage: async (_request, options) => {
+        timeouts.push(options?.timeout);
+        return message([{ type: "text", text: "ok" }]);
+      },
+    }
+  );
+  assert.equal(timeouts.length, 1);
+  assert.ok(timeouts[0] !== undefined && timeouts[0] <= 5_000);
+});
+
+test("las herramientas de una misma ronda se ejecutan en paralelo", async () => {
+  let running = 0;
+  let maxConcurrent = 0;
+  const responses = [
+    message(
+      [
+        {
+          type: "tool_use",
+          id: "toolu_a",
+          name: "search_products",
+          input: { query: "a", category: null },
+        },
+        {
+          type: "tool_use",
+          id: "toolu_b",
+          name: "search_services",
+          input: { query: "b", category: null },
+        },
+      ],
+      "tool_use"
+    ),
+    message([{ type: "text", text: "Listo." }]),
+  ];
+  await runAnthropicProvider(runParams(), {
+    model: "claude-haiku-4-5-20251001",
+    createMessage: async () => responses.shift() as Message,
+    executeTool: async () => {
+      running += 1;
+      maxConcurrent = Math.max(maxConcurrent, running);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      running -= 1;
+      return JSON.stringify({ ok: true });
+    },
+  });
+  assert.equal(maxConcurrent, 2);
 });
 
 test("classifyAnthropicError mapea estados a códigos seguros", () => {

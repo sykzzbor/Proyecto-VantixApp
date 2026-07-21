@@ -21,9 +21,48 @@ import {
   type AgentRunResult,
 } from "@/server/agent/types";
 
-const REQUEST_TIMEOUT_MS = 30_000;
-const MAX_TOOL_ROUNDS = 4;
+/**
+ * Presupuestos de tiempo. La función serverless muere a los 60 s, así que el
+ * turno completo del agente tiene que terminar bastante antes para que el
+ * cliente reciba una respuesta o un error visible en vez de una conexión
+ * cortada.
+ */
+const DEFAULT_DEADLINE_MS = 25_000;
+/** Techo por llamada individual (se recorta al presupuesto restante). */
+const PER_CALL_TIMEOUT_MS = 20_000;
+/** Por debajo de esto ya no hay tiempo para otra llamada. */
+const MIN_CALL_BUDGET_MS = 3_000;
+/** Por debajo de esto se dejan de ofrecer tools para forzar una respuesta. */
+const TOOLS_MIN_BUDGET_MS = 12_000;
+const MAX_TOOL_ROUNDS = 2;
 const MAX_OUTPUT_TOKENS = 1200;
+
+/** Herramientas que solo tienen sentido con la agenda operativa. */
+const APPOINTMENT_TOOL_NAMES = new Set([
+  "check_appointment_availability",
+  "create_appointment",
+  "reschedule_appointment",
+  "cancel_appointment",
+]);
+
+/**
+ * Saludos y cortesías que no necesitan ninguna herramienta. Se exige que el
+ * mensaje sea únicamente eso: "hola" entra, "hola, ¿tienen turnos?" no. Las
+ * confirmaciones ("sí", "dale") quedan fuera a propósito, porque suelen
+ * confirmar una reserva y sí necesitan herramientas.
+ */
+const SMALL_TALK =
+  /^(hola|holis|buenas|buen dia|buenas tardes|buenas noches|hey|que tal|como estas|gracias|muchas gracias|mil gracias|chau|adios|hasta luego|nos vemos)[\s!.,¡?]*$/;
+
+export function isSmallTalk(message: string): boolean {
+  const normalized = message
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+  return normalized.length <= 40 && SMALL_TALK.test(normalized);
+}
 
 /**
  * Traduce un error del SDK de Anthropic a un código interno seguro (sin
@@ -63,8 +102,11 @@ export function getAnthropicClient(): Anthropic {
   if (!client || clientKey !== apiKey) {
     client = new Anthropic({
       apiKey,
-      timeout: REQUEST_TIMEOUT_MS,
-      maxRetries: 1,
+      timeout: PER_CALL_TIMEOUT_MS,
+      // Sin reintentos automáticos: un retry duplica el tiempo de la llamada y
+      // hace estallar el presupuesto del turno. Ante un fallo transitorio el
+      // chat muestra el error y ofrece "Reintentar" al usuario.
+      maxRetries: 0,
     });
     clientKey = apiKey;
   }
@@ -72,8 +114,23 @@ export function getAnthropicClient(): Anthropic {
 }
 
 export type AnthropicMessageCreator = (
-  request: MessageCreateParamsNonStreaming
+  request: MessageCreateParamsNonStreaming,
+  options?: { timeout?: number }
 ) => Promise<Message>;
+
+/** Tools realmente ofrecidas al modelo según lo que la organización tiene activo. */
+export function toolsForCapabilities(
+  capabilities: AgentRunParams["capabilities"]
+): Tool[] {
+  if (!capabilities) return ANTHROPIC_AGENT_TOOLS;
+  return ANTHROPIC_AGENT_TOOLS.filter((tool) => {
+    if (APPOINTMENT_TOOL_NAMES.has(tool.name)) {
+      return capabilities.appointments === true;
+    }
+    if (tool.name === "search_knowledge") return capabilities.knowledge === true;
+    return true;
+  });
+}
 
 type AnthropicProviderDependencies = {
   createMessage?: AnthropicMessageCreator;
@@ -83,6 +140,8 @@ type AnthropicProviderDependencies = {
     input: unknown
   ) => Promise<string>;
   model?: string;
+  /** Umbrales de presupuesto; los tests los reducen para no esperar segundos reales. */
+  budgets?: { minCallMs?: number; toolsMinMs?: number };
 };
 
 function assistantContent(response: Message): ContentBlockParam[] {
@@ -144,30 +203,69 @@ export async function runAnthropicProvider(
     { role: "user", content: params.userMessage },
   ];
 
+  const startedAt = Date.now();
+  const deadlineAt = startedAt + (params.deadlineMs ?? DEFAULT_DEADLINE_MS);
+  const remainingMs = () => deadlineAt - Date.now();
+  const minCallBudget = dependencies.budgets?.minCallMs ?? MIN_CALL_BUDGET_MS;
+  const toolsMinBudget = dependencies.budgets?.toolsMinMs ?? TOOLS_MIN_BUDGET_MS;
+  const org = params.ctx.organizationId;
+
+  // Un saludo o un "gracias" no necesita herramientas: se responde en una sola
+  // llamada, sin payload de tools y sin rondas extra.
+  const smallTalk = isSmallTalk(params.userMessage);
+  const availableTools = smallTalk ? [] : toolsForCapabilities(params.capabilities);
+
   let toolRounds = 0;
+  let calls = 0;
   let inputTokens = 0;
   let outputTokens = 0;
   let cacheReadTokens = 0;
   let cacheWriteTokens = 0;
   let toolCallsCount = 0;
   while (true) {
-    // Al agotar las rondas de herramientas se fuerza una respuesta de texto
-    // (sin tools) en vez de cortar la conversación con un error: el cliente
-    // igual recibe una respuesta útil.
-    const allowTools = toolRounds < MAX_TOOL_ROUNDS;
-    let response: Message;
-    try {
-      response = await createMessage({
-        model,
-        max_tokens: MAX_OUTPUT_TOKENS,
-        system: params.instructions,
-        messages,
-        tools: allowTools ? ANTHROPIC_AGENT_TOOLS : [],
-      });
-    } catch (error) {
-      // Cualquier error del SDK se traduce a un código seguro (sin datos).
-      throw new AgentProviderError(classifyAnthropicError(error));
+    const budget = remainingMs();
+    // Sin tiempo para otra llamada: se corta con un error visible en vez de
+    // dejar que la función serverless muera a los 60 s.
+    if (budget < minCallBudget) {
+      console.warn(
+        `[VantixApp] agent-timing org=${org} stage=deadline calls=${calls} rounds=${toolRounds} elapsed_ms=${Date.now() - startedAt}`
+      );
+      throw new AgentProviderError("deadline_exceeded");
     }
+
+    // Se dejan de ofrecer tools al agotar las rondas o el presupuesto: así la
+    // siguiente llamada devuelve texto sí o sí y el turno termina.
+    const allowTools =
+      availableTools.length > 0 &&
+      toolRounds < MAX_TOOL_ROUNDS &&
+      budget >= toolsMinBudget;
+    const timeout = Math.min(PER_CALL_TIMEOUT_MS, budget);
+
+    let response: Message;
+    const callStartedAt = Date.now();
+    calls += 1;
+    try {
+      response = await createMessage(
+        {
+          model,
+          max_tokens: MAX_OUTPUT_TOKENS,
+          system: params.instructions,
+          messages,
+          tools: allowTools ? availableTools : [],
+        },
+        { timeout }
+      );
+    } catch (error) {
+      const code = classifyAnthropicError(error);
+      console.error(
+        `[VantixApp] agent-timing org=${org} stage=llm_call n=${calls} ms=${Date.now() - callStartedAt} code=${code}`
+      );
+      throw new AgentProviderError(code);
+    }
+    console.info(
+      `[VantixApp] agent-timing org=${org} stage=llm_call n=${calls} ms=${Date.now() - callStartedAt} tools_offered=${allowTools ? availableTools.length : 0} stop=${response.stop_reason} tokens_in=${response.usage.input_tokens} tokens_out=${response.usage.output_tokens}`
+    );
+
     inputTokens += response.usage.input_tokens ?? 0;
     outputTokens += response.usage.output_tokens ?? 0;
     cacheReadTokens += response.usage.cache_read_input_tokens ?? 0;
@@ -187,7 +285,7 @@ export async function runAnthropicProvider(
         throw new AgentProviderError("empty_response");
       }
       console.info(
-        `[VantixApp] agente ok provider=anthropic org=${params.ctx.organizationId} stop=${response.stop_reason} tokens_in=${response.usage.input_tokens} tokens_out=${response.usage.output_tokens}`
+        `[VantixApp] agent-timing org=${org} stage=total ms=${Date.now() - startedAt} calls=${calls} rounds=${toolRounds} tool_calls=${toolCallsCount} small_talk=${smallTalk}`
       );
       return {
         reply,
@@ -208,20 +306,23 @@ export async function runAnthropicProvider(
     toolCallsCount += toolUses.length;
     messages.push({ role: "assistant", content: assistantContent(response) });
 
-    const toolResults: ToolResultBlockParam[] = [];
-    for (const toolUse of toolUses) {
-      const content = await runTool(
-        params.ctx,
-        toolUse.name,
-        toolUse.input
-      );
-      toolResults.push({
-        type: "tool_result",
-        tool_use_id: toolUse.id,
-        content,
-        ...(toolResultIsError(content) ? { is_error: true } : {}),
-      });
-    }
+    // En paralelo: varias herramientas en la misma ronda no dependen entre sí
+    // y en serie sumaban su latencia (cada consulta a Google puede tardar ~1 s).
+    const toolsStartedAt = Date.now();
+    const toolResults: ToolResultBlockParam[] = await Promise.all(
+      toolUses.map(async (toolUse) => {
+        const content = await runTool(params.ctx, toolUse.name, toolUse.input);
+        return {
+          type: "tool_result" as const,
+          tool_use_id: toolUse.id,
+          content,
+          ...(toolResultIsError(content) ? { is_error: true } : {}),
+        };
+      })
+    );
+    console.info(
+      `[VantixApp] agent-timing org=${org} stage=tools round=${toolRounds} ms=${Date.now() - toolsStartedAt} count=${toolUses.length} names=${toolUses.map((t) => t.name).join(",")}`
+    );
     messages.push({ role: "user", content: toolResults });
   }
 }

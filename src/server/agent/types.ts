@@ -5,11 +5,24 @@ export type AgentHistoryMessage = {
   content: string;
 };
 
+/**
+ * Capacidades realmente disponibles para esta organización. Las herramientas
+ * que no corresponden no se envían al modelo: menos tokens por llamada y,
+ * sobre todo, menos rondas desperdiciadas invocando algo que va a fallar.
+ */
+export type AgentCapabilities = {
+  appointments?: boolean;
+  knowledge?: boolean;
+};
+
 export type AgentRunParams = {
   ctx: AgentToolContext;
   instructions: string;
   history: AgentHistoryMessage[];
   userMessage: string;
+  capabilities?: AgentCapabilities;
+  /** Presupuesto total del turno en ms. Al agotarse se corta con un error visible. */
+  deadlineMs?: number;
 };
 
 export type AgentUsage = {
@@ -41,6 +54,7 @@ export type AgentProviderErrorCode =
   | "rate_limited"
   | "insufficient_quota"
   | "timeout"
+  | "deadline_exceeded"
   | "overloaded"
   | "bad_request";
 

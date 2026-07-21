@@ -42,6 +42,8 @@ export function agentErrorMessage(code: AgentProviderErrorCode): string {
       return "La cuenta del proveedor de IA no tiene saldo o cuota disponible.";
     case "timeout":
       return "El proveedor de IA tardó demasiado en responder. Probá de nuevo.";
+    case "deadline_exceeded":
+      return "La consulta tardó demasiado y se cortó para no dejarte esperando. Probá de nuevo o reformulá el mensaje más corto.";
     case "overloaded":
       return "El proveedor de IA está sobrecargado en este momento. Probá de nuevo en unos segundos.";
     case "empty_response":
