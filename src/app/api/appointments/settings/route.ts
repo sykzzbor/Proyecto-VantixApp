@@ -17,7 +17,11 @@ export const dynamic = "force-dynamic";
 const MAX_BODY_BYTES = 16 * 1024;
 
 export async function GET(request: Request) {
-  const authorization = await authorizeAutomationRequest(request, "appointments.view");
+  const authorization = await authorizeAutomationRequest(
+    request,
+    "appointments.view",
+    "google_calendar"
+  );
   if (!authorization.ok) return authorization.response;
 
   try {
@@ -38,7 +42,8 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   const authorization = await authorizeAutomationRequest(
     request,
-    "appointments.settings.manage"
+    "appointments.settings.manage",
+    "google_calendar"
   );
   if (!authorization.ok) return authorization.response;
 

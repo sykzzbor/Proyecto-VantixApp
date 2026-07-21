@@ -15,6 +15,8 @@ import {
   parseAppointmentSettingsRecord,
   type StoredAppointmentSettings,
 } from "@/server/appointments/settings";
+import { SubscriptionRequiredError } from "@/server/billing/entitlement";
+import { PlanFeatureError, requirePlanFeature } from "@/server/billing/rules";
 
 export const MAX_AVAILABILITY_RANGE_DAYS = 14;
 const MAX_RETURNED_SLOTS = 500;
@@ -61,11 +63,12 @@ export class AppointmentAvailabilityError extends Error {
       | "configuration_incomplete"
       | "calendar_not_connected"
       | "calendar_not_selected"
+      | "plan_required"
       | "invalid_range"
       | "range_too_large"
       | "google_unavailable",
     readonly safeMessage: string,
-    readonly status: 409 | 422 | 502
+    readonly status: 402 | 409 | 422 | 502
   ) {
     super(safeMessage);
     this.name = "AppointmentAvailabilityError";
@@ -81,6 +84,7 @@ type AvailabilitySnapshot = {
 };
 
 export type AppointmentAvailabilityDependencies = {
+  assertPlanAccess: (organizationId: string) => Promise<void>;
   load: (organizationId: string) => Promise<AvailabilitySnapshot>;
   fetchBusy: (input: {
     organizationId: string;
@@ -92,6 +96,9 @@ export type AppointmentAvailabilityDependencies = {
 };
 
 const defaultDependencies: AppointmentAvailabilityDependencies = {
+  assertPlanAccess: async (organizationId) => {
+    await requirePlanFeature(organizationId, "google_calendar");
+  },
   load: async (organizationId) => {
     const [settings, calendar] = await Promise.all([
       prisma.appointmentSettings.findUnique({
@@ -278,6 +285,22 @@ export async function checkAppointmentAvailability(
       `Consultá como máximo ${MAX_AVAILABILITY_RANGE_DAYS} días por vez.`,
       422
     );
+  }
+
+  try {
+    await dependencies.assertPlanAccess(input.organizationId);
+  } catch (error) {
+    if (
+      error instanceof PlanFeatureError ||
+      error instanceof SubscriptionRequiredError
+    ) {
+      throw new AppointmentAvailabilityError(
+        "plan_required",
+        "Google Calendar está disponible desde el plan Standard.",
+        402
+      );
+    }
+    throw error;
   }
 
   const snapshot = await dependencies.load(input.organizationId);

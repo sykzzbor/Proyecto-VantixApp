@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { can, type Permission } from "@/lib/permissions";
+import type { PlanFeature } from "@/lib/billing/plans";
+import { getOrganizationEntitlement } from "@/server/billing/entitlement";
+import { hasPlanFeature } from "@/server/billing/rules";
 import { resolveAutomationRequestContext } from "@/server/automation/request-context";
 
 export const PRIVATE_NO_STORE_HEADERS = {
@@ -61,7 +64,8 @@ export function automationJson(
 
 export async function authorizeAutomationRequest(
   request: Request,
-  permission: Permission
+  permission: Permission,
+  feature?: PlanFeature
 ) {
   const resolved = await resolveAutomationRequestContext(request);
   if (!resolved.ok) {
@@ -79,6 +83,28 @@ export async function authorizeAutomationRequest(
       response: automationJson(
         { error: "forbidden", message: "No tenés permisos para continuar." },
         { status: 403 }
+      ),
+    };
+  }
+  const featureAllowed = feature
+    ? hasPlanFeature(
+        resolved.ctx.entitlement ??
+          (await getOrganizationEntitlement(resolved.ctx.organizationId)),
+        feature
+      )
+    : true;
+  if (!featureAllowed) {
+    return {
+      ok: false as const,
+      response: automationJson(
+        {
+          error: "plan_feature_required",
+          message:
+            feature === "google_calendar"
+              ? "Google Calendar está disponible desde el plan Standard."
+              : "Tu plan no incluye esta función.",
+        },
+        { status: 402 }
       ),
     };
   }

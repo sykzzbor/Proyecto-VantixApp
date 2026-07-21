@@ -2,7 +2,6 @@ import {
   authorizeAutomationRequest,
   automationJson,
 } from "@/server/automation/http";
-import { hasPlanFeature, requireActiveEntitlement } from "@/server/billing/rules";
 import { getGoogleCalendarConfigurationStatus } from "@/server/integrations/google-calendar/config";
 import { buildGoogleAuthUrl } from "@/server/integrations/google-calendar/oauth";
 import { createGoogleOAuthState } from "@/server/integrations/google-calendar/state";
@@ -18,25 +17,10 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const authorization = await authorizeAutomationRequest(
     request,
-    "integrations.manage"
+    "integrations.manage",
+    "google_calendar"
   );
   if (!authorization.ok) return authorization.response;
-
-  // Google Calendar no está incluido en la prueba: se valida en servidor,
-  // aunque el botón esté visible.
-  const entitlement = await requireActiveEntitlement(
-    authorization.ctx.organizationId
-  ).catch(() => null);
-  if (!entitlement || !hasPlanFeature(entitlement, "google_calendar")) {
-    return automationJson(
-      {
-        error: "plan_feature_required",
-        message:
-          "Google Calendar no está disponible durante la prueba. Elegí un plan para conectar tu agenda.",
-      },
-      { status: 402 }
-    );
-  }
 
   const configuration = getGoogleCalendarConfigurationStatus();
   if (!configuration.configured) {

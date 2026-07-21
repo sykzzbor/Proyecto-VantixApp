@@ -1,12 +1,17 @@
 import type { MemberRole } from "@/generated/prisma/enums";
 import { auth } from "@/lib/auth";
 import { findActiveMembership } from "@/server/context";
-import { getOrganizationEntitlement } from "@/server/billing/entitlement";
+import {
+  getOrganizationEntitlement,
+  type OrganizationEntitlement,
+} from "@/server/billing/entitlement";
 
 export type AutomationRequestContext = {
   userId: string;
   organizationId: string;
   role: MemberRole;
+  /** Ya resuelto para que guards de funciones no repitan la consulta. */
+  entitlement?: OrganizationEntitlement;
 };
 
 export type AutomationContextResult =
@@ -60,6 +65,7 @@ export async function resolveAutomationRequestContext(
       userId: session.user.id,
       organizationId: membership.organizationId,
       role: membership.role,
+      entitlement,
     },
   };
 }

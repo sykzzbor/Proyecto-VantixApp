@@ -57,7 +57,8 @@ export function getGoogleRedirectUri(): string {
   } catch {
     throw new GoogleCalendarConfigurationError("BETTER_AUTH_URL no es válida.");
   }
-  if (url.protocol !== "https:" && url.protocol !== "http:") {
+  const localHost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && localHost)) {
     throw new GoogleCalendarConfigurationError("BETTER_AUTH_URL no es válida.");
   }
   return url.toString();

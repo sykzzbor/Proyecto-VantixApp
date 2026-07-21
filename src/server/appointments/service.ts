@@ -15,6 +15,8 @@ import {
 import { recordAudit } from "@/server/audit";
 import { checkAppointmentAvailability } from "@/server/appointments/availability";
 import { sanitizeAutomationMessage } from "@/server/automation/sanitization";
+import { SubscriptionRequiredError } from "@/server/billing/entitlement";
+import { PlanFeatureError, requirePlanFeature } from "@/server/billing/rules";
 import { hasRequiredGoogleCalendarScopes, isGoogleCalendarConfigured } from "@/server/integrations/google-calendar/config";
 import {
   GoogleApiError,
@@ -101,6 +103,7 @@ export type AppointmentReadiness = {
     | "CALENDAR_NOT_SELECTED"
     | "SETTINGS_INCOMPLETE"
     | "SETTINGS_DISABLED"
+    | "PLAN_REQUIRED"
     | "READY";
   message: string;
   ready: boolean;
@@ -122,9 +125,10 @@ export class AppointmentError extends Error {
       | "operation_not_allowed"
       | "operation_in_progress"
       | "invalid_reference"
+      | "plan_required"
       | "google_error",
     readonly safeMessage: string,
-    readonly status: 404 | 409 | 422 | 502,
+    readonly status: 402 | 404 | 409 | 422 | 502,
     readonly appointment?: AppointmentView
   ) {
     super(safeMessage);
@@ -150,6 +154,7 @@ type CreatePendingInput = {
 };
 
 export type AppointmentServiceDependencies = {
+  assertPlanAccess: (organizationId: string) => Promise<void>;
   loadPrerequisites: (organizationId: string) => Promise<PrerequisiteSnapshot>;
   validateReferences: (input: {
     organizationId: string;
@@ -253,6 +258,9 @@ function appointmentSelect() {
 }
 
 const defaultDependencies: AppointmentServiceDependencies = {
+  assertPlanAccess: async (organizationId) => {
+    await requirePlanFeature(organizationId, "google_calendar");
+  },
   loadPrerequisites: async (organizationId) => {
     const [settings, connection] = await Promise.all([
       prisma.appointmentSettings.findUnique({
@@ -519,6 +527,27 @@ function safeRemoteError(error: unknown): string {
   return sanitizeAutomationMessage(error.safeMessage, 240) ?? fallback;
 }
 
+async function requireAppointmentPlanAccess(
+  organizationId: string,
+  dependencies: AppointmentServiceDependencies
+): Promise<void> {
+  try {
+    await dependencies.assertPlanAccess(organizationId);
+  } catch (error) {
+    if (
+      error instanceof PlanFeatureError ||
+      error instanceof SubscriptionRequiredError
+    ) {
+      throw new AppointmentError(
+        "plan_required",
+        "Google Calendar está disponible desde el plan Standard.",
+        402
+      );
+    }
+    throw error;
+  }
+}
+
 function sameCreation(record: AppointmentRecord, input: CreatePendingInput): boolean {
   return (
     record.customerId === input.customerId &&
@@ -552,6 +581,7 @@ export async function createAppointment(
   },
   dependencies: AppointmentServiceDependencies = defaultDependencies
 ): Promise<AppointmentView> {
+  await requireAppointmentPlanAccess(input.organizationId, dependencies);
   const snapshot = await dependencies.loadPrerequisites(input.organizationId);
   const settings = requireWritablePrerequisites(snapshot);
   const calendarId = snapshot.connection?.selectedCalendarId as string;
@@ -646,6 +676,7 @@ export async function rescheduleAppointment(
   },
   dependencies: AppointmentServiceDependencies = defaultDependencies
 ): Promise<AppointmentView> {
+  await requireAppointmentPlanAccess(input.organizationId, dependencies);
   const current = await dependencies.findById(input.organizationId, input.appointmentId);
   if (!current) throw new AppointmentError("not_found", "El turno no existe.", 404);
   if (current.lastOperationKey === input.idempotencyKey) {
@@ -740,6 +771,7 @@ export async function cancelAppointment(
   },
   dependencies: AppointmentServiceDependencies = defaultDependencies
 ): Promise<AppointmentView> {
+  await requireAppointmentPlanAccess(input.organizationId, dependencies);
   const current = await dependencies.findById(input.organizationId, input.appointmentId);
   if (!current) throw new AppointmentError("not_found", "El turno no existe.", 404);
   if (current.status === "CANCELLED") return toView(current);
@@ -825,6 +857,20 @@ export async function getAppointmentReadiness(
   organizationId: string,
   dependencies: AppointmentServiceDependencies = defaultDependencies
 ): Promise<AppointmentReadiness> {
+  try {
+    await dependencies.assertPlanAccess(organizationId);
+  } catch (error) {
+    if (
+      error instanceof PlanFeatureError ||
+      error instanceof SubscriptionRequiredError
+    ) {
+      return readiness(
+        "PLAN_REQUIRED",
+        "Google Calendar está disponible desde el plan Standard."
+      );
+    }
+    throw error;
+  }
   if (!isGoogleCalendarConfigured()) {
     return readiness("GOOGLE_NOT_CONFIGURED", "Google Calendar requiere configuración del servidor.");
   }

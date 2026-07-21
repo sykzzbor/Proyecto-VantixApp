@@ -3,8 +3,11 @@ import { test } from "node:test";
 import { can } from "@/lib/permissions";
 import {
   GOOGLE_CALENDAR_SCOPES,
+  GoogleCalendarConfigurationError,
+  getGoogleRedirectUri,
   hasRequiredGoogleCalendarScopes,
 } from "@/server/integrations/google-calendar/config";
+import { getGoogleCalendarOAuthFeedback } from "@/lib/google-calendar-oauth-result";
 import {
   decryptAccessToken,
   encryptAccessToken,
@@ -243,6 +246,40 @@ test("la URL de consentimiento pide scope mínimo, offline y state", async () =>
   assert.equal(
     parsed.searchParams.get("redirect_uri"),
     "https://app.example/api/integrations/google-calendar/callback"
+  );
+});
+
+test("el callback exige HTTPS fuera de localhost", () => {
+  const previousUrl = process.env.BETTER_AUTH_URL;
+  try {
+    process.env.BETTER_AUTH_URL = "http://app.example";
+    assert.throws(
+      () => getGoogleRedirectUri(),
+      (error) => error instanceof GoogleCalendarConfigurationError
+    );
+    process.env.BETTER_AUTH_URL = "http://localhost:3000";
+    assert.equal(
+      getGoogleRedirectUri(),
+      "http://localhost:3000/api/integrations/google-calendar/callback"
+    );
+  } finally {
+    if (previousUrl === undefined) delete process.env.BETTER_AUTH_URL;
+    else process.env.BETTER_AUTH_URL = previousUrl;
+  }
+});
+
+test("el callback OAuth muestra solo resultados conocidos y sanitizados", () => {
+  assert.deepEqual(getGoogleCalendarOAuthFeedback("conectado"), {
+    tone: "success",
+    message: "Google Calendar quedó conectado correctamente.",
+  });
+  assert.match(
+    getGoogleCalendarOAuthFeedback("estado_invalido")?.message ?? "",
+    /venció|utilizada/i
+  );
+  assert.equal(
+    getGoogleCalendarOAuthFeedback("token=secreto&error=interno"),
+    null
   );
 });
 

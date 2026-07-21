@@ -11,7 +11,8 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const authorization = await authorizeAutomationRequest(
     request,
-    "integrations.manage"
+    "integrations.manage",
+    "google_calendar"
   );
   if (!authorization.ok) return authorization.response;
 

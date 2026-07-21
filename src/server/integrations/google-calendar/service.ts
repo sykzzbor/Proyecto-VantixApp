@@ -18,6 +18,8 @@ import {
   type GoogleCalendarItem,
   type GoogleTokens,
 } from "@/server/integrations/google-calendar/oauth";
+import { getOrganizationEntitlement } from "@/server/billing/entitlement";
+import { hasPlanFeature } from "@/server/billing/rules";
 
 /**
  * Servicio de la conexión Google Calendar. Los tokens SIEMPRE se guardan
@@ -26,6 +28,8 @@ import {
  */
 
 export type GoogleCalendarView = {
+  planAccess: boolean;
+  planMessage: string | null;
   configured: boolean;
   configurationIssue: GoogleCalendarConfigurationIssue | null;
   configurationMessage: string | null;
@@ -45,22 +49,32 @@ export async function getGoogleCalendarView(
   organizationId: string
 ): Promise<GoogleCalendarView> {
   const configuration = getGoogleCalendarConfigurationStatus();
-  const connection = await prisma.googleCalendarConnection.findUnique({
-    where: { organizationId },
-    select: {
-      status: true,
-      googleEmail: true,
-      selectedCalendarId: true,
-      selectedCalendarName: true,
-      grantedScopes: true,
-      lastTestedAt: true,
-      lastError: true,
-    },
-  });
+  const [connection, entitlement] = await Promise.all([
+    prisma.googleCalendarConnection.findUnique({
+      where: { organizationId },
+      select: {
+        status: true,
+        googleEmail: true,
+        selectedCalendarId: true,
+        selectedCalendarName: true,
+        grantedScopes: true,
+        lastTestedAt: true,
+        lastError: true,
+      },
+    }),
+    getOrganizationEntitlement(organizationId),
+  ]);
   const writeAccess = connection
     ? hasRequiredGoogleCalendarScopes(connection.grantedScopes)
     : false;
+  const planAccess =
+    entitlement.accessAllowed &&
+    hasPlanFeature(entitlement, "google_calendar");
   return {
+    planAccess,
+    planMessage: planAccess
+      ? null
+      : "Google Calendar está disponible desde el plan Standard.",
     configured: configuration.configured,
     configurationIssue: configuration.issue,
     configurationMessage: configuration.message,

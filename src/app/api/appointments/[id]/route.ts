@@ -17,7 +17,11 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authorization = await authorizeAutomationRequest(request, "appointments.view");
+  const authorization = await authorizeAutomationRequest(
+    request,
+    "appointments.view",
+    "google_calendar"
+  );
   if (!authorization.ok) return authorization.response;
   const id = appointmentIdSchema.safeParse((await params).id);
   if (!id.success) {
@@ -45,7 +49,11 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authorization = await authorizeAutomationRequest(request, "appointments.manage");
+  const authorization = await authorizeAutomationRequest(
+    request,
+    "appointments.manage",
+    "google_calendar"
+  );
   if (!authorization.ok) return authorization.response;
   const id = appointmentIdSchema.safeParse((await params).id);
   if (!id.success) {

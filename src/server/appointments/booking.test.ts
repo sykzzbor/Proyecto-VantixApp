@@ -13,6 +13,7 @@ import {
   cancelAppointment,
   createAppointment,
   getAppointment,
+  getAppointmentReadiness,
   listAppointments,
   rescheduleAppointment,
   type AppointmentRecord,
@@ -21,6 +22,7 @@ import {
 import { createDefaultAppointmentSettings } from "@/lib/validations/appointment-settings";
 import { createAppointmentSchema } from "@/lib/validations/appointments";
 import { localMinuteToUtc } from "@/lib/time-zone";
+import { PlanFeatureError } from "@/server/billing/rules";
 
 const START = "2026-07-20T09:00:00.000Z";
 const SECOND_START = "2026-07-20T10:00:00.000Z";
@@ -80,6 +82,7 @@ function memoryDependencies(options: {
   updateError?: Error;
   deleteError?: Error;
   referencesValid?: boolean;
+  planAccess?: boolean;
 } = {}) {
   const rows = options.initial ? [...options.initial] : [];
   const calls: string[] = [];
@@ -91,6 +94,11 @@ function memoryDependencies(options: {
     return row;
   };
   const dependencies: AppointmentServiceDependencies = {
+    assertPlanAccess: async () => {
+      if (options.planAccess === false) {
+        throw new PlanFeatureError("google_calendar");
+      }
+    },
     loadPrerequisites: async () => ({
       settings: settings(),
       connection: {
@@ -223,6 +231,23 @@ test("un slot ocupado falla cerrado antes de crear registros o llamar Google", a
   );
   assert.equal(memory.rows.length, 0);
   assert.deepEqual(memory.calls, []);
+});
+
+test("un plan sin Google Calendar bloquea turnos y expone un estado seguro", async () => {
+  const memory = memoryDependencies({ planAccess: false });
+  await assert.rejects(
+    createAppointment(createInput(), memory.dependencies),
+    (error) =>
+      error instanceof AppointmentError &&
+      error.code === "plan_required" &&
+      error.status === 402
+  );
+  const readiness = await getAppointmentReadiness("org-a", memory.dependencies);
+  assert.equal(readiness.status, "PLAN_REQUIRED");
+  assert.equal(readiness.ready, false);
+  assert.doesNotMatch(JSON.stringify(readiness), /token|calendar-safe|google-event/i);
+  assert.deepEqual(memory.calls, []);
+  assert.deepEqual(memory.rows, []);
 });
 
 test("doble creación con la misma clave devuelve el mismo turno y llama Google una vez", async () => {

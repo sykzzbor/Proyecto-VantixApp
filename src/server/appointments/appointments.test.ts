@@ -23,6 +23,7 @@ import {
   GoogleApiError,
   fetchCalendarFreeBusy,
 } from "@/server/integrations/google-calendar/oauth";
+import { PlanFeatureError } from "@/server/billing/rules";
 
 const MONDAY = new Date("2026-07-20T08:00:00.000Z");
 
@@ -59,6 +60,7 @@ function availabilityDependencies(input?: {
   busy?: { start: Date; end: Date }[];
   error?: Error;
   calls?: string[];
+  planAccess?: boolean;
 }): AppointmentAvailabilityDependencies {
   const settings = input?.settings === undefined ? validSettings() : input.settings;
   const calendar =
@@ -66,6 +68,11 @@ function availabilityDependencies(input?: {
       ? { status: "CONNECTED" as const, selectedCalendarId: "calendar-safe" }
       : input.calendar;
   return {
+    assertPlanAccess: async () => {
+      if (input?.planAccess === false) {
+        throw new PlanFeatureError("google_calendar");
+      }
+    },
     load: async (organizationId) => {
       input?.calls?.push(`load:${organizationId}`);
       return { settings: settings ? stored(settings) : null, calendar };
@@ -213,6 +220,28 @@ test("disponibilidad: un rango completamente pasado devuelve vacío sin consulta
   );
   assert.deepEqual(result.slots, []);
   assert.deepEqual(calls, ["load:org-a"]);
+});
+
+test("disponibilidad: el plan sin Calendar falla cerrado antes de consultar datos", async () => {
+  const calls: string[] = [];
+  await assert.rejects(
+    checkAppointmentAvailability(
+      {
+        organizationId: "org-trial",
+        request: {
+          from: "2026-07-20T09:00:00.000Z",
+          to: "2026-07-20T12:00:00.000Z",
+        },
+        now: new Date("2026-07-20T08:00:00.000Z"),
+      },
+      availabilityDependencies({ calls, planAccess: false })
+    ),
+    (error) =>
+      error instanceof AppointmentAvailabilityError &&
+      error.code === "plan_required" &&
+      error.status === 402
+  );
+  assert.deepEqual(calls, []);
 });
 
 test("disponibilidad: respeta anticipación mínima", () => {

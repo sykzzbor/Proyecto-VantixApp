@@ -13,7 +13,11 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authorization = await authorizeAutomationRequest(request, "appointments.manage");
+  const authorization = await authorizeAutomationRequest(
+    request,
+    "appointments.manage",
+    "google_calendar"
+  );
   if (!authorization.ok) return authorization.response;
   const id = appointmentIdSchema.safeParse((await params).id);
   if (!id.success) {

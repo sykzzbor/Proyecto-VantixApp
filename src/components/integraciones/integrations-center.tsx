@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   CalendarDays,
@@ -47,6 +47,7 @@ import { ManualWhatsappConnectionDialog } from "@/components/integraciones/manua
 import { YCloudConnectionDialog } from "@/components/integraciones/ycloud-connection-dialog";
 import { GoogleCalendarAppointmentSettings } from "@/components/integraciones/google-calendar-appointment-settings";
 import { cn } from "@/lib/utils";
+import { getGoogleCalendarOAuthFeedback } from "@/lib/google-calendar-oauth-result";
 import type {
   IntegrationsCenterView,
   SafeDiagnostic,
@@ -922,7 +923,13 @@ function GoogleCalendarCard({
     }
   }
 
-  const statusBadge = !data.configured
+  const statusBadge = !data.planAccess
+    ? {
+        label: "Disponible desde Standard",
+        className: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+        icon: CircleAlert,
+      }
+    : !data.configured
     ? {
         label: "Requiere configuración",
         className: "border-border bg-muted/40 text-muted-foreground",
@@ -976,7 +983,12 @@ function GoogleCalendarCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!data.configured ? (
+        {!data.planAccess ? (
+          <p className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-200">
+            {data.planMessage ??
+              "Google Calendar está disponible desde el plan Standard."}
+          </p>
+        ) : !data.configured ? (
           <p className="rounded-lg border border-border/70 bg-background/40 p-3 text-sm text-muted-foreground">
             {data.configurationMessage ??
               "Google Calendar requiere completar la configuración del servidor."}
@@ -1065,14 +1077,31 @@ function GoogleCalendarCard({
           </div>
         )}
 
-        {showSettings && (
+        {showSettings && data.planAccess && (
           <div className="border-t border-border/70 pt-5">
             <GoogleCalendarAppointmentSettings canManage={canManage} />
           </div>
         )}
       </CardContent>
       <CardFooter className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-        {canManage ? (
+        {canManage && !data.planAccess ? (
+          data.connected ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              disabled={busy !== null}
+              onClick={() => setDisconnectOpen(true)}
+            >
+              <Unplug className="size-4" aria-hidden />
+              Desconectar
+            </Button>
+          ) : (
+            <Button asChild size="sm">
+              <Link href="/dashboard/planes">Ver planes</Link>
+            </Button>
+          )
+        ) : canManage ? (
           data.connected ? (
             <>
               {!showSettings && (
@@ -1231,12 +1260,27 @@ export function IntegrationsCenter({
   initialData: Pick<IntegrationsCenterView, "whatsapp" | "googleCalendar">;
   canManage: boolean;
 }) {
+  const searchParams = useSearchParams();
   const whatsappOperational = initialData.whatsapp.status === "connected";
   const googleOperational =
+    initialData.googleCalendar.planAccess &&
     initialData.googleCalendar.connected &&
     !initialData.googleCalendar.reconnectionRequired &&
     initialData.googleCalendar.status !== "ERROR";
   const operationalCount = [whatsappOperational, googleOperational].filter(Boolean).length;
+
+  useEffect(() => {
+    const result = searchParams.get("google");
+    const feedback = getGoogleCalendarOAuthFeedback(result);
+    if (!result) return;
+    if (feedback?.tone === "success") toast.success(feedback.message);
+    else if (feedback?.tone === "info") toast.info(feedback.message);
+    else if (feedback) toast.error(feedback.message);
+
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("google");
+    window.history.replaceState({}, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+  }, [searchParams]);
 
   return (
     <div className="space-y-7" aria-label="Integraciones de la organización">

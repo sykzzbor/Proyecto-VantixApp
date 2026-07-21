@@ -20,7 +20,11 @@ const AVAILABILITY_RATE_LIMIT = 30;
 const AVAILABILITY_RATE_WINDOW_MS = 60_000;
 
 export async function POST(request: Request) {
-  const authorization = await authorizeAutomationRequest(request, "appointments.view");
+  const authorization = await authorizeAutomationRequest(
+    request,
+    "appointments.view",
+    "google_calendar"
+  );
   if (!authorization.ok) return authorization.response;
 
   const rate = checkRateLimit(

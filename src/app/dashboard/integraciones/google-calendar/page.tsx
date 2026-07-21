@@ -16,9 +16,11 @@ export const dynamic = "force-dynamic";
 
 export default async function GoogleCalendarIntegrationPage() {
   const { org, role } = await requireOrgContext();
-  const [integrations, appointments, readiness] = await Promise.all([
-    getIntegrationsCenterView(org.id),
-    listAppointments(org.id, appointmentListQuerySchema.parse({ limit: 100 })),
+  const integrations = await getIntegrationsCenterView(org.id);
+  const [appointments, readiness] = await Promise.all([
+    integrations.googleCalendar.planAccess
+      ? listAppointments(org.id, appointmentListQuerySchema.parse({ limit: 100 }))
+      : Promise.resolve([]),
     getAppointmentReadiness(org.id),
   ]);
 
