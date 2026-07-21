@@ -130,6 +130,9 @@ model Organization {
   automationRules            OrganizationAutomationRule[]
   googleCalendarConnection   GoogleCalendarConnection?
   googleOAuthStates          GoogleOAuthState[]
+  googleSheetsConnection     GoogleSheetsConnection?
+  googleSheetsOAuthStates    GoogleSheetsOAuthState[]
+  googleSheetsSyncRuns       GoogleSheetsSyncRun[]
   appointmentSettings        AppointmentSettings?
   appointments               Appointment[]
   subscription               OrganizationSubscription?
@@ -1014,6 +1017,84 @@ model GoogleOAuthState {
 
   @@index([organizationId, expiresAt])
   @@map("google_oauth_states")
+}
+
+// ============================================================
+// Google Sheets: conexión OAuth y sincronización manual
+// ============================================================
+
+enum GoogleSheetsConnectionStatus {
+  CONNECTED
+  ERROR
+}
+
+enum GoogleSheetsSyncStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model GoogleSheetsConnection {
+  id                      String                       @id @default(cuid())
+  organizationId          String                       @unique
+  status                  GoogleSheetsConnectionStatus @default(CONNECTED)
+  selectedSpreadsheetId   String?
+  selectedSpreadsheetName String?
+  grantedScopes           String[]                     @default([])
+  encryptedAccessToken    String
+  encryptedRefreshToken   String
+  accessTokenExpiresAt    DateTime
+  connectedByUserId       String?
+  lastSyncedAt            DateTime?
+  lastSyncRows            Json?
+  lastError               String?
+  createdAt               DateTime                     @default(now())
+  updatedAt               DateTime                     @updatedAt
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  syncRuns     GoogleSheetsSyncRun[]
+
+  @@unique([organizationId, id])
+  @@map("google_sheets_connections")
+}
+
+model GoogleSheetsOAuthState {
+  id             String    @id @default(cuid())
+  organizationId String
+  userId         String
+  stateHash      String    @unique
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, expiresAt])
+  @@map("google_sheets_oauth_states")
+}
+
+model GoogleSheetsSyncRun {
+  id             String                 @id @default(cuid())
+  organizationId String
+  connectionId   String
+  idempotencyKey String
+  status         GoogleSheetsSyncStatus @default(RUNNING)
+  datasets       String[]
+  attempts       Int                    @default(1)
+  rowsExported   Int                    @default(0)
+  lastError      String?
+  startedAt      DateTime               @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connection   GoogleSheetsConnection @relation(fields: [organizationId, connectionId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([connectionId, status])
+  @@map("google_sheets_sync_runs")
 }
 
 // ============================================================

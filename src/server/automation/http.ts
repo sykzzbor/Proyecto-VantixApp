@@ -102,6 +102,8 @@ export async function authorizeAutomationRequest(
           message:
             feature === "google_calendar"
               ? "Google Calendar está disponible desde el plan Standard."
+              : feature === "google_sheets"
+                ? "Google Sheets está disponible desde el plan Standard."
               : "Tu plan no incluye esta función.",
         },
         { status: 402 }

@@ -25,6 +25,7 @@ export default async function IntegrationsPage() {
         initialData={{
           whatsapp: integrations.whatsapp,
           googleCalendar: integrations.googleCalendar,
+          googleSheets: integrations.googleSheets,
         }}
         canManage={can(role, "integrations.manage")}
       />

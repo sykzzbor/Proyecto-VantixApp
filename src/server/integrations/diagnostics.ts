@@ -11,6 +11,10 @@ import {
   getGoogleCalendarView,
   type GoogleCalendarView,
 } from "@/server/integrations/google-calendar/service";
+import {
+  getGoogleSheetsView,
+  type GoogleSheetsView,
+} from "@/server/integrations/google-sheets/service";
 
 const REQUIRED_WHATSAPP_SCOPES = [
   "whatsapp_business_management",
@@ -73,6 +77,7 @@ export type IntegrationsCenterView = {
     diagnostics: SafeDiagnostic;
   };
   googleCalendar: GoogleCalendarView;
+  googleSheets: GoogleSheetsView;
 };
 
 function maskPhoneNumber(value: string): string {
@@ -306,7 +311,7 @@ export async function getIntegrationsCenterView(
   organizationId: string
 ): Promise<IntegrationsCenterView> {
   const metaConfiguration = getMetaEmbeddedSignupPublicConfiguration();
-  const [whatsappResolution, attempt, automation, googleCalendar] =
+  const [whatsappResolution, attempt, automation, googleCalendar, googleSheets] =
     await Promise.all([
       resolveCurrentWhatsappIntegration(organizationId),
       prisma.whatsappEmbeddedSignupAttempt.findUnique({
@@ -315,6 +320,7 @@ export async function getIntegrationsCenterView(
       }),
       getAutomationInfrastructureStatus(organizationId),
       getGoogleCalendarView(organizationId),
+      getGoogleSheetsView(organizationId),
     ]);
   const integration = whatsappResolution.state === "current"
     ? await prisma.whatsappIntegration.findFirst({
@@ -448,5 +454,6 @@ export async function getIntegrationsCenterView(
       diagnostics: n8nDiagnostics,
     },
     googleCalendar,
+    googleSheets,
   };
 }

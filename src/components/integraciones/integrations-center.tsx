@@ -18,7 +18,6 @@ import {
   ShieldCheck,
   ShoppingBag,
   Store,
-  Table2,
   Unplug,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -46,6 +45,7 @@ import { WhatsappIcon } from "@/components/whatsapp/whatsapp-icon";
 import { ManualWhatsappConnectionDialog } from "@/components/integraciones/manual-whatsapp-connection-dialog";
 import { YCloudConnectionDialog } from "@/components/integraciones/ycloud-connection-dialog";
 import { GoogleCalendarAppointmentSettings } from "@/components/integraciones/google-calendar-appointment-settings";
+import { GoogleSheetsCard } from "@/components/integraciones/google-sheets-card";
 import { cn } from "@/lib/utils";
 import { getGoogleCalendarOAuthFeedback } from "@/lib/google-calendar-oauth-result";
 import type {
@@ -1257,7 +1257,7 @@ export function IntegrationsCenter({
   initialData,
   canManage,
 }: {
-  initialData: Pick<IntegrationsCenterView, "whatsapp" | "googleCalendar">;
+  initialData: Pick<IntegrationsCenterView, "whatsapp" | "googleCalendar" | "googleSheets">;
   canManage: boolean;
 }) {
   const searchParams = useSearchParams();
@@ -1267,7 +1267,13 @@ export function IntegrationsCenter({
     initialData.googleCalendar.connected &&
     !initialData.googleCalendar.reconnectionRequired &&
     initialData.googleCalendar.status !== "ERROR";
-  const operationalCount = [whatsappOperational, googleOperational].filter(Boolean).length;
+  const sheetsOperational =
+    initialData.googleSheets.planAccess &&
+    initialData.googleSheets.connected &&
+    !initialData.googleSheets.reconnectionRequired &&
+    initialData.googleSheets.spreadsheetSelected &&
+    initialData.googleSheets.status !== "ERROR";
+  const operationalCount = [whatsappOperational, googleOperational, sheetsOperational].filter(Boolean).length;
 
   useEffect(() => {
     const result = searchParams.get("google");
@@ -1291,11 +1297,11 @@ export function IntegrationsCenter({
         </div>
         <div className="rounded-xl border border-border bg-card p-4">
           <p className="text-xs font-medium text-muted-foreground">Disponibles</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums">2</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums">3</p>
         </div>
         <div className="rounded-xl border border-border bg-card p-4">
           <p className="text-xs font-medium text-muted-foreground">Requieren atención</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums">{2 - operationalCount}</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums">{3 - operationalCount}</p>
         </div>
       </div>
 
@@ -1308,11 +1314,12 @@ export function IntegrationsCenter({
           <div className="grid min-w-0 gap-4 xl:grid-cols-2">
             {whatsappOperational && <WhatsappCard data={initialData.whatsapp} canManage={canManage} />}
             {googleOperational && <GoogleCalendarCard data={initialData.googleCalendar} canManage={canManage} />}
+            {sheetsOperational && <GoogleSheetsCard data={initialData.googleSheets} canManage={canManage} />}
           </div>
         </section>
       )}
 
-      {operationalCount < 2 && (
+      {operationalCount < 3 && (
         <section className="space-y-3" aria-labelledby="integrations-pending">
           <div>
             <h3 id="integrations-pending" className="text-sm font-semibold">Disponibles y pendientes</h3>
@@ -1321,6 +1328,7 @@ export function IntegrationsCenter({
           <div className="grid min-w-0 gap-4 xl:grid-cols-2">
             {!whatsappOperational && <WhatsappCard data={initialData.whatsapp} canManage={canManage} />}
             {!googleOperational && <GoogleCalendarCard data={initialData.googleCalendar} canManage={canManage} />}
+            {!sheetsOperational && <GoogleSheetsCard data={initialData.googleSheets} canManage={canManage} />}
           </div>
         </section>
       )}
@@ -1340,12 +1348,6 @@ export function IntegrationsCenter({
             description="Catálogo y operación comercial conectados con tu tienda."
             icon={Store}
             status="En desarrollo"
-          />
-          <UpcomingIntegrationCard
-            name="Google Sheets"
-            description="Sincronización controlada de datos operativos con hojas de cálculo."
-            icon={Table2}
-            status="Próximamente"
           />
           <UpcomingIntegrationCard
             name="WooCommerce"
