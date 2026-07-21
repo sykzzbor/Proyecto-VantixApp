@@ -189,6 +189,25 @@ export async function persistIncomingWhatsappMessage(
               },
               select: { id: true, handlingMode: true, lastMessageAt: true },
             });
+            // Contador mensual de conversaciones. Solo cuenta: el mensaje del
+            // cliente nunca se descarta por límite; si el cupo del plan se
+            // agotó, el gate del agente deriva a atención humana sin responder.
+            const period = new Date();
+            const periodKey = `${period.getUTCFullYear()}-${String(period.getUTCMonth() + 1).padStart(2, "0")}`;
+            await tx.organizationUsagePeriod.upsert({
+              where: {
+                organizationId_periodKey: {
+                  organizationId: scope.organizationId,
+                  periodKey,
+                },
+              },
+              create: {
+                organizationId: scope.organizationId,
+                periodKey,
+                conversationsCount: 1,
+              },
+              update: { conversationsCount: { increment: 1 } },
+            });
           }
 
           const safeCreatedAt = parseInboundTimestamp(event.timestamp);
@@ -270,7 +289,12 @@ export async function persistIncomingWhatsappMessage(
 export async function markConversationNeedsHumanAttention(input: {
   organizationId: string;
   conversationId: string;
-  reason: "demo" | "agent_disabled" | "agent_error" | "integration_unavailable";
+  reason:
+    | "demo"
+    | "agent_disabled"
+    | "agent_error"
+    | "integration_unavailable"
+    | "usage_limit";
 }) {
   await prisma.$transaction(async (tx) => {
     const conversation = await tx.conversation.findFirst({
@@ -295,7 +319,9 @@ export async function markConversationNeedsHumanAttention(input: {
             ? "El agente está desactivado. Esta conversación necesita atención humana."
             : input.reason === "integration_unavailable"
               ? "No se pudo usar la integración de WhatsApp. Esta conversación necesita atención humana."
-              : "El agente no pudo generar una respuesta. Esta conversación necesita atención humana.";
+              : input.reason === "usage_limit"
+                ? "Se alcanzó el límite mensual del plan. Esta conversación necesita atención humana."
+                : "El agente no pudo generar una respuesta. Esta conversación necesita atención humana.";
       const now = new Date();
       await tx.message.create({
         data: {

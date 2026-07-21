@@ -17,6 +17,7 @@ import {
   requirePermission,
 } from "@/server/context";
 import { ActionError, toActionFailure, type ActionResult } from "@/server/errors";
+import { assertCanAddMember } from "@/server/billing/rules";
 
 const idSchema = z.string().min(1);
 
@@ -64,6 +65,10 @@ export async function inviteMember(input: InviteMemberInput): Promise<ActionResu
     if (pending) {
       throw new ActionError("Ya hay una invitación pendiente para ese email.");
     }
+
+    // Límite de usuarios del plan (o de la prueba), validado en servidor.
+    // Las invitaciones pendientes reservan cupo.
+    await assertCanAddMember(org.id);
 
     const invitation = await prisma.invitation.create({
       data: {
@@ -250,6 +255,12 @@ export async function acceptInvitation(token: string): Promise<ActionResult> {
         "Tu usuario ya pertenece a otra organización. En esta etapa cada usuario puede pertenecer a una sola."
       );
     }
+
+    // Se revalida el cupo al aceptar: el plan pudo cambiar (o vencer la
+    // prueba) entre la invitación y este momento.
+    await assertCanAddMember(invitation.organizationId, {
+      includePending: false,
+    });
 
     await prisma.$transaction([
       prisma.organizationMember.create({

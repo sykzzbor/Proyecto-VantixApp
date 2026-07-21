@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { findActiveMembership } from "@/server/context";
 import { getOrganizationEntitlement } from "@/server/billing/entitlement";
+import { hasPlanFeature } from "@/server/billing/rules";
 import { exchangeAuthorizationCode, fetchCalendarList } from "@/server/integrations/google-calendar/oauth";
 import { saveGoogleConnection } from "@/server/integrations/google-calendar/service";
 import { consumeGoogleOAuthState } from "@/server/integrations/google-calendar/state";
@@ -37,6 +38,11 @@ export async function GET(request: Request) {
   );
   if (!entitlement.accessAllowed) {
     return redirectWithResult(request, "suscripcion_requerida");
+  }
+  // Defensa en profundidad: el plan (o la prueba) debe incluir Calendar
+  // aunque el flujo OAuth se haya iniciado por otra vía.
+  if (!hasPlanFeature(entitlement, "google_calendar")) {
+    return redirectWithResult(request, "plan_requerido");
   }
 
   const params = new URL(request.url).searchParams;

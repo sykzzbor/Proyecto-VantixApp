@@ -17,6 +17,17 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
+/** Fecha de vencimiento compacta para el aviso global. */
+function formatDeadline(value: string) {
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+}
+
 export function TrialBanner({
   entitlement,
 }: {
@@ -42,7 +53,10 @@ export function TrialBanner({
       <div className="mx-auto flex min-h-5 max-w-[1440px] items-center justify-center gap-1.5 text-center text-[11px] leading-4 sm:text-xs">
         <p>
           <span className="font-semibold">Período de prueba:</span>{" "}
-          {remainingLabel}
+          {remainingLabel}{" "}
+          <span className="opacity-90">
+            Vence el {formatDeadline(entitlement.trialEndsAt)}.
+          </span>
         </p>
         <Link
           href="/dashboard/planes"

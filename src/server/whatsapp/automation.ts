@@ -23,6 +23,12 @@ import {
 } from "@/server/whatsapp/outbound";
 import type { WhatsappAutomationJob } from "@/server/whatsapp/processing";
 import { getOrganizationEntitlement } from "@/server/billing/entitlement";
+import {
+  consumeUsage,
+  getPlanRules,
+  getUsageSnapshot,
+  refundUsage,
+} from "@/server/billing/rules";
 
 export function getWhatsappAgentFallbackReason(
   provider = getAIProviderMode(),
@@ -123,6 +129,36 @@ export async function handleWhatsappAutomaticResponse(
     return;
   }
 
+  // Límites mensuales del plan (o de la prueba), validados en servidor justo
+  // antes de gastar una respuesta de IA. El mensaje del cliente ya quedó
+  // guardado; si el cupo se agotó, la conversación pasa a atención humana.
+  const entitlementForUsage = await getOrganizationEntitlement(organizationId);
+  if (entitlementForUsage.accessAllowed) {
+    const rules = getPlanRules(entitlementForUsage);
+    const usage = await getUsageSnapshot(organizationId);
+    if (usage.conversations > rules.limits.conversationsPerMonth) {
+      await markConversationNeedsHumanAttention({
+        organizationId,
+        conversationId,
+        reason: "usage_limit",
+      });
+      return;
+    }
+    const aiUsage = await consumeUsage({
+      organizationId,
+      metric: "aiResponses",
+      entitlement: entitlementForUsage,
+    });
+    if (!aiUsage.allowed) {
+      await markConversationNeedsHumanAttention({
+        organizationId,
+        conversationId,
+        reason: "usage_limit",
+      });
+      return;
+    }
+  }
+
   const historyRows = await getRecentMessages(
     conversationId,
     organizationId,
@@ -168,6 +204,8 @@ export async function handleWhatsappAutomaticResponse(
       },
     });
   } catch {
+    // El fallo del proveedor no debe consumir cupo del plan.
+    await refundUsage({ organizationId, metric: "aiResponses" }).catch(() => {});
     await recordAudit({
       organizationId,
       userId: null,

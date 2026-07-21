@@ -19,10 +19,16 @@ import { recordAiUsage } from "@/server/agent/usage";
 import { recordAudit } from "@/server/audit";
 import {
   HISTORY_LIMIT,
+  getOpenTestConversation,
   getOrCreateTestConversation,
   getRecentMessages,
   saveMessage,
 } from "@/server/conversations";
+import {
+  consumeUsage,
+  refundUsage,
+  UsageLimitError,
+} from "@/server/billing/rules";
 import { checkRateLimit } from "@/server/rate-limit";
 import { formatTime } from "@/lib/format";
 import { findActiveMembership } from "@/server/context";
@@ -55,6 +61,7 @@ function logAgentEvent(fields: {
     | "entitlement"
     | "rate_limit"
     | "invalid_body"
+    | "usage_limit"
     | "human"
     | "agent_disabled"
     | "config"
@@ -160,8 +167,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 5. Conversación de prueba (se crea o reutiliza).
-    const conversation = await getOrCreateTestConversation(organizationId);
+    // 5. Conversación de prueba (se crea o reutiliza). Crear una nueva
+    //    consume una unidad del cupo mensual de conversaciones del plan.
+    const existingConversation = await getOpenTestConversation(organizationId);
+    if (!existingConversation) {
+      const conversationUsage = await consumeUsage({
+        organizationId,
+        metric: "conversations",
+        entitlement,
+      });
+      if (!conversationUsage.allowed) {
+        logAgentEvent({
+          requestId,
+          stage: "usage_limit",
+          organizationId,
+          errorCode: "conversations",
+        });
+        return jsonError(
+          402,
+          "usage_limit",
+          new UsageLimitError("conversations", conversationUsage.limit).message
+        );
+      }
+    }
+    const conversation =
+      existingConversation ?? (await getOrCreateTestConversation(organizationId));
 
     // 6. Si la conversación está en atención humana, la IA no responde:
     //    el mensaje queda guardado y aparece en la bandeja del equipo.
@@ -286,6 +316,28 @@ export async function POST(request: NextRequest) {
       flags: { humanTakeover: false },
     };
 
+    // 9.bis Cupo mensual de respuestas de IA, reservado antes de llamar al
+    //       proveedor y devuelto si la llamada falla.
+    const aiUsage = await consumeUsage({
+      organizationId,
+      metric: "aiResponses",
+      entitlement,
+    });
+    if (!aiUsage.allowed) {
+      logAgentEvent({
+        requestId,
+        stage: "usage_limit",
+        organizationId,
+        conversationId: conversation.id,
+        errorCode: "aiResponses",
+      });
+      return jsonError(
+        402,
+        "usage_limit",
+        new UsageLimitError("aiResponses", aiUsage.limit).message
+      );
+    }
+
     const startedAt = Date.now();
     let result;
     try {
@@ -316,6 +368,10 @@ export async function POST(request: NextRequest) {
       });
     } catch (error) {
       if (error instanceof AgentRunError) {
+        // El fallo del proveedor no debe consumir cupo del plan.
+        await refundUsage({ organizationId, metric: "aiResponses" }).catch(
+          () => {}
+        );
         await recordAudit({
           organizationId,
           userId: session.user.id,

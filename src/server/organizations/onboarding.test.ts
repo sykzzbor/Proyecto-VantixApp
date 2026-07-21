@@ -15,6 +15,8 @@ type MemoryOrganization = { id: string; name: string; slug: string };
 function memoryDependencies(options?: {
   users?: MemoryUser[];
   existingMembership?: { userId: string; organizationId: string };
+  /** Prueba previa de la cuenta: simula que el usuario ya usó sus 5 días. */
+  existingUserTrial?: { userId: string; startedAt: Date; endsAt: Date };
   failCreate?: boolean;
 }) {
   const users = options?.users ?? [
@@ -31,6 +33,8 @@ function memoryDependencies(options?: {
     endsAt: Date;
   }> = [];
   const activeOrganizations: Array<{ organizationId: string; userId: string }> = [];
+  const userTrials: Array<{ userId: string; startedAt: Date; endsAt: Date }> =
+    options?.existingUserTrial ? [options.existingUserTrial] : [];
   let id = 0;
   let queue = Promise.resolve();
 
@@ -74,6 +78,13 @@ function memoryDependencies(options?: {
     async createTrialSubscription(input) {
       subscriptions.push(input);
     },
+    async findUserTrial(userId) {
+      const trial = userTrials.find((item) => item.userId === userId);
+      return trial ? { startedAt: trial.startedAt, endsAt: trial.endsAt } : null;
+    },
+    async createUserTrial(input) {
+      userTrials.push(input);
+    },
     async setActiveOrganization(input) {
       activeOrganizations.push(input);
     },
@@ -103,6 +114,7 @@ function memoryDependencies(options?: {
     agentSettings,
     subscriptions,
     activeOrganizations,
+    userTrials,
   };
 }
 
@@ -128,6 +140,57 @@ test("un usuario de Google crea su primera organización como OWNER", async () =
   assert.deepEqual(memory.activeOrganizations, [
     { organizationId: result.organization.id, userId: "google-user" },
   ]);
+  // La prueba queda registrada a nivel CUENTA, no de la organización.
+  assert.equal(memory.userTrials.length, 1);
+  assert.equal(memory.userTrials[0]?.userId, "google-user");
+});
+
+test("la prueba es única por cuenta: un segundo negocio hereda la ventana original", async () => {
+  const startedAt = new Date("2026-07-01T00:00:00.000Z");
+  const endsAt = new Date("2026-07-06T00:00:00.000Z");
+  const memory = memoryDependencies({
+    // La cuenta ya usó su prueba hace semanas.
+    existingUserTrial: { userId: "google-user", startedAt, endsAt },
+  });
+
+  const result = await createInitialOrganization(
+    "google-user",
+    { name: "Segundo Negocio" },
+    memory.dependencies
+  );
+
+  assert.equal(result.created, true);
+  // La suscripción nueva NO estrena 5 días: reutiliza la ventana ya vencida.
+  assert.equal(memory.subscriptions.length, 1);
+  assert.equal(memory.subscriptions[0]!.startedAt.getTime(), startedAt.getTime());
+  assert.equal(memory.subscriptions[0]!.endsAt.getTime(), endsAt.getTime());
+  // Y no se creó una segunda prueba para la cuenta.
+  assert.equal(memory.userTrials.length, 1);
+});
+
+test("la prueba no se reinicia al volver a entrar sin negocios nuevos", async () => {
+  const memory = memoryDependencies();
+  const first = await createInitialOrganization(
+    "email-user",
+    { name: "Negocio Uno" },
+    memory.dependencies
+  );
+  const trialAfterFirst = memory.userTrials[0]!;
+
+  // Segundo intento del mismo usuario: recupera la organización existente.
+  const second = await createInitialOrganization(
+    "email-user",
+    { name: "Negocio Uno" },
+    memory.dependencies
+  );
+
+  assert.equal(second.created, false);
+  assert.equal(second.organization.id, first.organization.id);
+  assert.equal(memory.userTrials.length, 1);
+  assert.equal(
+    memory.userTrials[0]!.endsAt.getTime(),
+    trialAfterFirst.endsAt.getTime()
+  );
 });
 
 test("un usuario con email crea su primera organización", async () => {

@@ -77,6 +77,22 @@ const initialOrganizationDependencies: InitialOrganizationDependencies = {
         async createAgentSettings(organizationId) {
           await tx.agentSettings.create({ data: { organizationId } });
         },
+        async findUserTrial(candidateUserId) {
+          const trial = await tx.userTrial.findUnique({
+            where: { userId: candidateUserId },
+            select: { startedAt: true, endsAt: true },
+          });
+          return trial;
+        },
+        async createUserTrial(data) {
+          await tx.userTrial.create({
+            data: {
+              userId: data.userId,
+              startedAt: data.startedAt,
+              endsAt: data.endsAt,
+            },
+          });
+        },
         async createTrialSubscription(data) {
           const subscription = await tx.organizationSubscription.create({
             data: {

@@ -33,6 +33,7 @@ model User {
   whatsappSignupAttempts WhatsappEmbeddedSignupAttempt[]
   createdAppointments    Appointment[]                   @relation("AppointmentCreatedBy")
   billingPriceSnapshots  PlanPriceSnapshot[]             @relation("PlanPriceSnapshotCreatedBy")
+  trial                  UserTrial?
 
   @@map("users")
 }
@@ -134,8 +135,45 @@ model Organization {
   subscription               OrganizationSubscription?
   billingEvents              BillingEvent[]
   planPriceSnapshots         PlanPriceSnapshot[]
+  usagePeriods               OrganizationUsagePeriod[]
 
   @@map("organizations")
+}
+
+/**
+ * Registro de la prueba gratuita por CUENTA (no por organización). Se crea al
+ * abrir el primer negocio y nunca se reinicia: si el usuario borra el negocio
+ * y crea otro, la nueva suscripción hereda esta misma ventana.
+ */
+model UserTrial {
+  userId    String   @id
+  startedAt DateTime
+  endsAt    DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_trials")
+}
+
+/**
+ * Contadores de uso por organización y mes calendario (UTC). El "reinicio" es
+ * empezar una fila nueva por período: el historial de meses anteriores queda
+ * intacto, igual que los eventos crudos de AiUsageEvent.
+ */
+model OrganizationUsagePeriod {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  periodKey          String // "YYYY-MM" en UTC
+  conversationsCount Int      @default(0)
+  aiResponsesCount   Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, periodKey])
+  @@map("organization_usage_periods")
 }
 
 model OrganizationMember {

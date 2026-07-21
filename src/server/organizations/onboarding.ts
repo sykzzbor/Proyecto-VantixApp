@@ -35,6 +35,13 @@ export type InitialOrganizationTransaction = {
     startedAt: Date;
     endsAt: Date;
   }): Promise<void>;
+  /** Prueba de la CUENTA (no de la organización); null si nunca tuvo una. */
+  findUserTrial(userId: string): Promise<{ startedAt: Date; endsAt: Date } | null>;
+  createUserTrial(input: {
+    userId: string;
+    startedAt: Date;
+    endsAt: Date;
+  }): Promise<void>;
   setActiveOrganization(input: {
     organizationId: string;
     userId: string;
@@ -94,11 +101,24 @@ export async function createInitialOrganization(
       name: data.name,
     });
     await transaction.createAgentSettings(organization.id);
-    const trialStartedAt = dependencies.now?.() ?? new Date();
+
+    // Prueba ÚNICA por cuenta: la ventana de 5 días se fija la primera vez y
+    // nunca se reinicia. Si el usuario borra el negocio y crea otro (o vuelve
+    // a entrar), la nueva suscripción hereda la misma ventana; si ya venció,
+    // el entitlement la marca vencida en la primera evaluación.
+    const now = dependencies.now?.() ?? new Date();
+    let trial = await transaction.findUserTrial(userId);
+    if (!trial) {
+      trial = {
+        startedAt: now,
+        endsAt: new Date(now.getTime() + TRIAL_DURATION_MS),
+      };
+      await transaction.createUserTrial({ userId, ...trial });
+    }
     await transaction.createTrialSubscription({
       organizationId: organization.id,
-      startedAt: trialStartedAt,
-      endsAt: new Date(trialStartedAt.getTime() + TRIAL_DURATION_MS),
+      startedAt: trial.startedAt,
+      endsAt: trial.endsAt,
     });
     await transaction.setActiveOrganization({
       organizationId: organization.id,
