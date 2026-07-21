@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { ZodError } from "zod";
 import {
@@ -166,6 +167,22 @@ test("la prueba es única por cuenta: un segundo negocio hereda la ventana origi
   assert.equal(memory.subscriptions[0]!.endsAt.getTime(), endsAt.getTime());
   // Y no se creó una segunda prueba para la cuenta.
   assert.equal(memory.userTrials.length, 1);
+});
+
+test("la migración registra la prueba histórica de cada OWNER sin sobrescribirla", () => {
+  const sql = readFileSync(
+    new URL(
+      "../../../prisma/migrations/20260721200000_user_trial_backfill/migration.sql",
+      import.meta.url
+    ),
+    "utf8"
+  );
+
+  assert.match(sql, /INSERT INTO "user_trials"/);
+  assert.match(sql, /WHERE om\."role" = 'OWNER'/);
+  assert.match(sql, /DISTINCT ON \(om\."userId"\)/);
+  assert.match(sql, /ON CONFLICT \("userId"\) DO NOTHING/);
+  assert.doesNotMatch(sql, /\b(?:DROP|DELETE|TRUNCATE)\b/i);
 });
 
 test("la prueba no se reinicia al volver a entrar sin negocios nuevos", async () => {
