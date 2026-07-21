@@ -11,6 +11,19 @@ export function resolveMercadoPagoStatus(input: {
 }): SubscriptionStatusValue {
   const eventType = input.eventType?.toLowerCase() ?? "";
   if (eventType.includes("rejected")) return "PAST_DUE";
+  // Una factura pendiente nunca confirma el alta inicial. Si la organización
+  // ya estaba activa conserva el acceso mientras Mercado Pago resuelve el
+  // cobro; cualquier otro estado permanece cerrado o en prueba vigente.
+  if (eventType.includes("pending")) {
+    if (input.currentStatus === "ACTIVE") return "ACTIVE";
+    if (
+      input.currentStatus === "TRIALING" &&
+      input.trialEndsAt.getTime() > input.now.getTime()
+    ) {
+      return "TRIALING";
+    }
+    return "INCOMPLETE";
+  }
   if (input.remote.status === "authorized") return "ACTIVE";
   if (input.remote.status === "paused") return "PAST_DUE";
   if (input.remote.status === "cancelled") return "CANCELED";

@@ -118,10 +118,10 @@ test("los tres planes fijan los límites de la especificación", () => {
   });
 });
 
-test("Empresarial cuesta USD 400 y se convierte a pesos con la cotización", () => {
-  assert.equal(BILLING_PLANS.ENTERPRISE.usdMonthly, 400);
-  assert.equal(convertUsdToArs(400, 1_500), 600_000);
-  assert.equal(convertUsdToArs(400, 1_237), 495_000);
+test("Empresarial cuesta USD 349 y se convierte a pesos con la cotización", () => {
+  assert.equal(BILLING_PLANS.ENTERPRISE.usdMonthly, 349);
+  assert.equal(convertUsdToArs(349, 1_500), 524_000);
+  assert.equal(convertUsdToArs(349, 1_237), 432_000);
 });
 
 test("cada plan habilita exactamente las funciones que corresponden", () => {

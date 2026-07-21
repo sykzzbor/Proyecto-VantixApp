@@ -162,6 +162,14 @@ export function PlansPricing({
       ),
     [billing.entitlement]
   );
+  const nextBillingDate = useMemo(
+    () => formatSubscriptionDate(billing.entitlement.nextBillingAt),
+    [billing.entitlement.nextBillingAt]
+  );
+  const lastSyncedAt = useMemo(
+    () => formatSubscriptionDate(billing.lastSyncedAt),
+    [billing.lastSyncedAt]
+  );
 
   function selectCurrency(next: Currency) {
     if (next === "ARS" && !exchangeRate) return;
@@ -261,6 +269,16 @@ export function PlansPricing({
                 ? `Período vigente hasta el ${subscriptionDate}.`
                 : "Estado confirmado por el servidor."}
           </p>
+          {billing.entitlement.status === "ACTIVE" && nextBillingDate && (
+            <p className="mt-1 text-xs font-medium text-foreground">
+              Próximo cobro: {nextBillingDate}
+            </p>
+          )}
+          {lastSyncedAt && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Estado confirmado con Mercado Pago: {lastSyncedAt}
+            </p>
+          )}
           {canManage && (billing.canSynchronize || billing.canCancel) && (
             <div className="mt-3 flex flex-wrap gap-2">
               {billing.canSynchronize && (

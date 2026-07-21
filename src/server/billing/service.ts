@@ -36,6 +36,7 @@ export type BillingOverview = {
   pendingPlan: BillingPlanId | null;
   canSynchronize: boolean;
   canCancel: boolean;
+  lastSyncedAt: string | null;
 };
 
 export type BillingCheckoutResult = {
@@ -53,6 +54,22 @@ type CheckoutContext = {
   userEmail: string;
 };
 
+export function isRemoteSubscriptionForSnapshot(
+  remote: BillingProviderSubscription,
+  snapshotId: string
+): boolean {
+  return remote.externalReference === `vantix:${snapshotId}`;
+}
+
+export function selectExternalSubscriptionToSynchronize(input: {
+  pendingExternalSubscriptionId: string | null;
+  activeExternalSubscriptionId: string | null;
+}): string | null {
+  return (
+    input.pendingExternalSubscriptionId ?? input.activeExternalSubscriptionId
+  );
+}
+
 export async function getBillingOverview(
   organizationId: string
 ): Promise<BillingOverview> {
@@ -65,7 +82,11 @@ export async function getBillingOverview(
     }),
     prisma.organizationSubscription.findUnique({
       where: { organizationId },
-      select: { status: true, externalSubscriptionId: true },
+      select: {
+        status: true,
+        externalSubscriptionId: true,
+        lastSyncedAt: true,
+      },
     }),
     Promise.resolve(getMercadoPagoConfiguration()),
   ]);
@@ -85,6 +106,7 @@ export async function getBillingOverview(
         subscription?.externalSubscriptionId &&
         subscription.status !== "CANCELED"
     ),
+    lastSyncedAt: subscription?.lastSyncedAt?.toISOString() ?? null,
   };
 }
 
@@ -312,7 +334,7 @@ export async function applyMercadoPagoSubscriptionUpdate(input: {
       },
     },
   });
-  if (!snapshot || input.remote.externalReference !== `vantix:${snapshot.id}`) {
+  if (!snapshot || !isRemoteSubscriptionForSnapshot(input.remote, snapshot.id)) {
     throw new ActionError("La notificación de pago no corresponde a una suscripción válida.");
   }
   if (
@@ -506,23 +528,28 @@ export async function synchronizeMercadoPagoSubscription(input: {
   eventType?: string;
   provider?: BillingProvider;
 }) {
-  const subscription = await prisma.organizationSubscription.findUnique({
-    where: { organizationId: input.organizationId },
-    select: { externalSubscriptionId: true },
+  const [subscription, pending] = await Promise.all([
+    prisma.organizationSubscription.findUnique({
+      where: { organizationId: input.organizationId },
+      select: { externalSubscriptionId: true },
+    }),
+    prisma.planPriceSnapshot.findFirst({
+      where: {
+        organizationId: input.organizationId,
+        checkoutStatus: "PENDING",
+        externalSubscriptionId: { not: null },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { externalSubscriptionId: true },
+    }),
+  ]);
+  // En un cambio de plan se sincroniza primero el checkout nuevo; consultar
+  // siempre la suscripción activa anterior impediría confirmar el cambio.
+  const externalSubscriptionId = selectExternalSubscriptionToSynchronize({
+    pendingExternalSubscriptionId: pending?.externalSubscriptionId ?? null,
+    activeExternalSubscriptionId:
+      subscription?.externalSubscriptionId ?? null,
   });
-  const pending = !subscription?.externalSubscriptionId
-    ? await prisma.planPriceSnapshot.findFirst({
-        where: {
-          organizationId: input.organizationId,
-          checkoutStatus: "PENDING",
-          externalSubscriptionId: { not: null },
-        },
-        orderBy: { createdAt: "desc" },
-        select: { externalSubscriptionId: true },
-      })
-    : null;
-  const externalSubscriptionId =
-    subscription?.externalSubscriptionId ?? pending?.externalSubscriptionId;
   if (!externalSubscriptionId) {
     throw new ActionError("No hay una suscripción de Mercado Pago para sincronizar.");
   }

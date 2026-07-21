@@ -10,17 +10,17 @@
 
 ## Preparación manual de Mercado Pago
 
-1. Crear tres planes mensuales en ARS para `STANDARD`, `PROFESSIONAL` y `ENTERPRISE`.
-2. Antes de habilitar checkout, confirmar que cada importe coincide exactamente con la conversión y redondeo mostrados por VantixApp. El backend rechaza diferencias para no cobrar otro valor.
-3. Configurar las variables listadas en `.env.example` únicamente en el entorno seguro del servidor.
-4. Registrar `https://TU-DOMINIO/api/webhooks/mercado-pago` como webhook y copiar su firma secreta al entorno.
-5. Suscribir notificaciones de suscripciones/preapproval y pagos autorizados de suscripciones.
-6. Probar en un entorno de prueba separado. No mezclar credenciales de prueba y producción.
-7. Verificar un alta, un pago rechazado, una cancelación y un webhook duplicado antes de habilitar cobros reales.
+1. Configurar las variables listadas en `.env.example` únicamente en el entorno seguro del servidor.
+2. Registrar `https://TU-DOMINIO/api/webhooks/mercado-pago` como webhook y copiar su firma secreta al entorno.
+3. Activar los eventos `subscription_preapproval` y `subscription_authorized_payment` (Planes y suscripciones). No se requieren planes externos: cada checkout crea una suscripción mensual sin plan asociado con el importe ARS del snapshot.
+4. Probar con credenciales y usuarios de prueba en un entorno separado. No mezclar credenciales de prueba y producción.
+5. Verificar un alta, un pago pendiente, una renovación aprobada, un pago rechazado, una cancelación, un cambio de plan y un webhook duplicado antes de habilitar cobros reales.
 
 ## Política de precio
 
-El checkout guarda un snapshot inmutable con plan, USD de referencia, importe ARS, cotización, fuente y fecha. La renovación conserva el importe autorizado (`FIXED_UNTIL_EXPLICIT_CHANGE`). Una variación del dólar no altera silenciosamente una suscripción existente: cambiar el importe requiere un flujo explícito, un nuevo snapshot y aceptación del pagador.
+El catálogo mensual de referencia es `STANDARD` USD 89, `PROFESSIONAL` USD 179 y `ENTERPRISE` USD 349. La interfaz y el checkout obtienen estos importes desde la misma configuración tipada.
+
+El checkout guarda un snapshot inmutable con plan, USD de referencia, importe ARS, cotización, fuente y fecha. Ese importe se envía a Mercado Pago con frecuencia mensual. La renovación conserva el importe autorizado (`FIXED_UNTIL_EXPLICIT_CHANGE`). Una variación del dólar no altera silenciosamente una suscripción existente: cambiar el importe requiere un checkout explícito, un nuevo snapshot y aceptación del pagador.
 
 El retorno del navegador no activa el plan. El acceso cambia únicamente después de consultar el estado server-side de Mercado Pago desde un webhook firmado o una sincronización administrativa.
 

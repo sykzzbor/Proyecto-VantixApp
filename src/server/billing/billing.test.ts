@@ -14,10 +14,15 @@ import {
   resolveMercadoPagoStatus,
 } from "@/server/billing/state";
 import {
+  getMercadoPagoConfiguration,
   MercadoPagoBillingProvider,
   verifyMercadoPagoWebhookSignature,
 } from "@/server/billing/mercado-pago";
 import { BillingProviderError, type BillingProviderSubscription } from "@/server/billing/provider";
+import {
+  isRemoteSubscriptionForSnapshot,
+  selectExternalSubscriptionToSynchronize,
+} from "@/server/billing/service";
 
 const NOW = new Date("2026-07-19T12:00:00.000Z");
 
@@ -65,21 +70,21 @@ test("los planes definitivos usan IDs estables, nombres y precios únicos", () =
       usdMonthly,
     })),
     [
-      { id: "STANDARD", name: "Standard", usdMonthly: 90 },
+      { id: "STANDARD", name: "Standard", usdMonthly: 89 },
       { id: "PROFESSIONAL", name: "Profesional", usdMonthly: 179 },
-      { id: "ENTERPRISE", name: "Empresarial", usdMonthly: 400 },
+      { id: "ENTERPRISE", name: "Empresarial", usdMonthly: 349 },
     ]
   );
   assert.equal(BILLING_PLANS.PROFESSIONAL.recommended, true);
 });
 
 test("convierte y redondea comercialmente los tres planes a ARS", () => {
-  assert.equal(convertUsdToArs(90, 1_500), 135_000);
+  assert.equal(convertUsdToArs(89, 1_500), 134_000);
   assert.equal(convertUsdToArs(179, 1_500), 269_000);
   // Empresarial también se convierte con la cotización del servidor.
   assert.equal(
     convertUsdToArs(BILLING_PLANS.ENTERPRISE.usdMonthly, 1_500),
-    600_000
+    524_000
   );
 });
 
@@ -186,6 +191,48 @@ test("Mercado Pago aprobado activa y un pago rechazado pasa a PAST_DUE", () => {
   );
 });
 
+test("una renovación pendiente no activa un alta incompleta ni corta una activa", () => {
+  assert.equal(
+    resolveMercadoPagoStatus({
+      remote: remote({ status: "authorized" }),
+      currentStatus: "INCOMPLETE",
+      trialEndsAt: NOW,
+      now: NOW,
+      eventType: "subscription_authorized_payment:pending",
+    }),
+    "INCOMPLETE"
+  );
+  assert.equal(
+    resolveMercadoPagoStatus({
+      remote: remote({ status: "authorized" }),
+      currentStatus: "ACTIVE",
+      trialEndsAt: NOW,
+      now: NOW,
+      eventType: "subscription_authorized_payment:pending",
+    }),
+    "ACTIVE"
+  );
+});
+
+test("una renovación aprobada conserva ACTIVE y desbloquea el acceso", () => {
+  const status = resolveMercadoPagoStatus({
+    remote: remote({ status: "authorized" }),
+    currentStatus: "PAST_DUE",
+    trialEndsAt: NOW,
+    now: NOW,
+    eventType: "subscription_authorized_payment:approved",
+  });
+  assert.equal(status, "ACTIVE");
+  assert.equal(
+    evaluateOrganizationEntitlement(
+      "org-1",
+      subscription({ status }),
+      NOW
+    ).accessAllowed,
+    true
+  );
+});
+
 test("un checkout pendiente no corta una prueba todavía vigente", () => {
   assert.equal(
     resolveMercadoPagoStatus({
@@ -268,22 +315,50 @@ test("valida la firma y la antigüedad del webhook de Mercado Pago", () => {
     }),
     false
   );
+  assert.equal(
+    verifyMercadoPagoWebhookSignature({
+      signatureHeader: `ts=${ts},v1=${signature}`,
+      requestId: "req-1",
+      dataId: "PREAPPROVAL-1",
+      secret,
+      now: NOW.getTime(),
+    }),
+    true
+  );
 });
 
 function providerEnv() {
   return {
     MERCADO_PAGO_ACCESS_TOKEN: "private-test-token",
-    MERCADO_PAGO_STANDARD_PLAN_ID: "standard-plan",
-    MERCADO_PAGO_PROFESSIONAL_PLAN_ID: "professional-plan",
-    MERCADO_PAGO_ENTERPRISE_PLAN_ID: "enterprise-plan",
   };
 }
 
-test("el proveedor crea checkout solo si el importe ARS coincide", async () => {
+test("la configuración de checkout no requiere IDs de planes externos", () => {
+  assert.deepEqual(
+    getMercadoPagoConfiguration({
+      MERCADO_PAGO_ACCESS_TOKEN: "test-token",
+      MERCADO_PAGO_WEBHOOK_SECRET: "test-webhook-secret",
+      NEXT_PUBLIC_APP_URL: "https://app.example.test",
+    }),
+    {
+      configured: true,
+      missing: [],
+      appUrl: "https://app.example.test",
+    }
+  );
+});
+
+test("el proveedor crea checkout mensual en ARS sin plan asociado", async () => {
   let authorization = "";
+  let requestedUrl = "";
+  let requestedMethod = "";
+  let requestedBody: Record<string, unknown> = {};
   const provider = new MercadoPagoBillingProvider({
     env: providerEnv(),
-    fetchImpl: (async (_url, init) => {
+    fetchImpl: (async (url, init) => {
+      requestedUrl = String(url);
+      requestedMethod = String(init?.method);
+      requestedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
       authorization = String((init?.headers as Record<string, string>).Authorization);
       return new Response(
         JSON.stringify({
@@ -310,6 +385,39 @@ test("el proveedor crea checkout solo si el importe ARS coincide", async () => {
   });
   assert.equal(result.checkoutUrl.startsWith("https://"), true);
   assert.equal(authorization, "Bearer private-test-token");
+  assert.equal(requestedUrl, "https://api.mercadopago.com/preapproval");
+  assert.equal(requestedMethod, "POST");
+  assert.equal("preapproval_plan_id" in requestedBody, false);
+  assert.equal(requestedBody.status, "pending");
+  assert.equal(requestedBody.external_reference, "vantix:snapshot-1");
+  assert.deepEqual(requestedBody.auto_recurring, {
+    frequency: 1,
+    frequency_type: "months",
+    transaction_amount: 135_000,
+    currency_id: "ARS",
+  });
+});
+
+test("la referencia remota vincula la suscripción con el snapshot y su organización", () => {
+  assert.equal(isRemoteSubscriptionForSnapshot(remote(), "snapshot-1"), true);
+  assert.equal(isRemoteSubscriptionForSnapshot(remote(), "snapshot-otra-org"), false);
+});
+
+test("un cambio de plan sincroniza el checkout nuevo antes que la suscripción activa", () => {
+  assert.equal(
+    selectExternalSubscriptionToSynchronize({
+      pendingExternalSubscriptionId: "preapproval-plan-nuevo",
+      activeExternalSubscriptionId: "preapproval-plan-anterior",
+    }),
+    "preapproval-plan-nuevo"
+  );
+  assert.equal(
+    selectExternalSubscriptionToSynchronize({
+      pendingExternalSubscriptionId: null,
+      activeExternalSubscriptionId: "preapproval-plan-vigente",
+    }),
+    "preapproval-plan-vigente"
+  );
 });
 
 test("el proveedor falla cerrado ante diferencia de importe", async () => {
@@ -341,6 +449,39 @@ test("el proveedor falla cerrado ante diferencia de importe", async () => {
     (error: unknown) =>
       error instanceof BillingProviderError && error.code === "amount_mismatch"
   );
+});
+
+test("cancelar usa la suscripción real y conserva una respuesta sanitizada", async () => {
+  let request: { url: string; method: string; body: string } | null = null;
+  const provider = new MercadoPagoBillingProvider({
+    env: providerEnv(),
+    fetchImpl: (async (url, init) => {
+      request = {
+        url: String(url),
+        method: String(init?.method),
+        body: String(init?.body),
+      };
+      return new Response(
+        JSON.stringify({
+          id: "preapproval-1",
+          status: "cancelled",
+          external_reference: "vantix:snapshot-1",
+          auto_recurring: {
+            transaction_amount: 135_000,
+            currency_id: "ARS",
+          },
+        }),
+        { status: 200 }
+      );
+    }) as typeof fetch,
+  });
+  const result = await provider.cancelSubscription("preapproval-1");
+  assert.equal(result.status, "cancelled");
+  assert.deepEqual(request, {
+    url: "https://api.mercadopago.com/preapproval/preapproval-1",
+    method: "PUT",
+    body: JSON.stringify({ status: "cancelled" }),
+  });
 });
 
 test("timeout y rechazo del proveedor devuelven errores sanitizados", async () => {

@@ -50,6 +50,7 @@ export type OrganizationEntitlement = {
   trialStartedAt: string | null;
   trialEndsAt: string | null;
   currentPeriodEndsAt: string | null;
+  nextBillingAt: string | null;
   remainingMs: number;
   remainingDays: number;
   remainingHours: number;
@@ -90,6 +91,7 @@ export function evaluateOrganizationEntitlement(
       trialStartedAt: null,
       trialEndsAt: null,
       currentPeriodEndsAt: null,
+      nextBillingAt: null,
       remainingMs: 0,
       remainingDays: 0,
       remainingHours: 0,
@@ -102,6 +104,7 @@ export function evaluateOrganizationEntitlement(
     trialStartedAt: subscription.trialStartedAt.toISOString(),
     trialEndsAt: subscription.trialEndsAt.toISOString(),
     currentPeriodEndsAt: subscription.currentPeriodEndsAt?.toISOString() ?? null,
+    nextBillingAt: subscription.nextBillingAt?.toISOString() ?? null,
   };
 
   if (subscription.status === "TRIALING") {

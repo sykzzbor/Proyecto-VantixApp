@@ -91,7 +91,7 @@ export const BILLING_PLANS = {
   STANDARD: {
     id: "STANDARD",
     name: "Standard",
-    usdMonthly: 90,
+    usdMonthly: 89,
     description: "La base operativa para centralizar la atención de un negocio.",
     recommended: false,
     features: [
@@ -136,7 +136,7 @@ export const BILLING_PLANS = {
   ENTERPRISE: {
     id: "ENTERPRISE",
     name: "Empresarial",
-    usdMonthly: 400,
+    usdMonthly: 349,
     description: "Mayor capacidad y acompañamiento para operaciones consolidadas.",
     recommended: false,
     features: [

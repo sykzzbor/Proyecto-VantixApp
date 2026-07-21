@@ -1,5 +1,4 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { BillingPlanId } from "@/lib/billing/plans";
 import {
   BillingProviderError,
   type BillingProvider,
@@ -16,9 +15,6 @@ const MAX_RESPONSE_BYTES = 128 * 1024;
 type MercadoPagoEnv = {
   MERCADO_PAGO_ACCESS_TOKEN?: string;
   MERCADO_PAGO_WEBHOOK_SECRET?: string;
-  MERCADO_PAGO_STANDARD_PLAN_ID?: string;
-  MERCADO_PAGO_PROFESSIONAL_PLAN_ID?: string;
-  MERCADO_PAGO_ENTERPRISE_PLAN_ID?: string;
   NEXT_PUBLIC_APP_URL?: string;
 };
 
@@ -50,7 +46,7 @@ type MercadoPagoRawAuthorizedPayment = {
 
 export type MercadoPagoConfiguration = {
   configured: boolean;
-  missing: Array<"access_token" | "webhook_secret" | "plan_ids" | "app_url">;
+  missing: Array<"access_token" | "webhook_secret" | "app_url">;
   appUrl: string | null;
 };
 
@@ -69,29 +65,12 @@ function validPublicAppUrl(value: string | undefined): string | null {
   }
 }
 
-function planIdFor(plan: BillingPlanId, env: MercadoPagoEnv): string | null {
-  const value =
-    plan === "STANDARD"
-      ? env.MERCADO_PAGO_STANDARD_PLAN_ID
-      : plan === "PROFESSIONAL"
-        ? env.MERCADO_PAGO_PROFESSIONAL_PLAN_ID
-        : env.MERCADO_PAGO_ENTERPRISE_PLAN_ID;
-  return value?.trim() || null;
-}
-
 export function getMercadoPagoConfiguration(
   env: MercadoPagoEnv = process.env as unknown as MercadoPagoEnv
 ): MercadoPagoConfiguration {
   const missing: MercadoPagoConfiguration["missing"] = [];
   if (!env.MERCADO_PAGO_ACCESS_TOKEN?.trim()) missing.push("access_token");
   if (!env.MERCADO_PAGO_WEBHOOK_SECRET?.trim()) missing.push("webhook_secret");
-  if (
-    !env.MERCADO_PAGO_STANDARD_PLAN_ID?.trim() ||
-    !env.MERCADO_PAGO_PROFESSIONAL_PLAN_ID?.trim() ||
-    !env.MERCADO_PAGO_ENTERPRISE_PLAN_ID?.trim()
-  ) {
-    missing.push("plan_ids");
-  }
   const appUrl = validPublicAppUrl(env.NEXT_PUBLIC_APP_URL);
   if (!appUrl) missing.push("app_url");
   return { configured: missing.length === 0, missing, appUrl };
@@ -273,20 +252,18 @@ export class MercadoPagoBillingProvider implements BillingProvider {
   async createSubscription(
     input: CreateBillingSubscriptionInput
   ): Promise<CreatedBillingSubscription> {
-    const planId = planIdFor(input.plan, this.env);
-    if (!planId) {
-      throw new BillingProviderError(
-        "not_configured",
-        "El plan todavía no está configurado para cobros."
-      );
-    }
     const body = await this.request("/preapproval", {
       method: "POST",
       body: JSON.stringify({
-        preapproval_plan_id: planId,
         reason: `VantixApp · ${input.plan}`,
         external_reference: input.externalReference,
         payer_email: input.payerEmail,
+        auto_recurring: {
+          frequency: 1,
+          frequency_type: "months",
+          transaction_amount: input.amountArs,
+          currency_id: "ARS",
+        },
         back_url: input.returnUrl,
         status: "pending",
       }),
@@ -297,13 +274,14 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       typeof (body as MercadoPagoRawSubscription).init_point === "string"
         ? (body as MercadoPagoRawSubscription).init_point as string
         : null;
-    if (!checkoutUrl || !checkoutUrl.startsWith("https://")) {
+    if (!isMercadoPagoCheckoutUrl(checkoutUrl)) {
       throw new BillingProviderError(
         "invalid_provider_response",
         "Mercado Pago no devolvió un enlace de pago válido."
       );
     }
     if (
+      parsed.externalReference !== input.externalReference ||
       parsed.amountArs === null ||
       parsed.currency !== "ARS" ||
       Math.abs(parsed.amountArs - input.amountArs) > 0.01
@@ -344,6 +322,22 @@ export class MercadoPagoBillingProvider implements BillingProvider {
   }
 }
 
+function isMercadoPagoCheckoutUrl(value: string | null): value is string {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      (url.hostname === "mercadopago.com" ||
+        url.hostname.endsWith(".mercadopago.com") ||
+        url.hostname === "mercadopago.com.ar" ||
+        url.hostname.endsWith(".mercadopago.com.ar"))
+    );
+  } catch {
+    return false;
+  }
+}
+
 function safeEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left, "utf8");
   const rightBuffer = Buffer.from(right, "utf8");
@@ -374,7 +368,9 @@ export function verifyMercadoPagoWebhookSignature(input: {
   if (Math.abs(now - timestampMs) > (input.toleranceMs ?? 5 * 60 * 1_000)) {
     return false;
   }
-  const manifest = `id:${input.dataId};request-id:${input.requestId};ts:${timestamp};`;
+  // Mercado Pago exige minúsculas para data.id alfanuméricos al construir
+  // el manifest de la firma.
+  const manifest = `id:${input.dataId.toLowerCase()};request-id:${input.requestId};ts:${timestamp};`;
   const expected = createHmac("sha256", input.secret)
     .update(manifest, "utf8")
     .digest("hex");
