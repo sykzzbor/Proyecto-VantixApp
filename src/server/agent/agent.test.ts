@@ -14,6 +14,7 @@ import {
   ANTHROPIC_AGENT_TOOLS,
   classifyAnthropicError,
   isSmallTalk,
+  normalizeHistory,
   runAnthropicProvider,
   toolsForCapabilities,
   type AnthropicMessageCreator,
@@ -421,6 +422,55 @@ test("al agotar rondas de herramientas fuerza una respuesta sin tools", async ()
   // Tope duro: 2 rondas con tools + 1 llamada final sin tools.
   assert.equal(requests.length, 3);
   assert.deepEqual(requests[requests.length - 1]?.tools, []);
+});
+
+test("normalizeHistory garantiza que el primer mensaje sea del usuario", () => {
+  // La API rechaza con 400 cualquier conversación que arranque en assistant.
+  assert.deepEqual(
+    normalizeHistory([
+      { role: "assistant", content: "respuesta del equipo" },
+      { role: "user", content: "consulta" },
+    ]),
+    [{ role: "user", content: "consulta" }]
+  );
+  // Historial que ya empieza bien queda intacto.
+  const ok = [
+    { role: "user" as const, content: "a" },
+    { role: "assistant" as const, content: "b" },
+  ];
+  assert.deepEqual(normalizeHistory(ok), ok);
+  // Solo mensajes salientes: no hay nada rescatable como contexto.
+  assert.deepEqual(
+    normalizeHistory([{ role: "assistant", content: "solo salientes" }]),
+    []
+  );
+  assert.deepEqual(normalizeHistory([]), []);
+});
+
+test("un historial que empieza en assistant no se manda tal cual a Anthropic", async () => {
+  const enviados: Array<{ role: string }[]> = [];
+  await runAnthropicProvider(
+    {
+      ...runParams(),
+      // Pasa cuando el equipo respondió desde la bandeja (HUMAN -> assistant)
+      // y la ventana de los últimos N arranca en esa respuesta.
+      history: [
+        { role: "assistant", content: "Te respondo yo del equipo" },
+        { role: "user", content: "¿y los precios?" },
+        { role: "assistant", content: "Ahí van" },
+      ],
+    },
+    {
+      model: "claude-haiku-4-5-20251001",
+      createMessage: async (request) => {
+        enviados.push(request.messages.map((m) => ({ role: m.role })));
+        return message([{ type: "text", text: "ok" }]);
+      },
+    }
+  );
+  assert.equal(enviados[0]?.[0]?.role, "user");
+  // Se descartó solo el saliente inicial, no el resto del contexto.
+  assert.equal(enviados[0]?.length, 3);
 });
 
 test("un saludo se responde en una sola llamada y sin herramientas", async () => {

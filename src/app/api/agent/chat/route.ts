@@ -49,7 +49,18 @@ function jsonError(status: number, error: string, message: string) {
  */
 function logAgentEvent(fields: {
   requestId: string;
-  stage: "config" | "provider" | "ok" | "human" | "error";
+  stage:
+    | "session"
+    | "membership"
+    | "entitlement"
+    | "rate_limit"
+    | "invalid_body"
+    | "human"
+    | "agent_disabled"
+    | "config"
+    | "provider"
+    | "ok"
+    | "error";
   provider?: string;
   model?: "set" | "missing";
   organizationId?: string;
@@ -70,6 +81,7 @@ export async function POST(request: NextRequest) {
     // 1. Sesión autenticada.
     const session = await auth.api.getSession({ headers: request.headers });
     if (!session) {
+      logAgentEvent({ requestId, stage: "session", errorCode: "unauthorized" });
       return jsonError(401, "unauthorized", "Tenés que iniciar sesión.");
     }
 
@@ -77,6 +89,11 @@ export async function POST(request: NextRequest) {
     //    nunca del cuerpo de la petición.
     const membership = await findActiveMembership(session.user.id);
     if (!membership) {
+      logAgentEvent({
+        requestId,
+        stage: "membership",
+        errorCode: "no_organization",
+      });
       return jsonError(
         403,
         "no_organization",
@@ -84,8 +101,17 @@ export async function POST(request: NextRequest) {
       );
     }
     const organizationId = membership.organizationId;
+    // A diferencia de WhatsApp (que resuelve la organización desde la
+    // integración), acá sale de la selección activa del usuario: se registra
+    // para poder comparar ambos caminos cuando uno responde y el otro no.
     const entitlement = await getOrganizationEntitlement(organizationId);
     if (!entitlement.accessAllowed) {
+      logAgentEvent({
+        requestId,
+        stage: "entitlement",
+        organizationId,
+        errorCode: entitlement.reason,
+      });
       return jsonError(
         402,
         "subscription_required",
@@ -100,6 +126,12 @@ export async function POST(request: NextRequest) {
       RATE_LIMIT_WINDOW_MS
     );
     if (!rate.allowed) {
+      logAgentEvent({
+        requestId,
+        stage: "rate_limit",
+        organizationId,
+        errorCode: "rate_limited",
+      });
       return NextResponse.json(
         {
           error: "rate_limited",
@@ -148,6 +180,15 @@ export async function POST(request: NextRequest) {
         entityId: conversation.id,
         details: { canal: conversation.channel, modo: "humano" },
       });
+      // La IA no responde y el frontend no muestra ninguna burbuja nueva: es
+      // el caso que más se parece a "no pasa nada", así que queda registrado.
+      logAgentEvent({
+        requestId,
+        stage: "human",
+        organizationId,
+        conversationId: conversation.id,
+        errorCode: "human_takeover",
+      });
       return NextResponse.json({
         reply: null,
         humanMode: true,
@@ -168,6 +209,13 @@ export async function POST(request: NextRequest) {
         getAppointmentReadiness(organizationId).catch(() => null),
       ]);
     if (!settings || !settings.enabled) {
+      logAgentEvent({
+        requestId,
+        stage: "agent_disabled",
+        organizationId,
+        conversationId: conversation.id,
+        errorCode: settings ? "disabled" : "no_settings",
+      });
       return jsonError(
         409,
         "agent_disabled",

@@ -163,6 +163,20 @@ function assistantContent(response: Message): ContentBlockParam[] {
   });
 }
 
+/**
+ * La API exige que el primer mensaje sea del usuario. El historial recortado a
+ * los últimos N puede empezar con una respuesta del asistente —por ejemplo si
+ * el equipo contestó desde la bandeja (HUMAN también mapea a `assistant`) o si
+ * hubo dos salientes seguidos—, y en ese caso Anthropic rechaza la petición
+ * entera con 400 y el chat se queda sin respuesta.
+ */
+export function normalizeHistory<T extends { role: "user" | "assistant" }>(
+  history: T[]
+): T[] {
+  const firstUser = history.findIndex((message) => message.role === "user");
+  return firstUser === -1 ? [] : history.slice(firstUser);
+}
+
 function finalText(response: Message): string {
   return response.content
     .filter((block) => block.type === "text")
@@ -195,8 +209,14 @@ export async function runAnthropicProvider(
     dependencies.createMessage ??
     ((request) => getAnthropicClient().messages.create(request));
   const runTool = dependencies.executeTool ?? executeAgentTool;
+  const history = normalizeHistory(params.history);
+  if (history.length !== params.history.length) {
+    console.warn(
+      `[VantixApp] agent-timing org=${params.ctx.organizationId} stage=history_trimmed dropped=${params.history.length - history.length}`
+    );
+  }
   const messages: MessageParam[] = [
-    ...params.history.map((message) => ({
+    ...history.map((message) => ({
       role: message.role,
       content: message.content,
     })),
