@@ -66,6 +66,12 @@ function formatArsValue(value: number): string {
   }).format(value);
 }
 
+function formatTestArsValue(value: number): string {
+  return new Intl.NumberFormat("es-AR", {
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 function formatArs(value: number, rate: number): string {
   return formatArsValue(convertUsdToArs(value, rate));
 }
@@ -410,6 +416,17 @@ export function PlansPricing({
           {billing.checkoutUnavailableReason}
         </div>
       )}
+      {billing.testCheckout && billing.testAmountArs !== null && (
+        <div
+          className="rounded-xl border border-sky-500/30 bg-sky-500/[0.08] p-4 text-sm text-foreground"
+          role="status"
+        >
+          <strong>
+            Pago de prueba: ARS {formatTestArsValue(billing.testAmountArs)}.
+          </strong>{" "}
+          El precio comercial del plan no fue modificado.
+        </div>
+      )}
       {error && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive" role="alert">
           {error}
@@ -478,7 +495,26 @@ export function PlansPricing({
                 {confirming === plan.id && !disabled ? (
                   <div className="w-full space-y-3 rounded-lg border border-primary/25 bg-primary/[0.06] p-3">
                     <p className="text-xs leading-relaxed text-muted-foreground">
-                      Mercado Pago cobrará <strong className="text-foreground">{formatArsValue(amountArs)}</strong> por mes usando 1 USD = {formatRate(exchangeRate!)}. Las renovaciones conservarán ese importe hasta un cambio explícito y auditable.
+                      {billing.testCheckout && billing.testAmountArs !== null ? (
+                        <>
+                          <strong className="text-foreground">
+                            Pago de prueba: ARS{" "}
+                            {formatTestArsValue(billing.testAmountArs)}.
+                          </strong>{" "}
+                          El precio comercial del plan no fue modificado. Precio
+                          comercial de referencia: {formatArsValue(amountArs)}.
+                        </>
+                      ) : (
+                        <>
+                          Mercado Pago cobrará{" "}
+                          <strong className="text-foreground">
+                            {formatArsValue(amountArs)}
+                          </strong>{" "}
+                          por mes usando 1 USD = {formatRate(exchangeRate!)}. Las
+                          renovaciones conservarán ese importe hasta un cambio
+                          explícito y auditable.
+                        </>
+                      )}
                     </p>
                     <div className="flex gap-2">
                       <Button

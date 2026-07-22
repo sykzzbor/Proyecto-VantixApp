@@ -15,6 +15,7 @@ const MAX_RESPONSE_BYTES = 128 * 1024;
 type MercadoPagoEnv = {
   MERCADO_PAGO_ACCESS_TOKEN?: string;
   MERCADO_PAGO_WEBHOOK_SECRET?: string;
+  MERCADO_PAGO_TEST_AMOUNT_ARS?: string;
   NEXT_PUBLIC_APP_URL?: string;
   BETTER_AUTH_URL?: string;
   VERCEL_PROJECT_PRODUCTION_URL?: string;
@@ -61,9 +62,22 @@ export type MercadoPagoErrorLog = {
 
 export type MercadoPagoConfiguration = {
   configured: boolean;
-  missing: Array<"access_token" | "webhook_secret" | "app_url">;
+  missing: Array<
+    "access_token" | "webhook_secret" | "app_url" | "test_amount"
+  >;
   appUrl: string | null;
+  testMode: boolean;
+  testAmountArs: number | null;
 };
+
+function parseTestAmountArs(value: string | undefined): number | null {
+  const trimmed = value?.trim();
+  if (!trimmed || !/^\d+(?:\.\d{1,2})?$/.test(trimmed)) return null;
+  const amount = Number(trimmed);
+  return Number.isFinite(amount) && amount > 0 && amount <= 1_000_000
+    ? amount
+    : null;
+}
 
 function validPublicAppUrl(value: string | undefined): string | null {
   const trimmed = value?.trim();
@@ -96,11 +110,39 @@ export function getMercadoPagoConfiguration(
   env: MercadoPagoEnv = process.env as unknown as MercadoPagoEnv
 ): MercadoPagoConfiguration {
   const missing: MercadoPagoConfiguration["missing"] = [];
-  if (!env.MERCADO_PAGO_ACCESS_TOKEN?.trim()) missing.push("access_token");
+  const accessToken = env.MERCADO_PAGO_ACCESS_TOKEN?.trim();
+  if (!accessToken) missing.push("access_token");
   if (!env.MERCADO_PAGO_WEBHOOK_SECRET?.trim()) missing.push("webhook_secret");
   const appUrl = resolvePublicAppUrl(env);
   if (!appUrl) missing.push("app_url");
-  return { configured: missing.length === 0, missing, appUrl };
+  const testMode = Boolean(accessToken?.startsWith("TEST-"));
+  const testAmountArs = testMode
+    ? parseTestAmountArs(env.MERCADO_PAGO_TEST_AMOUNT_ARS)
+    : null;
+  if (testMode && testAmountArs === null) missing.push("test_amount");
+  return {
+    configured: missing.length === 0,
+    missing,
+    appUrl,
+    testMode,
+    testAmountArs,
+  };
+}
+
+export function resolveMercadoPagoChargeAmount(input: {
+  commercialAmountArs: number;
+  configuration: MercadoPagoConfiguration;
+}): number {
+  if (input.configuration.testMode) {
+    if (input.configuration.testAmountArs === null) {
+      throw new BillingProviderError(
+        "not_configured",
+        "Falta configurar el importe de prueba de Mercado Pago."
+      );
+    }
+    return input.configuration.testAmountArs;
+  }
+  return input.commercialAmountArs;
 }
 
 export function getMercadoPagoConfigurationError(
@@ -116,6 +158,8 @@ export function getMercadoPagoConfigurationError(
         return "MERCADO_PAGO_WEBHOOK_SECRET";
       case "app_url":
         return "una URL pública HTTPS válida en NEXT_PUBLIC_APP_URL";
+      case "test_amount":
+        return "MERCADO_PAGO_TEST_AMOUNT_ARS con un importe válido";
     }
   });
 

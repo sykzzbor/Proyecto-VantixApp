@@ -23,6 +23,7 @@ import {
   MercadoPagoBillingProvider,
   getMercadoPagoConfiguration,
   getMercadoPagoConfigurationError,
+  resolveMercadoPagoChargeAmount,
 } from "@/server/billing/mercado-pago";
 import {
   buildBillingWebhookIdempotencyKey,
@@ -35,6 +36,8 @@ export type BillingOverview = {
   entitlement: OrganizationEntitlement;
   billingConfigured: boolean;
   checkoutUnavailableReason: string | null;
+  testCheckout: boolean;
+  testAmountArs: number | null;
   pendingPlan: BillingPlanId | null;
   canSynchronize: boolean;
   canCancel: boolean;
@@ -44,6 +47,8 @@ export type BillingOverview = {
 export type BillingCheckoutResult = {
   checkoutUrl: string;
   amountArs: number;
+  chargedAmountArs: number;
+  testCheckout: boolean;
   exchangeRate: number;
   exchangeSource: string;
   quotedAt: string;
@@ -97,6 +102,8 @@ export async function getBillingOverview(
     billingConfigured: configuration.configured,
     checkoutUnavailableReason:
       getMercadoPagoConfigurationError(configuration),
+    testCheckout: configuration.testMode,
+    testAmountArs: configuration.testAmountArs,
     pendingPlan: (pending?.plan as BillingPlanId | undefined) ?? null,
     canSynchronize: Boolean(
       configuration.configured &&
@@ -117,6 +124,7 @@ function ensureExistingCheckoutBelongsToOrganization(
     checkoutStatus: string;
     checkoutUrl: string | null;
     arsAmount: Prisma.Decimal;
+    providerAmountArs: Prisma.Decimal | null;
     exchangeRate: Prisma.Decimal;
     exchangeSource: string;
     quotedAt: Date;
@@ -134,6 +142,11 @@ function ensureExistingCheckoutBelongsToOrganization(
   return {
     checkoutUrl: existing.checkoutUrl,
     amountArs: existing.arsAmount.toNumber(),
+    chargedAmountArs:
+      existing.providerAmountArs?.toNumber() ?? existing.arsAmount.toNumber(),
+    testCheckout:
+      existing.providerAmountArs !== null &&
+      existing.providerAmountArs.toNumber() !== existing.arsAmount.toNumber(),
     exchangeRate: existing.exchangeRate.toNumber(),
     exchangeSource: existing.exchangeSource,
     quotedAt: existing.quotedAt.toISOString(),
@@ -165,6 +178,7 @@ export async function createBillingCheckout(
       checkoutStatus: true,
       checkoutUrl: true,
       arsAmount: true,
+      providerAmountArs: true,
       exchangeRate: true,
       exchangeSource: true,
       quotedAt: true,
@@ -196,6 +210,7 @@ export async function createBillingCheckout(
         checkoutStatus: true,
         checkoutUrl: true,
         arsAmount: true,
+        providerAmountArs: true,
         exchangeRate: true,
         exchangeSource: true,
         quotedAt: true,
@@ -231,6 +246,10 @@ export async function createBillingCheckout(
   if (amountArs <= 0) {
     throw new ActionError("No se pudo calcular un importe de pago válido.");
   }
+  const chargedAmountArs = resolveMercadoPagoChargeAmount({
+    commercialAmountArs: amountArs,
+    configuration,
+  });
 
   let snapshot;
   try {
@@ -242,6 +261,7 @@ export async function createBillingCheckout(
         plan: input.plan,
         usdAmount: plan.usdMonthly,
         arsAmount: amountArs,
+        providerAmountArs: chargedAmountArs,
         exchangeRate: exchange.rate,
         exchangeSource: exchange.source,
         quotedAt: new Date(exchange.updatedAt),
@@ -259,6 +279,7 @@ export async function createBillingCheckout(
           checkoutStatus: true,
           checkoutUrl: true,
           arsAmount: true,
+          providerAmountArs: true,
           exchangeRate: true,
           exchangeSource: true,
           quotedAt: true,
@@ -278,7 +299,7 @@ export async function createBillingCheckout(
       plan: input.plan,
       payerEmail: context.userEmail,
       externalReference: `vantix:${snapshot.id}`,
-      amountArs,
+      amountArs: chargedAmountArs,
       returnUrl: `${configuration.appUrl}/api/billing/return`,
     });
     const updated = await prisma.planPriceSnapshot.update({
@@ -291,6 +312,7 @@ export async function createBillingCheckout(
       select: {
         checkoutUrl: true,
         arsAmount: true,
+        providerAmountArs: true,
         exchangeRate: true,
         exchangeSource: true,
         quotedAt: true,
@@ -302,11 +324,20 @@ export async function createBillingCheckout(
       action: "billing.checkout_started",
       entityType: "subscription",
       entityId: subscription.id,
-      details: { plan: input.plan, currency: "ARS", amount: amountArs },
+      details: {
+        plan: input.plan,
+        currency: "ARS",
+        commercialAmount: amountArs,
+        chargedAmount: chargedAmountArs,
+        testCheckout: configuration.testMode,
+      },
     });
     return {
       checkoutUrl: updated.checkoutUrl!,
       amountArs: updated.arsAmount.toNumber(),
+      chargedAmountArs:
+        updated.providerAmountArs?.toNumber() ?? updated.arsAmount.toNumber(),
+      testCheckout: configuration.testMode,
       exchangeRate: updated.exchangeRate.toNumber(),
       exchangeSource: updated.exchangeSource,
       quotedAt: updated.quotedAt.toISOString(),
@@ -360,6 +391,7 @@ export async function applyMercadoPagoSubscriptionUpdate(input: {
       subscriptionId: true,
       plan: true,
       arsAmount: true,
+      providerAmountArs: true,
       checkoutStatus: true,
       subscription: {
         select: {
@@ -374,11 +406,13 @@ export async function applyMercadoPagoSubscriptionUpdate(input: {
   if (!snapshot || !isRemoteSubscriptionForSnapshot(input.remote, snapshot.id)) {
     throw new ActionError("La notificación de pago no corresponde a una suscripción válida.");
   }
+  const expectedProviderAmount =
+    snapshot.providerAmountArs?.toNumber() ?? snapshot.arsAmount.toNumber();
   if (
     input.remote.status === "authorized" &&
     (input.remote.currency !== "ARS" ||
       input.remote.amountArs === null ||
-      Math.abs(input.remote.amountArs - snapshot.arsAmount.toNumber()) > 0.01)
+      Math.abs(input.remote.amountArs - expectedProviderAmount) > 0.01)
   ) {
     throw new ActionError(
       "El importe confirmado no coincide con el checkout iniciado."
@@ -387,7 +421,7 @@ export async function applyMercadoPagoSubscriptionUpdate(input: {
   if (
     input.chargedAmountArs !== undefined &&
     (input.chargedCurrency !== "ARS" ||
-      Math.abs(input.chargedAmountArs - snapshot.arsAmount.toNumber()) > 0.01)
+      Math.abs(input.chargedAmountArs - expectedProviderAmount) > 0.01)
   ) {
     throw new ActionError(
       "El pago informado no coincide con el importe autorizado."

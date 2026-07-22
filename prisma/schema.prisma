@@ -335,6 +335,7 @@ model PlanPriceSnapshot {
   plan                   BillingPlan
   usdAmount              Decimal               @db.Decimal(10, 2)
   arsAmount              Decimal               @db.Decimal(14, 2)
+  providerAmountArs      Decimal?              @db.Decimal(14, 2)
   exchangeRate           Decimal               @db.Decimal(14, 4)
   exchangeSource         String
   quotedAt               DateTime

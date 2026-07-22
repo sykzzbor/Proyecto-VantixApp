@@ -22,6 +22,7 @@ import {
   getMercadoPagoConfiguration,
   getMercadoPagoConfigurationError,
   MercadoPagoBillingProvider,
+  resolveMercadoPagoChargeAmount,
   verifyMercadoPagoWebhookSignature,
 } from "@/server/billing/mercado-pago";
 import { BillingProviderError, type BillingProviderSubscription } from "@/server/billing/provider";
@@ -430,6 +431,8 @@ test("la configuración de checkout no requiere IDs de planes externos", () => {
       configured: true,
       missing: [],
       appUrl: "https://app.example.test",
+      testMode: false,
+      testAmountArs: null,
     }
   );
 });
@@ -439,12 +442,15 @@ test("la configuración acepta credenciales TEST y resuelve la URL en runtime", 
     getMercadoPagoConfiguration({
       MERCADO_PAGO_ACCESS_TOKEN: "TEST-private-token",
       MERCADO_PAGO_WEBHOOK_SECRET: "test-webhook-secret",
+      MERCADO_PAGO_TEST_AMOUNT_ARS: "100",
       NEXT_PUBLIC_APP_URL: "https://app.example.test",
     }),
     {
       configured: true,
       missing: [],
       appUrl: "https://app.example.test",
+      testMode: true,
+      testAmountArs: 100,
     }
   );
 });
@@ -454,6 +460,7 @@ test("la configuración usa el origen seguro del servidor como respaldo", () => 
     getMercadoPagoConfiguration({
       MERCADO_PAGO_ACCESS_TOKEN: "TEST-private-token",
       MERCADO_PAGO_WEBHOOK_SECRET: "test-webhook-secret",
+      MERCADO_PAGO_TEST_AMOUNT_ARS: "100",
       NEXT_PUBLIC_APP_URL: "valor-invalido",
       BETTER_AUTH_URL: "https://app.example.test",
     }),
@@ -461,8 +468,73 @@ test("la configuración usa el origen seguro del servidor como respaldo", () => 
       configured: true,
       missing: [],
       appUrl: "https://app.example.test",
+      testMode: true,
+      testAmountArs: 100,
     }
   );
+});
+
+test("el checkout TEST usa el importe reducido sin modificar el precio comercial", () => {
+  const configuration = getMercadoPagoConfiguration({
+    MERCADO_PAGO_ACCESS_TOKEN: "TEST-private-token",
+    MERCADO_PAGO_WEBHOOK_SECRET: "test-webhook-secret",
+    MERCADO_PAGO_TEST_AMOUNT_ARS: "100",
+    NEXT_PUBLIC_APP_URL: "https://app.example.test",
+  });
+  const commercialAmountArs = 135_000;
+
+  assert.equal(
+    resolveMercadoPagoChargeAmount({ commercialAmountArs, configuration }),
+    100
+  );
+  assert.equal(commercialAmountArs, 135_000);
+});
+
+test("las credenciales productivas ignoran el importe de prueba", () => {
+  const configuration = getMercadoPagoConfiguration({
+    MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-production-token",
+    MERCADO_PAGO_WEBHOOK_SECRET: "production-webhook-secret",
+    MERCADO_PAGO_TEST_AMOUNT_ARS: "100",
+    NEXT_PUBLIC_APP_URL: "https://app.example.test",
+  });
+
+  assert.deepEqual(configuration, {
+    configured: true,
+    missing: [],
+    appUrl: "https://app.example.test",
+    testMode: false,
+    testAmountArs: null,
+  });
+  assert.equal(
+    resolveMercadoPagoChargeAmount({
+      commercialAmountArs: 135_000,
+      configuration,
+    }),
+    135_000
+  );
+});
+
+test("una credencial TEST exige un importe reducido válido", () => {
+  const missing = getMercadoPagoConfiguration({
+    MERCADO_PAGO_ACCESS_TOKEN: "TEST-private-token",
+    MERCADO_PAGO_WEBHOOK_SECRET: "test-webhook-secret",
+    NEXT_PUBLIC_APP_URL: "https://app.example.test",
+  });
+  const invalid = getMercadoPagoConfiguration({
+    MERCADO_PAGO_ACCESS_TOKEN: "TEST-private-token",
+    MERCADO_PAGO_WEBHOOK_SECRET: "test-webhook-secret",
+    MERCADO_PAGO_TEST_AMOUNT_ARS: "0",
+    NEXT_PUBLIC_APP_URL: "https://app.example.test",
+  });
+
+  assert.equal(missing.configured, false);
+  assert.deepEqual(missing.missing, ["test_amount"]);
+  assert.match(
+    getMercadoPagoConfigurationError(missing) ?? "",
+    /MERCADO_PAGO_TEST_AMOUNT_ARS/
+  );
+  assert.equal(invalid.configured, false);
+  assert.deepEqual(invalid.missing, ["test_amount"]);
 });
 
 test("la configuración informa exactamente cada variable faltante", () => {
