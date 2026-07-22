@@ -5,6 +5,10 @@ import { BILLING_PLANS } from "@/lib/billing/plans";
 import { convertUsdToArs } from "@/lib/plans-pricing";
 import { isSubscriptionSafeDashboardPath } from "@/lib/billing/entitlement";
 import {
+  isCurrentActivePlan,
+  isPlanCheckoutDisabled,
+} from "@/lib/billing/checkout";
+import {
   evaluateOrganizationEntitlement,
   assertActiveOrganizationEntitlement,
   type SubscriptionForEntitlement,
@@ -76,6 +80,86 @@ test("los planes definitivos usan IDs estables, nombres y precios únicos", () =
     ]
   );
   assert.equal(BILLING_PLANS.PROFESSIONAL.recommended, true);
+});
+
+test("durante TRIALING y EXPIRED se pueden contratar los tres planes", () => {
+  for (const subscriptionStatus of ["TRIALING", "EXPIRED"]) {
+    for (const targetPlan of ["STANDARD", "PROFESSIONAL", "ENTERPRISE"] as const) {
+      assert.equal(
+        isPlanCheckoutDisabled({
+          targetPlan,
+          currentPlan: "STANDARD",
+          subscriptionStatus,
+          canManage: true,
+          checkoutLoading: false,
+        }),
+        false,
+        `${subscriptionStatus}:${targetPlan}`
+      );
+    }
+  }
+});
+
+test("solo el plan actual ACTIVE se bloquea por estado de suscripción", () => {
+  assert.equal(
+    isPlanCheckoutDisabled({
+      targetPlan: "STANDARD",
+      currentPlan: "STANDARD",
+      subscriptionStatus: "ACTIVE",
+      canManage: true,
+      checkoutLoading: false,
+    }),
+    true
+  );
+  assert.equal(
+    isPlanCheckoutDisabled({
+      targetPlan: "PROFESSIONAL",
+      currentPlan: "STANDARD",
+      subscriptionStatus: "ACTIVE",
+      canManage: true,
+      checkoutLoading: false,
+    }),
+    false
+  );
+  assert.equal(
+    isCurrentActivePlan({
+      targetPlan: "STANDARD",
+      currentPlan: "STANDARD",
+      subscriptionStatus: "TRIALING",
+    }),
+    false
+  );
+  assert.equal(
+    isCurrentActivePlan({
+      targetPlan: "STANDARD",
+      currentPlan: "STANDARD",
+      subscriptionStatus: "ACTIVE",
+    }),
+    true
+  );
+});
+
+test("loading y falta de permiso conservan los bloqueos de seguridad", () => {
+  assert.equal(
+    isPlanCheckoutDisabled({
+      targetPlan: "PROFESSIONAL",
+      currentPlan: "STANDARD",
+      subscriptionStatus: "TRIALING",
+      canManage: true,
+      checkoutLoading: true,
+    }),
+    true
+  );
+  assert.equal(
+    isPlanCheckoutDisabled({
+      targetPlan: "PROFESSIONAL",
+      currentPlan: "STANDARD",
+      subscriptionStatus: "EXPIRED",
+      canManage: false,
+      checkoutLoading: false,
+    }),
+    true
+  );
 });
 
 test("convierte y redondea comercialmente los tres planes a ARS", () => {

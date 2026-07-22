@@ -28,6 +28,7 @@ import {
   resolveMercadoPagoStatus,
   sanitizeBillingErrorCode,
 } from "@/server/billing/state";
+import { isCurrentActivePlan } from "@/lib/billing/checkout";
 
 export type BillingOverview = {
   entitlement: OrganizationEntitlement;
@@ -173,15 +174,48 @@ export async function createBillingCheckout(
     );
   }
 
-  const [subscription, exchange] = await Promise.all([
+  const [subscription, exchange, resumable] = await Promise.all([
     prisma.organizationSubscription.findUnique({
       where: { organizationId: context.organizationId },
-      select: { id: true },
+      select: { id: true, plan: true, status: true },
     }),
     getPlansExchangeRate({ now: now.getTime() }),
+    prisma.planPriceSnapshot.findFirst({
+      where: {
+        organizationId: context.organizationId,
+        plan: input.plan,
+        checkoutStatus: "PENDING",
+        checkoutUrl: { not: null },
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        organizationId: true,
+        checkoutStatus: true,
+        checkoutUrl: true,
+        arsAmount: true,
+        exchangeRate: true,
+        exchangeSource: true,
+        quotedAt: true,
+      },
+    }),
   ]);
   if (!subscription) {
     throw new ActionError("No encontramos la suscripción de esta organización.");
+  }
+  if (
+    isCurrentActivePlan({
+      targetPlan: input.plan,
+      currentPlan: subscription.plan,
+      subscriptionStatus: subscription.status,
+    })
+  ) {
+    throw new ActionError("Este ya es tu plan actual.");
+  }
+  if (resumable) {
+    return ensureExistingCheckoutBelongsToOrganization(
+      resumable,
+      context.organizationId
+    );
   }
   if (!exchange.rate || !exchange.source || !exchange.updatedAt) {
     throw new ActionError(

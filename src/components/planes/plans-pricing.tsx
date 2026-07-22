@@ -31,6 +31,7 @@ import {
   type BillingPlanId,
 } from "@/lib/billing/plans";
 import type { BillingOverview } from "@/server/billing/service";
+import { isPlanCheckoutDisabled } from "@/lib/billing/checkout";
 
 type Currency = "USD" | "ARS";
 
@@ -99,7 +100,7 @@ function buttonLabel(input: {
 }) {
   const current = input.billing.entitlement.plan === input.planId;
   const status = input.billing.entitlement.status;
-  if (input.billing.pendingPlan === input.planId) return "Pago pendiente";
+  if (input.billing.pendingPlan === input.planId) return "Continuar pago";
   if (status === "ACTIVE" && current) return "Plan actual";
   if ((status === "EXPIRED" || status === "CANCELED") && current) {
     return "Reactivar suscripción";
@@ -423,17 +424,13 @@ export function PlansPricing({
               ? formatArs(plan.usdMonthly, exchangeRate)
               : formatUsd(plan.usdMonthly);
           const label = buttonLabel({ planId: plan.id, billing });
-          const current =
-            billing.entitlement.status === "ACTIVE" &&
-            billing.entitlement.plan === plan.id;
-          const pending = billing.pendingPlan === plan.id;
-          const disabled =
-            current ||
-            pending ||
-            !canManage ||
-            !billing.billingConfigured ||
-            !exchangeRate ||
-            loading !== null;
+          const disabled = isPlanCheckoutDisabled({
+            targetPlan: plan.id,
+            currentPlan: billing.entitlement.plan,
+            subscriptionStatus: billing.entitlement.status,
+            canManage,
+            checkoutLoading: loading !== null,
+          });
           const amountArs = exchangeRate
             ? convertUsdToArs(plan.usdMonthly, exchangeRate)
             : 0;
@@ -487,6 +484,7 @@ export function PlansPricing({
                       <Button
                         size="sm"
                         className="flex-1"
+                        disabled={loading !== null}
                         onClick={() => startCheckout(plan.id)}
                       >
                         {loading === plan.id && <Loader2 className="size-4 animate-spin" aria-hidden />}
@@ -495,6 +493,7 @@ export function PlansPricing({
                       <Button
                         size="sm"
                         variant="ghost"
+                        disabled={loading !== null}
                         onClick={() => {
                           checkoutAttempt.current = null;
                           setConfirming(null);
@@ -512,9 +511,23 @@ export function PlansPricing({
                     title={
                       !canManage
                         ? "Solo propietarios y administradores pueden gestionar el plan"
-                        : billing.checkoutUnavailableReason ?? undefined
+                        : undefined
                     }
                     onClick={() => {
+                      setError(null);
+                      if (!billing.billingConfigured) {
+                        setError(
+                          billing.checkoutUnavailableReason ??
+                            "Mercado Pago todavía no está configurado."
+                        );
+                        return;
+                      }
+                      if (!exchangeRate) {
+                        setError(
+                          "No hay una cotización válida disponible para iniciar el pago en ARS."
+                        );
+                        return;
+                      }
                       checkoutAttempt.current = {
                         plan: plan.id,
                         idempotencyKey: crypto.randomUUID(),
