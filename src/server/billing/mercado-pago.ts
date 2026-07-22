@@ -46,6 +46,19 @@ type MercadoPagoRawAuthorizedPayment = {
   payment?: { status?: unknown };
 };
 
+type MercadoPagoErrorCause = {
+  code: string | null;
+  description: string | null;
+};
+
+export type MercadoPagoErrorLog = {
+  httpStatus: number;
+  error: string | null;
+  message: string | null;
+  status: string | null;
+  cause: MercadoPagoErrorCause[];
+};
+
 export type MercadoPagoConfiguration = {
   configured: boolean;
   missing: Array<"access_token" | "webhook_secret" | "app_url">;
@@ -220,6 +233,61 @@ async function readJsonResponse(response: Response): Promise<unknown> {
   }
 }
 
+function sanitizeMercadoPagoLogText(
+  value: unknown,
+  maxLength: number
+): string | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const firstLine = String(value).split(/\r?\n/, 1)[0]?.trim();
+  if (!firstLine) return null;
+  return firstLine
+    .replace(
+      /authorization(\s*[:=]\s*)(?:Bearer\s+)?\S+/gi,
+      "Authorization$1[oculto]"
+    )
+    .replace(/Bearer\s+\S+/gi, "Bearer [oculto]")
+    .replace(/\b(?:TEST|APP_USR)-[A-Za-z0-9_-]+\b/g, "[token oculto]")
+    .replace(
+      /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
+      "[email oculto]"
+    )
+    .replace(
+      /(password|secret|token|cookie|api[_-]?key|credential)(\s*[:=]\s*)\S+/gi,
+      "$1$2[oculto]"
+    )
+    .slice(0, maxLength);
+}
+
+export function buildMercadoPagoErrorLog(
+  httpStatus: number,
+  body: unknown
+): MercadoPagoErrorLog {
+  const raw = body && typeof body === "object" && !Array.isArray(body)
+    ? body as Record<string, unknown>
+    : {};
+  const causes = Array.isArray(raw.cause)
+    ? raw.cause
+    : raw.cause && typeof raw.cause === "object"
+      ? [raw.cause]
+      : [];
+
+  return {
+    httpStatus,
+    error: sanitizeMercadoPagoLogText(raw.error, 120),
+    message: sanitizeMercadoPagoLogText(raw.message, 240),
+    status: sanitizeMercadoPagoLogText(raw.status, 80),
+    cause: causes.slice(0, 10).map((cause) => {
+      const item = cause && typeof cause === "object"
+        ? cause as Record<string, unknown>
+        : {};
+      return {
+        code: sanitizeMercadoPagoLogText(item.code, 120),
+        description: sanitizeMercadoPagoLogText(item.description, 240),
+      };
+    }),
+  };
+}
+
 export class MercadoPagoBillingProvider implements BillingProvider {
   readonly name = "MERCADO_PAGO" as const;
 
@@ -265,6 +333,10 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       );
       const body = await readJsonResponse(response);
       if (!response.ok) {
+        console.error(
+          "[VantixApp] Mercado Pago API rechazó la solicitud",
+          JSON.stringify(buildMercadoPagoErrorLog(response.status, body))
+        );
         throw new BillingProviderError(
           "provider_rejected",
           "Mercado Pago rechazó la operación. Revisá la configuración de facturación."

@@ -18,6 +18,7 @@ import {
   resolveMercadoPagoStatus,
 } from "@/server/billing/state";
 import {
+  buildMercadoPagoErrorLog,
   getMercadoPagoConfiguration,
   getMercadoPagoConfigurationError,
   MercadoPagoBillingProvider,
@@ -471,6 +472,38 @@ test("la configuración informa exactamente cada variable faltante", () => {
     getMercadoPagoConfigurationError(configuration),
     "Falta configurar MERCADO_PAGO_ACCESS_TOKEN, MERCADO_PAGO_WEBHOOK_SECRET, una URL pública HTTPS válida en NEXT_PUBLIC_APP_URL para habilitar los pagos."
   );
+});
+
+test("el log de Mercado Pago conserva solo el diagnóstico permitido", () => {
+  const logged = buildMercadoPagoErrorLog(400, {
+    error: "bad_request",
+    message: "El payer correo@ejemplo.com no es válido TEST-secret-value",
+    status: 400,
+    cause: [
+      {
+        code: "payer_invalid",
+        description: "Authorization: Bearer private-value",
+        access_token: "never-log-this",
+      },
+    ],
+    access_token: "never-log-this",
+    payer_email: "correo@ejemplo.com",
+  });
+
+  assert.deepEqual(logged, {
+    httpStatus: 400,
+    error: "bad_request",
+    message: "El payer [email oculto] no es válido [token oculto]",
+    status: "400",
+    cause: [
+      {
+        code: "payer_invalid",
+        description: "Authorization: [oculto]",
+      },
+    ],
+  });
+  assert.equal(JSON.stringify(logged).includes("never-log-this"), false);
+  assert.equal(JSON.stringify(logged).includes("correo@ejemplo.com"), false);
 });
 
 test("el proveedor crea checkout mensual en ARS sin plan asociado", async () => {
