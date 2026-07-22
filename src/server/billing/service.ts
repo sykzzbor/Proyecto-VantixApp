@@ -22,6 +22,7 @@ import {
 import {
   MercadoPagoBillingProvider,
   getMercadoPagoConfiguration,
+  getMercadoPagoConfigurationError,
 } from "@/server/billing/mercado-pago";
 import {
   buildBillingWebhookIdempotencyKey,
@@ -94,9 +95,8 @@ export async function getBillingOverview(
   return {
     entitlement,
     billingConfigured: configuration.configured,
-    checkoutUnavailableReason: configuration.configured
-      ? null
-      : "Los pagos todavía no están habilitados. Podés comparar los planes y volver a intentarlo más tarde.",
+    checkoutUnavailableReason:
+      getMercadoPagoConfigurationError(configuration),
     pendingPlan: (pending?.plan as BillingPlanId | undefined) ?? null,
     canSynchronize: Boolean(
       configuration.configured &&
@@ -152,7 +152,10 @@ export async function createBillingCheckout(
   const now = dependencies?.now ?? new Date();
   const configuration = getMercadoPagoConfiguration();
   if (!configuration.configured || !configuration.appUrl) {
-    throw new ActionError("Los pagos todavía no están configurados.");
+    throw new ActionError(
+      getMercadoPagoConfigurationError(configuration) ??
+        "Los pagos todavía no están configurados."
+    );
   }
 
   const existing = await prisma.planPriceSnapshot.findUnique({

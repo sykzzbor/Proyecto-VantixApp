@@ -19,6 +19,7 @@ import {
 } from "@/server/billing/state";
 import {
   getMercadoPagoConfiguration,
+  getMercadoPagoConfigurationError,
   MercadoPagoBillingProvider,
   verifyMercadoPagoWebhookSignature,
 } from "@/server/billing/mercado-pago";
@@ -429,6 +430,46 @@ test("la configuración de checkout no requiere IDs de planes externos", () => {
       missing: [],
       appUrl: "https://app.example.test",
     }
+  );
+});
+
+test("la configuración acepta credenciales TEST y resuelve la URL en runtime", () => {
+  assert.deepEqual(
+    getMercadoPagoConfiguration({
+      MERCADO_PAGO_ACCESS_TOKEN: "TEST-private-token",
+      MERCADO_PAGO_WEBHOOK_SECRET: "test-webhook-secret",
+      NEXT_PUBLIC_APP_URL: "https://app.example.test",
+    }),
+    {
+      configured: true,
+      missing: [],
+      appUrl: "https://app.example.test",
+    }
+  );
+});
+
+test("la configuración usa el origen seguro del servidor como respaldo", () => {
+  assert.deepEqual(
+    getMercadoPagoConfiguration({
+      MERCADO_PAGO_ACCESS_TOKEN: "TEST-private-token",
+      MERCADO_PAGO_WEBHOOK_SECRET: "test-webhook-secret",
+      NEXT_PUBLIC_APP_URL: "valor-invalido",
+      BETTER_AUTH_URL: "https://app.example.test",
+    }),
+    {
+      configured: true,
+      missing: [],
+      appUrl: "https://app.example.test",
+    }
+  );
+});
+
+test("la configuración informa exactamente cada variable faltante", () => {
+  const configuration = getMercadoPagoConfiguration({});
+  assert.equal(configuration.configured, false);
+  assert.equal(
+    getMercadoPagoConfigurationError(configuration),
+    "Falta configurar MERCADO_PAGO_ACCESS_TOKEN, MERCADO_PAGO_WEBHOOK_SECRET, una URL pública HTTPS válida en NEXT_PUBLIC_APP_URL para habilitar los pagos."
   );
 });
 

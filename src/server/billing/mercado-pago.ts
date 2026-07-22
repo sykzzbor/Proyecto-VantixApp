@@ -16,6 +16,8 @@ type MercadoPagoEnv = {
   MERCADO_PAGO_ACCESS_TOKEN?: string;
   MERCADO_PAGO_WEBHOOK_SECRET?: string;
   NEXT_PUBLIC_APP_URL?: string;
+  BETTER_AUTH_URL?: string;
+  VERCEL_PROJECT_PRODUCTION_URL?: string;
 };
 
 type MercadoPagoRawSubscription = {
@@ -65,15 +67,46 @@ function validPublicAppUrl(value: string | undefined): string | null {
   }
 }
 
+function resolvePublicAppUrl(env: MercadoPagoEnv): string | null {
+  return (
+    validPublicAppUrl(env.NEXT_PUBLIC_APP_URL) ??
+    validPublicAppUrl(env.BETTER_AUTH_URL) ??
+    validPublicAppUrl(
+      env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL.trim()}`
+        : undefined
+    )
+  );
+}
+
 export function getMercadoPagoConfiguration(
   env: MercadoPagoEnv = process.env as unknown as MercadoPagoEnv
 ): MercadoPagoConfiguration {
   const missing: MercadoPagoConfiguration["missing"] = [];
   if (!env.MERCADO_PAGO_ACCESS_TOKEN?.trim()) missing.push("access_token");
   if (!env.MERCADO_PAGO_WEBHOOK_SECRET?.trim()) missing.push("webhook_secret");
-  const appUrl = validPublicAppUrl(env.NEXT_PUBLIC_APP_URL);
+  const appUrl = resolvePublicAppUrl(env);
   if (!appUrl) missing.push("app_url");
   return { configured: missing.length === 0, missing, appUrl };
+}
+
+export function getMercadoPagoConfigurationError(
+  configuration: MercadoPagoConfiguration
+): string | null {
+  if (configuration.configured) return null;
+
+  const missing = configuration.missing.map((item) => {
+    switch (item) {
+      case "access_token":
+        return "MERCADO_PAGO_ACCESS_TOKEN";
+      case "webhook_secret":
+        return "MERCADO_PAGO_WEBHOOK_SECRET";
+      case "app_url":
+        return "una URL pública HTTPS válida en NEXT_PUBLIC_APP_URL";
+    }
+  });
+
+  return `Falta configurar ${missing.join(", ")} para habilitar los pagos.`;
 }
 
 function toDate(value: unknown): Date | null {
