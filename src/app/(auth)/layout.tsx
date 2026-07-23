@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Bot, CalendarDays, MessageCircleMore, UsersRound } from "lucide-react";
 import { VantixLogo } from "@/components/brand/vantix-logo";
+import { PublicFooter } from "@/components/public/public-footer";
 import { ThemeSwitcher } from "@/components/theme/theme-switcher";
 
 const PRODUCT_BENEFITS = [
@@ -58,6 +59,7 @@ export default function AuthLayout({
         <main className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto px-4 py-6 sm:items-center sm:px-8 sm:py-10">
           <div className="w-full max-w-[31rem]">{children}</div>
         </main>
+        <PublicFooter compact />
       </div>
     </div>
   );
