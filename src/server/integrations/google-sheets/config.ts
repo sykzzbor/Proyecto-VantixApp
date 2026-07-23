@@ -1,3 +1,5 @@
+import { normalizePublicOrigin } from "@/lib/public-domain";
+
 export class GoogleSheetsConfigurationError extends Error {
   constructor(message = "Google Sheets no está configurado.") {
     super(message);
@@ -33,7 +35,14 @@ export function getGoogleSheetsClientSecret(): string {
 }
 
 export function getGoogleSheetsRedirectUri(): string {
-  const base = requireEnv(process.env.BETTER_AUTH_URL, "BETTER_AUTH_URL");
+  const configuredBase = requireEnv(
+    process.env.BETTER_AUTH_URL,
+    "BETTER_AUTH_URL"
+  );
+  const base = normalizePublicOrigin(configuredBase);
+  if (!base) {
+    throw new GoogleSheetsConfigurationError("La URL pública no es válida.");
+  }
   let url: URL;
   try {
     url = new URL("/api/integrations/google-sheets/callback", base);

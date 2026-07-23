@@ -15,12 +15,12 @@ Si esas dos variables se omiten, VantixApp puede reutilizar `GOOGLE_CLIENT_ID` y
 
 ## Redirect URIs de Better Auth
 
-- Producción: `https://proyecto-vantix-app.vercel.app/api/auth/callback/google`
+- Producción: `https://vantixapp.com.ar/api/auth/callback/google`
 - Desarrollo local: `http://localhost:3000/api/auth/callback/google`
 
 La autorización de Calendar conserva su callback propio:
 
-- Producción: `https://proyecto-vantix-app.vercel.app/api/integrations/google-calendar/callback`
+- Producción: `https://vantixapp.com.ar/api/integrations/google-calendar/callback`
 - Desarrollo local: `http://localhost:3000/api/integrations/google-calendar/callback`
 
 No se deben agregar scopes de Calendar al consentimiento de inicio de sesión.

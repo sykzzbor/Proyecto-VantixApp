@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import {
+  CANONICAL_APP_ORIGIN,
+  normalizePublicOrigin,
+} from "@/lib/public-domain";
 import { completeHandoffRuleConfigSchema } from "@/lib/validations/automation-rules";
 import { AUTOMATION_SCHEMA_VERSION } from "@/server/automation/constants";
 import { getMaxAttempts } from "@/server/automation/config";
@@ -92,26 +96,25 @@ function safeDisplayName(value: string | null | undefined, fallback: string) {
 
 function applicationOrigin() {
   const candidates = [
+    process.env.NEXT_PUBLIC_APP_URL,
     process.env.BETTER_AUTH_URL,
     process.env.VERCEL_PROJECT_PRODUCTION_URL
       ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
       : undefined,
     process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined,
     process.env.NODE_ENV === "development" ? "http://localhost:3000" : undefined,
-    "https://proyecto-vantix-app.vercel.app",
+    CANONICAL_APP_ORIGIN,
   ];
   for (const candidate of candidates) {
-    if (!candidate) continue;
-    try {
-      const url = new URL(candidate);
+    const origin = normalizePublicOrigin(candidate);
+    if (origin) {
+      const url = new URL(origin);
       if (url.protocol === "https:" || url.protocol === "http:") {
-        return url.origin;
+        return origin;
       }
-    } catch {
-      // Probar el siguiente origen seguro.
     }
   }
-  return "https://proyecto-vantix-app.vercel.app";
+  return CANONICAL_APP_ORIGIN;
 }
 
 type HandoffInput = {

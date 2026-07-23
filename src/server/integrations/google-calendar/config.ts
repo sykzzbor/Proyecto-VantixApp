@@ -2,6 +2,7 @@
  * Configuración de Google Calendar (Etapa 6D.1A). Los secretos viven SOLO en
  * variables de entorno del servidor; nunca se exponen al navegador ni a logs.
  */
+import { normalizePublicOrigin } from "@/lib/public-domain";
 
 export class GoogleCalendarConfigurationError extends Error {
   constructor(message = "Google Calendar no está configurado.") {
@@ -50,7 +51,14 @@ export function getGoogleClientSecret(): string {
  * (BETTER_AUTH_URL), nunca de parámetros del navegador.
  */
 export function getGoogleRedirectUri(): string {
-  const base = requireEnv(process.env.BETTER_AUTH_URL, "BETTER_AUTH_URL");
+  const configuredBase = requireEnv(
+    process.env.BETTER_AUTH_URL,
+    "BETTER_AUTH_URL"
+  );
+  const base = normalizePublicOrigin(configuredBase);
+  if (!base) {
+    throw new GoogleCalendarConfigurationError("BETTER_AUTH_URL no es válida.");
+  }
   let url: URL;
   try {
     url = new URL("/api/integrations/google-calendar/callback", base);

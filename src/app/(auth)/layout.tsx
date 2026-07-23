@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Bot, CalendarDays, MessageCircleMore, UsersRound } from "lucide-react";
 import { VantixLogo } from "@/components/brand/vantix-logo";
@@ -10,6 +11,10 @@ const PRODUCT_BENEFITS = [
   { label: "WhatsApp conectado a tu operación", icon: MessageCircleMore },
   { label: "Agenda integrada con Google Calendar", icon: CalendarDays },
 ] as const;
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default function AuthLayout({
   children,

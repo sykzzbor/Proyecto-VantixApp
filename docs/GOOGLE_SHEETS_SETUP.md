@@ -9,7 +9,7 @@ al navegador.
 1. Habilitar **Google Sheets API** en el proyecto.
 2. Crear un cliente OAuth 2.0 de tipo **Aplicación web**.
 3. Agregar la URL de producción autorizada:
-   `https://proyecto-vantix-app.vercel.app/api/integrations/google-sheets/callback`.
+   `https://vantixapp.com.ar/api/integrations/google-sheets/callback`.
 4. Para desarrollo local agregar:
    `http://localhost:3000/api/integrations/google-sheets/callback`.
 5. Configurar la pantalla de consentimiento para el scope

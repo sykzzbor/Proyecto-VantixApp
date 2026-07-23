@@ -11,7 +11,7 @@
 ## Preparación manual de Mercado Pago
 
 1. Configurar las variables listadas en `.env.example` únicamente en el entorno seguro del servidor.
-2. Registrar `https://TU-DOMINIO/api/webhooks/mercado-pago` como webhook y copiar su firma secreta al entorno.
+2. Registrar `https://vantixapp.com.ar/api/webhooks/mercado-pago` como webhook y copiar su firma secreta al entorno.
 3. Activar los eventos `subscription_preapproval` y `subscription_authorized_payment` (Planes y suscripciones). No se requieren planes externos: cada checkout crea una suscripción mensual sin plan asociado con el importe ARS del snapshot.
 4. Probar con credenciales y usuarios de prueba en un entorno separado. No mezclar credenciales de prueba y producción.
 5. Verificar un alta, un pago pendiente, una renovación aprobada, un pago rechazado, una cancelación, un cambio de plan y un webhook duplicado antes de habilitar cobros reales.

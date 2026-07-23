@@ -1,4 +1,5 @@
 import { isIP } from "node:net";
+import { normalizePublicOrigin } from "@/lib/public-domain";
 
 const GRAPH_API_VERSION_PATTERN = /^v\d{1,3}\.\d{1,2}$/;
 const META_PUBLIC_ID_PATTERN = /^\d{5,32}$/;
@@ -206,7 +207,7 @@ export function isWhatsappDevMode(): boolean {
 }
 
 function getPublicWebhookUrl(path: string): string {
-  const baseUrl = process.env.BETTER_AUTH_URL?.trim();
+  const baseUrl = normalizePublicOrigin(process.env.BETTER_AUTH_URL);
   if (!baseUrl) throw new WhatsappConfigurationError();
 
   try {

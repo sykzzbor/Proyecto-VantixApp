@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import { DashboardShell } from "@/components/dashboard/shell";
 import { requireOrgContext } from "@/server/context";
 import { getOrganizationEntitlement } from "@/server/billing/entitlement";
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default async function DashboardLayout({
   children,

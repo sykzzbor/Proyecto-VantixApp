@@ -6,18 +6,14 @@ import {
   getGoogleSocialProviderConfig,
   GOOGLE_ACCOUNT_LINKING,
 } from "@/lib/google-auth";
-
-/** Dominio oficial de producción: fallback estable si falta BETTER_AUTH_URL. */
-const OFFICIAL_ORIGIN = "https://proyecto-vantix-app.vercel.app";
+import {
+  CANONICAL_APP_ORIGIN,
+  normalizePublicOrigin,
+  WWW_APP_ORIGIN,
+} from "@/lib/public-domain";
 
 function getConfiguredOrigin(value: string | undefined) {
-  const url = value?.trim();
-  if (!url) return undefined;
-  try {
-    return new URL(url).origin;
-  } catch {
-    return undefined;
-  }
+  return normalizePublicOrigin(value) ?? undefined;
 }
 
 function getVercelOrigin(host: string | undefined) {
@@ -26,12 +22,13 @@ function getVercelOrigin(host: string | undefined) {
 }
 
 const canonicalOrigin =
-  getConfiguredOrigin(process.env.BETTER_AUTH_URL) ?? OFFICIAL_ORIGIN;
+  getConfiguredOrigin(process.env.BETTER_AUTH_URL) ?? CANONICAL_APP_ORIGIN;
 const trustedOrigins = Array.from(
   new Set(
     [
       canonicalOrigin,
-      OFFICIAL_ORIGIN,
+      CANONICAL_APP_ORIGIN,
+      WWW_APP_ORIGIN,
       getVercelOrigin(process.env.VERCEL_URL),
       getVercelOrigin(process.env.VERCEL_PROJECT_PRODUCTION_URL),
       process.env.NODE_ENV === "development"

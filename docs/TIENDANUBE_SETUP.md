@@ -5,14 +5,14 @@
 1. Crear una aplicación en el portal de partners de Tiendanube.
 2. Habilitar únicamente los scopes de lectura `read_products`, `read_customers` y `read_orders`.
 3. Registrar como URL de redirección:
-   `https://TU-DOMINIO/api/integrations/tiendanube/callback`
+   `https://vantixapp.com.ar/api/integrations/tiendanube/callback`
 4. Configurar la URL de administración o preferencias en:
-   `https://TU-DOMINIO/dashboard/integraciones/tiendanube`
+   `https://vantixapp.com.ar/dashboard/integraciones/tiendanube`
 5. Cargar en Vercel `TIENDANUBE_APP_ID` y `TIENDANUBE_CLIENT_SECRET`.
 6. Mantener `NEXT_PUBLIC_APP_URL` con el origen HTTPS público de VantixApp.
 
 El backend registra automáticamente los webhooks necesarios en:
-`https://TU-DOMINIO/api/webhooks/tiendanube`
+`https://vantixapp.com.ar/api/webhooks/tiendanube`
 
 Eventos registrados: productos creados, actualizados o eliminados; pedidos creados, actualizados, pagados o cancelados; aplicación desinstalada, suspendida o reanudada.
 

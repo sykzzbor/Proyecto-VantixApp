@@ -9,6 +9,12 @@ import {
 export const metadata: Metadata = {
   title: "Privacidad",
   description: "Política de privacidad de VantixApp.",
+  alternates: { canonical: "/privacidad" },
+  openGraph: {
+    url: "/privacidad",
+    title: "Privacidad · VantixApp",
+    description: "Política de privacidad de VantixApp.",
+  },
 };
 
 const DATA_GROUPS = [

@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { normalizePublicOrigin } from "@/lib/public-domain";
 import {
   BillingProviderError,
   type BillingProvider,
@@ -87,10 +88,10 @@ function parseTestAmountArs(value: string | undefined): number | null {
 }
 
 function validPublicAppUrl(value: string | undefined): string | null {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
+  const origin = normalizePublicOrigin(value);
+  if (!origin) return null;
   try {
-    const url = new URL(trimmed);
+    const url = new URL(origin);
     const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
     if (url.protocol !== "https:" && !(process.env.NODE_ENV !== "production" && local)) {
       return null;

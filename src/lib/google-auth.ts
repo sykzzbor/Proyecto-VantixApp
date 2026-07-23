@@ -1,9 +1,10 @@
 import type { GoogleOptions, GoogleProfile } from "better-auth/social-providers";
+import { canonicalPublicUrl } from "@/lib/public-domain";
 
 export const GOOGLE_IDENTITY_SCOPES = ["openid", "email", "profile"] as const;
 export const GOOGLE_AUTH_CALLBACK_PATH = "/api/auth/callback/google";
 export const GOOGLE_AUTH_PRODUCTION_CALLBACK =
-  "https://proyecto-vantix-app.vercel.app/api/auth/callback/google";
+  canonicalPublicUrl(GOOGLE_AUTH_CALLBACK_PATH);
 export const GOOGLE_AUTH_LOCAL_CALLBACK =
   "http://localhost:3000/api/auth/callback/google";
 

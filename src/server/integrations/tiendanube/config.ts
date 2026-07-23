@@ -1,3 +1,5 @@
+import { normalizePublicOrigin } from "@/lib/public-domain";
+
 export const TIENDANUBE_SCOPES = [
   "read_products",
   "read_customers",
@@ -52,7 +54,11 @@ export function getTiendanubeAppUrl(): string {
   const raw = process.env.NEXT_PUBLIC_APP_URL?.trim() || process.env.BETTER_AUTH_URL?.trim();
   let url: URL;
   try {
-    url = new URL(required(raw, "la URL pública de VantixApp"));
+    const origin = normalizePublicOrigin(
+      required(raw, "la URL pública de VantixApp")
+    );
+    if (!origin) throw new Error("invalid origin");
+    url = new URL(origin);
   } catch (error) {
     if (error instanceof TiendanubeConfigurationError) throw error;
     throw new TiendanubeConfigurationError("La URL pública de VantixApp no es válida.");

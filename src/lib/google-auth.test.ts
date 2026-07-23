@@ -9,6 +9,14 @@ import {
   mapGoogleIdentityProfile,
 } from "./google-auth";
 import { buildGoogleAuthRequest } from "./google-auth-request";
+import {
+  CANONICAL_APP_ORIGIN,
+  canonicalPublicUrl,
+  getCanonicalHostRedirects,
+  LEGACY_APP_ORIGIN,
+  normalizePublicOrigin,
+  WWW_APP_ORIGIN,
+} from "./public-domain";
 import { GOOGLE_CALENDAR_SCOPES } from "@/server/integrations/google-calendar/config";
 
 const GOOGLE_PROFILE = {
@@ -127,10 +135,45 @@ test("la vinculación evita correos distintos y exige verificar la cuenta local"
 test("los callbacks documentados son los callbacks propios de Better Auth", () => {
   assert.equal(
     GOOGLE_AUTH_PRODUCTION_CALLBACK,
-    "https://proyecto-vantix-app.vercel.app/api/auth/callback/google"
+    "https://vantixapp.com.ar/api/auth/callback/google"
   );
   assert.equal(
     GOOGLE_AUTH_LOCAL_CALLBACK,
     "http://localhost:3000/api/auth/callback/google"
   );
+});
+
+test("el dominio anterior y www se normalizan al origen canónico", () => {
+  assert.equal(normalizePublicOrigin(LEGACY_APP_ORIGIN), CANONICAL_APP_ORIGIN);
+  assert.equal(normalizePublicOrigin(WWW_APP_ORIGIN), CANONICAL_APP_ORIGIN);
+  assert.equal(
+    normalizePublicOrigin(`${WWW_APP_ORIGIN}/login?from=old`),
+    CANONICAL_APP_ORIGIN
+  );
+  assert.equal(
+    normalizePublicOrigin("http://localhost:3000/path"),
+    "http://localhost:3000"
+  );
+  assert.equal(normalizePublicOrigin("not-a-url"), null);
+});
+
+test("las URLs públicas y redirects canónicos son exactos", () => {
+  assert.equal(
+    canonicalPublicUrl("/api/webhooks/mercado-pago"),
+    "https://vantixapp.com.ar/api/webhooks/mercado-pago"
+  );
+  assert.deepEqual(getCanonicalHostRedirects(), [
+    {
+      source: "/:path*",
+      has: [{ type: "host", value: "www.vantixapp.com.ar" }],
+      destination: "https://vantixapp.com.ar/:path*",
+      permanent: true,
+    },
+    {
+      source: "/:path*",
+      has: [{ type: "host", value: "proyecto-vantix-app.vercel.app" }],
+      destination: "https://vantixapp.com.ar/:path*",
+      permanent: true,
+    },
+  ]);
 });

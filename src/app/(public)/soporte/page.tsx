@@ -9,6 +9,12 @@ import {
 export const metadata: Metadata = {
   title: "Soporte",
   description: "Centro público de soporte de VantixApp.",
+  alternates: { canonical: "/soporte" },
+  openGraph: {
+    url: "/soporte",
+    title: "Soporte · VantixApp",
+    description: "Centro público de soporte de VantixApp.",
+  },
 };
 
 const CATEGORIES = [

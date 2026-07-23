@@ -1,3 +1,5 @@
+import { normalizePublicOrigin } from "@/lib/public-domain";
+
 export const WOOCOMMERCE_REQUEST_TIMEOUT_MS = 10_000;
 export const WOOCOMMERCE_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 export const WOOCOMMERCE_MAX_SYNC_PAGES = 10;
@@ -41,7 +43,9 @@ export function getWooCommerceAppUrl(): string {
   }
   let url: URL;
   try {
-    url = new URL(raw);
+    const origin = normalizePublicOrigin(raw);
+    if (!origin) throw new Error("invalid origin");
+    url = new URL(origin);
   } catch {
     throw new WooCommerceConfigurationError(
       "La URL pública de VantixApp no es válida."

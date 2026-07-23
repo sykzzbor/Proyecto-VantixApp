@@ -28,12 +28,12 @@ Configurar los valores reales únicamente en el almacén seguro del entorno. Est
 - `META_GRAPH_API_VERSION`: versión explícita de Graph API habilitada para la aplicación, con formato `vN.N`.
 - `WHATSAPP_VERIFY_TOKEN`: secreto elegido por VantixApp para verificar el `GET` inicial del webhook.
 - `CREDENTIALS_ENCRYPTION_KEY`: clave AES-256 usada para cifrar tokens en reposo.
-- `BETTER_AUTH_URL`: origen público canónico HTTPS de VantixApp; también determina la URL del webhook.
+- `BETTER_AUTH_URL`: `https://vantixapp.com.ar`; también determina la URL del webhook.
 
 La URL de callback resultante es:
 
 ```text
-<BETTER_AUTH_URL>/api/webhooks/whatsapp
+https://vantixapp.com.ar/api/webhooks/whatsapp
 ```
 
 `META_APP_ID` y `META_EMBEDDED_SIGNUP_CONFIG_ID` pueden llegar a la pantalla autenticada de Integraciones. Ninguna de las otras variables puede incluirse en JavaScript del navegador.
@@ -78,7 +78,7 @@ El código debe usar la versión de flujo indicada por la configuración vigente
 
 ### 3. Configurar dominios y OAuth
 
-1. Agregar el dominio canónico de producción a **App Domains**.
+1. Agregar `vantixapp.com.ar` como dominio canónico de producción en **App Domains**.
 2. Agregar el mismo origen HTTPS a **Allowed domains** de la configuración de Embedded Signup.
 3. En **Valid OAuth Redirect URIs**, registrar exactamente la URI que indique Facebook Login for Business para la integración. No usar comodines ni una URI parecida.
 4. Configurar la URL pública y la política de privacidad, los términos y la eliminación de datos que Meta solicite para App Review.
@@ -93,7 +93,7 @@ Un error de dominio u OAuth debe quedar como **Configuración de Meta pendiente*
 2. Configurar como Callback URL:
 
    ```text
-   https://<dominio-canónico>/api/webhooks/whatsapp
+   https://vantixapp.com.ar/api/webhooks/whatsapp
    ```
 
 3. Usar como Verify Token el valor almacenado en `WHATSAPP_VERIFY_TOKEN`.

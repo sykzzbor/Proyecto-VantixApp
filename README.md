@@ -224,7 +224,7 @@ Configurá las variables desde **Project → Settings → Environment Variables*
 | --- | --- |
 | `DATABASE_URL` | URL PostgreSQL administrada con pooling y TLS. |
 | `BETTER_AUTH_SECRET` | Secreto aleatorio de al menos 32 bytes. |
-| `BETTER_AUTH_URL` | `https://tu-dominio` o la URL estable `https://tu-proyecto.vercel.app`, sin barra final. |
+| `BETTER_AUTH_URL` | `https://vantixapp.com.ar`, sin barra final. |
 | `AI_PROVIDER` | `demo` hasta habilitar un proveedor real. |
 | `OPENAI_API_KEY` | Omitir mientras `AI_PROVIDER=demo`; agregar solo una clave real. |
 | `OPENAI_MODEL` | Modelo habilitado para la cuenta; se usa únicamente con `AI_PROVIDER=openai`. |

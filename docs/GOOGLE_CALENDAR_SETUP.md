@@ -25,7 +25,7 @@ gestionar turnos. Las herramientas de Claude no forman parte de esta etapa.
 1. **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
 2. Application type: **Web application**.
 3. En **Authorized redirect URIs** agregá exactamente:
-   - Producción: `https://proyecto-vantix-app.vercel.app/api/integrations/google-calendar/callback`
+   - Producción: `https://vantixapp.com.ar/api/integrations/google-calendar/callback`
    - Desarrollo: `http://localhost:3000/api/integrations/google-calendar/callback`
 4. Guardá y copiá el **Client ID** y el **Client Secret**.
 
