@@ -9,12 +9,15 @@ type VantixLogoProps = {
 export function VantixLogo({ className, priority = false }: VantixLogoProps) {
   return (
     <Image
-      src="/brand/vantix-wordmark-dark.png"
+      src="/brand/vantix-wordmark-transparent.png"
       alt="Vantix"
       width={496}
       height={128}
       preload={priority}
-      className={cn("h-auto w-28 object-contain", className)}
+      className={cn(
+        "h-auto w-28 object-contain invert dark:invert-0",
+        className
+      )}
     />
   );
 }
