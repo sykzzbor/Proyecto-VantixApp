@@ -23,7 +23,8 @@ import {
   MercadoPagoBillingProvider,
   getMercadoPagoConfiguration,
   getMercadoPagoConfigurationError,
-  resolveMercadoPagoChargeAmount,
+  getMercadoPagoLiveTestOffer,
+  resolveMercadoPagoCheckoutCharge,
 } from "@/server/billing/mercado-pago";
 import {
   buildBillingWebhookIdempotencyKey,
@@ -38,6 +39,8 @@ export type BillingOverview = {
   checkoutUnavailableReason: string | null;
   testCheckout: boolean;
   testAmountArs: number | null;
+  technicalTestCheckout: boolean;
+  technicalTestAmountArs: number | null;
   pendingPlan: BillingPlanId | null;
   canSynchronize: boolean;
   canCancel: boolean;
@@ -49,6 +52,7 @@ export type BillingCheckoutResult = {
   amountArs: number;
   chargedAmountArs: number;
   testCheckout: boolean;
+  technicalTestCheckout: boolean;
   exchangeRate: number;
   exchangeSource: string;
   quotedAt: string;
@@ -77,15 +81,43 @@ export function selectExternalSubscriptionToSynchronize(input: {
   );
 }
 
+export function isMercadoPagoPaymentAmountValid(input: {
+  expectedProviderAmount: number;
+  remoteStatus: BillingProviderSubscription["status"];
+  remoteAmountArs: number | null;
+  remoteCurrency: string | null;
+  chargedAmountArs?: number;
+  chargedCurrency?: string;
+}): boolean {
+  if (
+    input.remoteStatus === "authorized" &&
+    (input.remoteCurrency !== "ARS" ||
+      input.remoteAmountArs === null ||
+      Math.abs(input.remoteAmountArs - input.expectedProviderAmount) > 0.01)
+  ) {
+    return false;
+  }
+  return !(
+    input.chargedAmountArs !== undefined &&
+    (input.chargedCurrency !== "ARS" ||
+      Math.abs(input.chargedAmountArs - input.expectedProviderAmount) > 0.01)
+  );
+}
+
 export async function getBillingOverview(
-  organizationId: string
+  organizationId: string,
+  userEmail: string
 ): Promise<BillingOverview> {
   const [entitlement, pending, subscription, configuration] = await Promise.all([
     getOrganizationEntitlement(organizationId),
     prisma.planPriceSnapshot.findFirst({
       where: { organizationId, checkoutStatus: "PENDING" },
       orderBy: { createdAt: "desc" },
-      select: { plan: true, externalSubscriptionId: true },
+      select: {
+        plan: true,
+        externalSubscriptionId: true,
+        isTechnicalTest: true,
+      },
     }),
     prisma.organizationSubscription.findUnique({
       where: { organizationId },
@@ -97,6 +129,7 @@ export async function getBillingOverview(
     }),
     Promise.resolve(getMercadoPagoConfiguration()),
   ]);
+  const liveTest = getMercadoPagoLiveTestOffer(userEmail);
   return {
     entitlement,
     billingConfigured: configuration.configured,
@@ -104,7 +137,14 @@ export async function getBillingOverview(
       getMercadoPagoConfigurationError(configuration),
     testCheckout: configuration.testMode,
     testAmountArs: configuration.testAmountArs,
-    pendingPlan: (pending?.plan as BillingPlanId | undefined) ?? null,
+    technicalTestCheckout: liveTest.enabled,
+    technicalTestAmountArs: liveTest.enabled
+      ? liveTest.amountArs
+      : null,
+    pendingPlan:
+      pending && (!pending.isTechnicalTest || liveTest.enabled)
+        ? (pending.plan as BillingPlanId)
+        : null,
     canSynchronize: Boolean(
       configuration.configured &&
         (subscription?.externalSubscriptionId || pending?.externalSubscriptionId)
@@ -125,13 +165,20 @@ function ensureExistingCheckoutBelongsToOrganization(
     checkoutUrl: string | null;
     arsAmount: Prisma.Decimal;
     providerAmountArs: Prisma.Decimal | null;
+    isTechnicalTest: boolean;
+    createdByUserId: string | null;
     exchangeRate: Prisma.Decimal;
     exchangeSource: string;
     quotedAt: Date;
   },
-  organizationId: string
+  context: CheckoutContext
 ): BillingCheckoutResult {
-  if (existing.organizationId !== organizationId) {
+  if (
+    existing.organizationId !== context.organizationId ||
+    (existing.isTechnicalTest &&
+      (existing.createdByUserId !== context.userId ||
+        !getMercadoPagoLiveTestOffer(context.userEmail).enabled))
+  ) {
     throw new ActionError("La solicitud de pago no es válida.");
   }
   if (existing.checkoutStatus !== "PENDING" || !existing.checkoutUrl) {
@@ -145,8 +192,10 @@ function ensureExistingCheckoutBelongsToOrganization(
     chargedAmountArs:
       existing.providerAmountArs?.toNumber() ?? existing.arsAmount.toNumber(),
     testCheckout:
+      !existing.isTechnicalTest &&
       existing.providerAmountArs !== null &&
       existing.providerAmountArs.toNumber() !== existing.arsAmount.toNumber(),
+    technicalTestCheckout: existing.isTechnicalTest,
     exchangeRate: existing.exchangeRate.toNumber(),
     exchangeSource: existing.exchangeSource,
     quotedAt: existing.quotedAt.toISOString(),
@@ -179,6 +228,8 @@ export async function createBillingCheckout(
       checkoutUrl: true,
       arsAmount: true,
       providerAmountArs: true,
+      isTechnicalTest: true,
+      createdByUserId: true,
       exchangeRate: true,
       exchangeSource: true,
       quotedAt: true,
@@ -187,7 +238,7 @@ export async function createBillingCheckout(
   if (existing) {
     return ensureExistingCheckoutBelongsToOrganization(
       existing,
-      context.organizationId
+      context
     );
   }
 
@@ -211,6 +262,8 @@ export async function createBillingCheckout(
         checkoutUrl: true,
         arsAmount: true,
         providerAmountArs: true,
+        isTechnicalTest: true,
+        createdByUserId: true,
         exchangeRate: true,
         exchangeSource: true,
         quotedAt: true,
@@ -229,12 +282,6 @@ export async function createBillingCheckout(
   ) {
     throw new ActionError("Este ya es tu plan actual.");
   }
-  if (resumable) {
-    return ensureExistingCheckoutBelongsToOrganization(
-      resumable,
-      context.organizationId
-    );
-  }
   if (!exchange.rate || !exchange.source || !exchange.updatedAt) {
     throw new ActionError(
       "No hay una cotización válida disponible para iniciar el pago en ARS."
@@ -246,10 +293,24 @@ export async function createBillingCheckout(
   if (amountArs <= 0) {
     throw new ActionError("No se pudo calcular un importe de pago válido.");
   }
-  const chargedAmountArs = resolveMercadoPagoChargeAmount({
+  const charge = resolveMercadoPagoCheckoutCharge({
     commercialAmountArs: amountArs,
+    payerEmail: context.userEmail,
     configuration,
   });
+  const chargedAmountArs = charge.amountArs;
+  if (resumable) {
+    const resumableAmount =
+      resumable.providerAmountArs?.toNumber() ?? resumable.arsAmount.toNumber();
+    const compatible =
+      Math.abs(resumableAmount - chargedAmountArs) <= 0.01 &&
+      resumable.isTechnicalTest === (charge.mode === "LIVE_TECHNICAL") &&
+      (!resumable.isTechnicalTest ||
+        resumable.createdByUserId === context.userId);
+    if (compatible) {
+      return ensureExistingCheckoutBelongsToOrganization(resumable, context);
+    }
+  }
 
   let snapshot;
   try {
@@ -262,6 +323,7 @@ export async function createBillingCheckout(
         usdAmount: plan.usdMonthly,
         arsAmount: amountArs,
         providerAmountArs: chargedAmountArs,
+        isTechnicalTest: charge.mode === "LIVE_TECHNICAL",
         exchangeRate: exchange.rate,
         exchangeSource: exchange.source,
         quotedAt: new Date(exchange.updatedAt),
@@ -280,6 +342,8 @@ export async function createBillingCheckout(
           checkoutUrl: true,
           arsAmount: true,
           providerAmountArs: true,
+          isTechnicalTest: true,
+          createdByUserId: true,
           exchangeRate: true,
           exchangeSource: true,
           quotedAt: true,
@@ -287,7 +351,7 @@ export async function createBillingCheckout(
       });
       return ensureExistingCheckoutBelongsToOrganization(
         raced,
-        context.organizationId
+        context
       );
     }
     throw error;
@@ -313,6 +377,7 @@ export async function createBillingCheckout(
         checkoutUrl: true,
         arsAmount: true,
         providerAmountArs: true,
+        isTechnicalTest: true,
         exchangeRate: true,
         exchangeSource: true,
         quotedAt: true,
@@ -329,7 +394,8 @@ export async function createBillingCheckout(
         currency: "ARS",
         commercialAmount: amountArs,
         chargedAmount: chargedAmountArs,
-        testCheckout: configuration.testMode,
+        testCheckout: charge.mode === "SANDBOX",
+        technicalTestCheckout: charge.mode === "LIVE_TECHNICAL",
       },
     });
     return {
@@ -337,7 +403,8 @@ export async function createBillingCheckout(
       amountArs: updated.arsAmount.toNumber(),
       chargedAmountArs:
         updated.providerAmountArs?.toNumber() ?? updated.arsAmount.toNumber(),
-      testCheckout: configuration.testMode,
+      testCheckout: charge.mode === "SANDBOX",
+      technicalTestCheckout: updated.isTechnicalTest,
       exchangeRate: updated.exchangeRate.toNumber(),
       exchangeSource: updated.exchangeSource,
       quotedAt: updated.quotedAt.toISOString(),
@@ -392,6 +459,7 @@ export async function applyMercadoPagoSubscriptionUpdate(input: {
       plan: true,
       arsAmount: true,
       providerAmountArs: true,
+      isTechnicalTest: true,
       checkoutStatus: true,
       subscription: {
         select: {
@@ -409,22 +477,17 @@ export async function applyMercadoPagoSubscriptionUpdate(input: {
   const expectedProviderAmount =
     snapshot.providerAmountArs?.toNumber() ?? snapshot.arsAmount.toNumber();
   if (
-    input.remote.status === "authorized" &&
-    (input.remote.currency !== "ARS" ||
-      input.remote.amountArs === null ||
-      Math.abs(input.remote.amountArs - expectedProviderAmount) > 0.01)
+    !isMercadoPagoPaymentAmountValid({
+      expectedProviderAmount,
+      remoteStatus: input.remote.status,
+      remoteAmountArs: input.remote.amountArs,
+      remoteCurrency: input.remote.currency,
+      chargedAmountArs: input.chargedAmountArs,
+      chargedCurrency: input.chargedCurrency,
+    })
   ) {
     throw new ActionError(
-      "El importe confirmado no coincide con el checkout iniciado."
-    );
-  }
-  if (
-    input.chargedAmountArs !== undefined &&
-    (input.chargedCurrency !== "ARS" ||
-      Math.abs(input.chargedAmountArs - expectedProviderAmount) > 0.01)
-  ) {
-    throw new ActionError(
-      "El pago informado no coincide con el importe autorizado."
+      "El pago informado no coincide con el checkout iniciado."
     );
   }
 
@@ -557,7 +620,12 @@ export async function applyMercadoPagoSubscriptionUpdate(input: {
           action: "billing.subscription_updated",
           entityType: "subscription",
           entityId: snapshot.subscriptionId,
-          details: { status: nextStatus, plan: snapshot.plan },
+          details: {
+            status: nextStatus,
+            plan: snapshot.plan,
+            chargedAmountArs: expectedProviderAmount,
+            technicalTestCheckout: snapshot.isTechnicalTest,
+          },
         },
       });
     });
