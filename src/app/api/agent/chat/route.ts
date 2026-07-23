@@ -34,6 +34,7 @@ import { formatTime } from "@/lib/format";
 import { findActiveMembership } from "@/server/context";
 import { getOrganizationEntitlement } from "@/server/billing/entitlement";
 import { getTiendanubeAgentReadiness } from "@/server/integrations/tiendanube/service";
+import { getWooCommerceAgentReadiness } from "@/server/integrations/woocommerce/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -230,7 +231,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 7. Configuración del agente.
-    const [settings, business, knowledgeCount, appointmentReadiness, commerceReady] =
+    const [
+      settings,
+      business,
+      knowledgeCount,
+      appointmentReadiness,
+      tiendanubeReady,
+      wooCommerceReady,
+    ] =
       await Promise.all([
         prisma.agentSettings.findUnique({ where: { organizationId } }),
         prisma.businessProfile.findUnique({ where: { organizationId } }),
@@ -239,7 +247,9 @@ export async function POST(request: NextRequest) {
         }),
         getAppointmentReadiness(organizationId).catch(() => null),
         getTiendanubeAgentReadiness(organizationId).catch(() => false),
+        getWooCommerceAgentReadiness(organizationId).catch(() => false),
       ]);
+    const commerceReady = tiendanubeReady || wooCommerceReady;
     if (!settings || !settings.enabled) {
       logAgentEvent({
         requestId,
@@ -349,6 +359,8 @@ export async function POST(request: NextRequest) {
           hasAppointments: appointmentReadiness?.ready ?? false,
           hasKnowledge: knowledgeCount > 0,
           hasCommerce: commerceReady,
+          hasTiendanube: tiendanubeReady,
+          hasWooCommerce: wooCommerceReady,
         }),
         history: historyRows
           .filter((message) => message.senderType !== "SYSTEM")
@@ -365,6 +377,8 @@ export async function POST(request: NextRequest) {
           appointments: appointmentReadiness?.ready ?? false,
           knowledge: knowledgeCount > 0,
           commerce: commerceReady,
+          tiendanube: tiendanubeReady,
+          woocommerce: wooCommerceReady,
         },
         // La función serverless muere a los 60 s: el agente corta bastante
         // antes para que el cliente reciba respuesta o error, nunca un corte.

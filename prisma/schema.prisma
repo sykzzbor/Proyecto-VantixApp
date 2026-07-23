@@ -141,6 +141,13 @@ model Organization {
   tiendanubeCustomers        TiendanubeCustomer[]
   tiendanubeOrders           TiendanubeOrder[]
   tiendanubeWebhookReceipts  TiendanubeWebhookReceipt[]
+  wooCommerceConnection      WooCommerceConnection?
+  wooCommerceSyncRuns        WooCommerceSyncRun[]
+  wooCommerceProducts        WooCommerceProduct[]
+  wooCommerceVariants        WooCommerceProductVariant[]
+  wooCommerceCustomers       WooCommerceCustomer[]
+  wooCommerceOrders          WooCommerceOrder[]
+  wooCommerceWebhookReceipts WooCommerceWebhookReceipt[]
   appointmentSettings        AppointmentSettings?
   appointments               Appointment[]
   subscription               OrganizationSubscription?
@@ -1310,6 +1317,192 @@ model TiendanubeWebhookReceipt {
   @@index([organizationId, createdAt(sort: Desc)])
   @@index([storeId, event, createdAt(sort: Desc)])
   @@map("tiendanube_webhook_receipts")
+}
+
+// ============================================================
+// WooCommerce: credenciales por organización y copia de solo lectura
+// ============================================================
+
+enum WooCommerceConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+enum WooCommerceSyncStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model WooCommerceConnection {
+  id                      String                      @id @default(cuid())
+  organizationId          String                      @unique
+  storeUrl                String                      @unique @db.VarChar(500)
+  webhookKey              String                      @unique @db.VarChar(64)
+  status                  WooCommerceConnectionStatus @default(CONNECTED)
+  storeName               String?                     @db.VarChar(160)
+  encryptedConsumerKey    String?
+  encryptedConsumerSecret String?
+  encryptedWebhookSecret  String?
+  connectedByUserId       String?
+  lastSyncedAt            DateTime?
+  lastWebhookAt           DateTime?
+  lastError               String?                     @db.VarChar(500)
+  disconnectedAt          DateTime?
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  syncRuns     WooCommerceSyncRun[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, status])
+  @@map("woocommerce_connections")
+}
+
+model WooCommerceSyncRun {
+  id             String                @id @default(cuid())
+  organizationId String
+  connectionId   String
+  idempotencyKey String
+  status         WooCommerceSyncStatus @default(RUNNING)
+  attempts       Int                   @default(1)
+  productsCount  Int                   @default(0)
+  variantsCount  Int                   @default(0)
+  customersCount Int                   @default(0)
+  ordersCount    Int                   @default(0)
+  lastError      String?               @db.VarChar(500)
+  startedAt      DateTime              @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connection   WooCommerceConnection @relation(fields: [organizationId, connectionId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([connectionId, status])
+  @@map("woocommerce_sync_runs")
+}
+
+model WooCommerceProduct {
+  id              String    @id @default(cuid())
+  organizationId  String
+  externalId      String    @db.VarChar(64)
+  name            String    @db.VarChar(300)
+  description     String?
+  handle          String?   @db.VarChar(300)
+  published       Boolean   @default(true)
+  productType     String?   @db.VarChar(40)
+  remoteCreatedAt DateTime?
+  remoteUpdatedAt DateTime?
+  lastSyncedAt    DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  variants     WooCommerceProductVariant[]
+
+  @@unique([organizationId, externalId])
+  @@unique([organizationId, id])
+  @@index([organizationId, published, updatedAt(sort: Desc)])
+  @@map("woocommerce_products")
+}
+
+model WooCommerceProductVariant {
+  id             String   @id @default(cuid())
+  organizationId String
+  productId      String
+  externalId     String   @db.VarChar(64)
+  sku            String?  @db.VarChar(160)
+  price          Decimal? @db.Decimal(14, 2)
+  regularPrice   Decimal? @db.Decimal(14, 2)
+  salePrice      Decimal? @db.Decimal(14, 2)
+  stock          Int?
+  stockManaged   Boolean  @default(false)
+  attributes     Json?
+  lastSyncedAt   DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      WooCommerceProduct @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId, productId])
+  @@index([organizationId, sku])
+  @@map("woocommerce_product_variants")
+}
+
+model WooCommerceCustomer {
+  id              String    @id @default(cuid())
+  organizationId  String
+  externalId      String    @db.VarChar(64)
+  name            String?   @db.VarChar(200)
+  email           String?   @db.VarChar(254)
+  phone           String?   @db.VarChar(40)
+  totalSpent      Decimal?  @db.Decimal(14, 2)
+  ordersCount     Int?
+  remoteCreatedAt DateTime?
+  remoteUpdatedAt DateTime?
+  lastSyncedAt    DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId, email])
+  @@map("woocommerce_customers")
+}
+
+model WooCommerceOrder {
+  id                 String    @id @default(cuid())
+  organizationId     String
+  externalId         String    @db.VarChar(64)
+  orderNumber        String?   @db.VarChar(80)
+  status             String    @db.VarChar(80)
+  currency           String?   @db.VarChar(8)
+  total              Decimal?  @db.Decimal(14, 2)
+  customerExternalId String?   @db.VarChar(64)
+  customerName       String?   @db.VarChar(200)
+  customerEmail      String?   @db.VarChar(254)
+  customerPhone      String?   @db.VarChar(40)
+  lineItems          Json?
+  remoteCreatedAt    DateTime?
+  remoteUpdatedAt    DateTime?
+  lastSyncedAt       DateTime  @default(now())
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId, orderNumber])
+  @@index([organizationId, status, updatedAt(sort: Desc)])
+  @@index([organizationId, customerExternalId])
+  @@map("woocommerce_orders")
+}
+
+model WooCommerceWebhookReceipt {
+  id             String    @id @default(cuid())
+  organizationId String
+  webhookKey     String    @db.VarChar(64)
+  topic          String    @db.VarChar(80)
+  resourceId     String?   @db.VarChar(64)
+  deliveryId     String?   @db.VarChar(100)
+  dedupeKey      String    @unique @db.VarChar(64)
+  processedAt    DateTime?
+  lastError      String?   @db.VarChar(500)
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([webhookKey, topic, createdAt(sort: Desc)])
+  @@map("woocommerce_webhook_receipts")
 }
 
 // ============================================================

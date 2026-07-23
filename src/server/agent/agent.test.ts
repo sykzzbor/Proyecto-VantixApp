@@ -112,6 +112,8 @@ test("OpenAI existente conserva su selección y herramientas", async () => {
       "cancel_appointment",
       "search_store_products",
       "get_store_order_status",
+      "search_woocommerce_products",
+      "get_woocommerce_order_status",
       "request_human_support",
     ]
   );
@@ -518,6 +520,7 @@ test("las tools se filtran según lo que la organización tiene activo", () => {
   assert.equal(sinNada.includes("create_appointment"), false);
   assert.equal(sinNada.includes("search_knowledge"), false);
   assert.equal(sinNada.includes("search_store_products"), false);
+  assert.equal(sinNada.includes("search_woocommerce_products"), false);
   // Las de negocio siempre quedan disponibles.
   assert.equal(sinNada.includes("search_products"), true);
   assert.equal(sinNada.includes("request_human_support"), true);

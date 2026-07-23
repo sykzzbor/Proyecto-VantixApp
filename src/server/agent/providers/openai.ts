@@ -12,6 +12,7 @@ import {
 } from "@/server/agent/tools";
 import type { AgentRunParams, AgentRunResult } from "@/server/agent/types";
 import { TIENDANUBE_AGENT_TOOL_NAMES } from "@/server/integrations/tiendanube/agent-tools";
+import { WOOCOMMERCE_AGENT_TOOL_NAMES } from "@/server/integrations/woocommerce/agent-tools";
 
 const MAX_TOOL_ROUNDS = 4;
 const MAX_OUTPUT_TOKENS = 1200;
@@ -36,7 +37,12 @@ export function openAiToolsForCapabilities(capabilities: AgentRunParams["capabil
   return OPENAI_AGENT_TOOLS.filter((tool) => {
     if (APPOINTMENT_TOOL_NAMES.has(tool.name)) return capabilities.appointments === true;
     if (tool.name === "search_knowledge") return capabilities.knowledge === true;
-    if (TIENDANUBE_AGENT_TOOL_NAMES.has(tool.name)) return capabilities.commerce === true;
+    if (TIENDANUBE_AGENT_TOOL_NAMES.has(tool.name)) {
+      return (capabilities.tiendanube ?? capabilities.commerce) === true;
+    }
+    if (WOOCOMMERCE_AGENT_TOOL_NAMES.has(tool.name)) {
+      return (capabilities.woocommerce ?? capabilities.commerce) === true;
+    }
     return true;
   });
 }

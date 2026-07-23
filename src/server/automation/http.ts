@@ -106,6 +106,8 @@ export async function authorizeAutomationRequest(
                 ? "Google Sheets está disponible desde el plan Standard."
                 : feature === "tiendanube"
                   ? "Tiendanube está disponible desde el plan Profesional."
+                  : feature === "woocommerce"
+                    ? "WooCommerce está disponible desde el plan Profesional."
                   : "Tu plan no incluye esta función.",
         },
         { status: 402 }

@@ -9,7 +9,13 @@ import { AGENT_TONE_LABELS } from "@/lib/validations/agent";
 export function buildAgentInstructions(
   settings: AgentSettings,
   business: BusinessProfile | null,
-  options: { hasKnowledge?: boolean; hasAppointments?: boolean; hasCommerce?: boolean } = {}
+  options: {
+    hasKnowledge?: boolean;
+    hasAppointments?: boolean;
+    hasCommerce?: boolean;
+    hasTiendanube?: boolean;
+    hasWooCommerce?: boolean;
+  } = {}
 ): string {
   const businessName = business?.name ?? "el negocio";
   const tone = AGENT_TONE_LABELS[settings.tone];
@@ -55,10 +61,20 @@ export function buildAgentInstructions(
   }
 
   if (options.hasCommerce) {
+    if (options.hasTiendanube) {
+      lines.push(
+        "- Para productos sincronizados desde Tiendanube, consultá search_store_products antes de responder precio o stock.",
+        "- Para el estado de un pedido de Tiendanube, pedí el número visible y consultá get_store_order_status."
+      );
+    }
+    if (options.hasWooCommerce) {
+      lines.push(
+        "- Para productos sincronizados desde WooCommerce, consultá search_woocommerce_products antes de responder precio, SKU o stock.",
+        "- Para el estado de un pedido de WooCommerce, pedí el número visible y consultá get_woocommerce_order_status."
+      );
+    }
     lines.push(
-      "- Para productos sincronizados desde Tiendanube, consultá search_store_products antes de responder precio o stock.",
-      "- Para el estado de un pedido de Tiendanube, pedí el número visible y consultá get_store_order_status.",
-      "- Las herramientas de Tiendanube son solo de lectura: nunca afirmes que modificaste pedidos, productos o stock."
+      "- Las herramientas de tienda son solo de lectura: nunca afirmes que modificaste pedidos, productos o stock."
     );
   }
 

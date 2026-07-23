@@ -15,6 +15,7 @@ import {
   type AgentToolContext,
 } from "@/server/agent/tools";
 import { TIENDANUBE_AGENT_TOOL_NAMES } from "@/server/integrations/tiendanube/agent-tools";
+import { WOOCOMMERCE_AGENT_TOOL_NAMES } from "@/server/integrations/woocommerce/agent-tools";
 import {
   AgentProviderError,
   type AgentProviderErrorCode,
@@ -129,7 +130,12 @@ export function toolsForCapabilities(
       return capabilities.appointments === true;
     }
     if (tool.name === "search_knowledge") return capabilities.knowledge === true;
-    if (TIENDANUBE_AGENT_TOOL_NAMES.has(tool.name)) return capabilities.commerce === true;
+    if (TIENDANUBE_AGENT_TOOL_NAMES.has(tool.name)) {
+      return (capabilities.tiendanube ?? capabilities.commerce) === true;
+    }
+    if (WOOCOMMERCE_AGENT_TOOL_NAMES.has(tool.name)) {
+      return (capabilities.woocommerce ?? capabilities.commerce) === true;
+    }
     return true;
   });
 }

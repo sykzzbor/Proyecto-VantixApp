@@ -14,6 +14,8 @@ export type AgentCapabilities = {
   appointments?: boolean;
   knowledge?: boolean;
   commerce?: boolean;
+  tiendanube?: boolean;
+  woocommerce?: boolean;
 };
 
 export type AgentRunParams = {

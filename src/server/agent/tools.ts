@@ -20,6 +20,11 @@ import {
   getTiendanubeOrderForAgent,
   searchTiendanubeProductsForAgent,
 } from "@/server/integrations/tiendanube/agent-tools";
+import {
+  WOOCOMMERCE_AGENT_TOOL_DEFINITIONS,
+  getWooCommerceOrderForAgent,
+  searchWooCommerceProductsForAgent,
+} from "@/server/integrations/woocommerce/agent-tools";
 
 /**
  * Contexto interno de ejecución de herramientas. El organizationId
@@ -151,6 +156,7 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   },
   ...APPOINTMENT_TOOL_DEFINITIONS,
   ...TIENDANUBE_AGENT_TOOL_DEFINITIONS,
+  ...WOOCOMMERCE_AGENT_TOOL_DEFINITIONS,
   {
     name: "request_human_support",
     description:
@@ -490,6 +496,10 @@ async function dispatchTool(
       return searchTiendanubeProductsForAgent(ctx, args);
     case "get_store_order_status":
       return getTiendanubeOrderForAgent(ctx, args);
+    case "search_woocommerce_products":
+      return searchWooCommerceProductsForAgent(ctx, args);
+    case "get_woocommerce_order_status":
+      return getWooCommerceOrderForAgent(ctx, args);
     case "request_human_support":
       return requestHumanSupport(ctx, args);
     default:
