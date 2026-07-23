@@ -7,10 +7,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const { user, org } = await getOrgContext({
+    const { org } = await getOrgContext({
       allowInactiveSubscription: true,
     });
-    return NextResponse.json(await getBillingOverview(org.id, user.email), {
+    return NextResponse.json(await getBillingOverview(org.id), {
       headers: { "Cache-Control": "private, no-store, max-age=0" },
     });
   } catch (error) {

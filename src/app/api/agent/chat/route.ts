@@ -33,6 +33,7 @@ import { checkRateLimit } from "@/server/rate-limit";
 import { formatTime } from "@/lib/format";
 import { findActiveMembership } from "@/server/context";
 import { getOrganizationEntitlement } from "@/server/billing/entitlement";
+import { getTiendanubeAgentReadiness } from "@/server/integrations/tiendanube/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -229,7 +230,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 7. Configuración del agente.
-    const [settings, business, knowledgeCount, appointmentReadiness] =
+    const [settings, business, knowledgeCount, appointmentReadiness, commerceReady] =
       await Promise.all([
         prisma.agentSettings.findUnique({ where: { organizationId } }),
         prisma.businessProfile.findUnique({ where: { organizationId } }),
@@ -237,6 +238,7 @@ export async function POST(request: NextRequest) {
           where: { organizationId, status: "READY", enabled: true },
         }),
         getAppointmentReadiness(organizationId).catch(() => null),
+        getTiendanubeAgentReadiness(organizationId).catch(() => false),
       ]);
     if (!settings || !settings.enabled) {
       logAgentEvent({
@@ -346,6 +348,7 @@ export async function POST(request: NextRequest) {
         instructions: buildAgentInstructions(settings, business, {
           hasAppointments: appointmentReadiness?.ready ?? false,
           hasKnowledge: knowledgeCount > 0,
+          hasCommerce: commerceReady,
         }),
         history: historyRows
           .filter((message) => message.senderType !== "SYSTEM")
@@ -361,6 +364,7 @@ export async function POST(request: NextRequest) {
         capabilities: {
           appointments: appointmentReadiness?.ready ?? false,
           knowledge: knowledgeCount > 0,
+          commerce: commerceReady,
         },
         // La función serverless muere a los 60 s: el agente corta bastante
         // antes para que el cliente reciba respuesta o error, nunca un corte.

@@ -9,10 +9,10 @@ import { can } from "@/lib/permissions";
 export const metadata: Metadata = { title: "Planes" };
 
 export default async function PlansPage() {
-  const { user, org, role } = await requireOrgContext();
+  const { org, role } = await requireOrgContext();
   const [exchange, billing] = await Promise.all([
     getPlansExchangeRate(),
-    getBillingOverview(org.id, user.email),
+    getBillingOverview(org.id),
   ]);
   return (
     <div className="space-y-7">

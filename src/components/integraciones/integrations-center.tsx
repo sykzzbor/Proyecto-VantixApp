@@ -17,7 +17,6 @@ import {
   RefreshCcw,
   ShieldCheck,
   ShoppingBag,
-  Store,
   Unplug,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -46,6 +45,7 @@ import { ManualWhatsappConnectionDialog } from "@/components/integraciones/manua
 import { YCloudConnectionDialog } from "@/components/integraciones/ycloud-connection-dialog";
 import { GoogleCalendarAppointmentSettings } from "@/components/integraciones/google-calendar-appointment-settings";
 import { GoogleSheetsCard } from "@/components/integraciones/google-sheets-card";
+import { TiendanubeCard } from "@/components/integraciones/tiendanube-card";
 import { cn } from "@/lib/utils";
 import { getGoogleCalendarOAuthFeedback } from "@/lib/google-calendar-oauth-result";
 import type {
@@ -1257,7 +1257,7 @@ export function IntegrationsCenter({
   initialData,
   canManage,
 }: {
-  initialData: Pick<IntegrationsCenterView, "whatsapp" | "googleCalendar" | "googleSheets">;
+  initialData: Pick<IntegrationsCenterView, "whatsapp" | "googleCalendar" | "googleSheets" | "tiendanube">;
   canManage: boolean;
 }) {
   const searchParams = useSearchParams();
@@ -1273,7 +1273,12 @@ export function IntegrationsCenter({
     !initialData.googleSheets.reconnectionRequired &&
     initialData.googleSheets.spreadsheetSelected &&
     initialData.googleSheets.status !== "ERROR";
-  const operationalCount = [whatsappOperational, googleOperational, sheetsOperational].filter(Boolean).length;
+  const tiendanubeOperational =
+    initialData.tiendanube.planAccess &&
+    initialData.tiendanube.connected &&
+    !initialData.tiendanube.reconnectionRequired &&
+    initialData.tiendanube.status !== "ERROR";
+  const operationalCount = [whatsappOperational, googleOperational, sheetsOperational, tiendanubeOperational].filter(Boolean).length;
 
   useEffect(() => {
     const result = searchParams.get("google");
@@ -1297,11 +1302,11 @@ export function IntegrationsCenter({
         </div>
         <div className="rounded-xl border border-border bg-card p-4">
           <p className="text-xs font-medium text-muted-foreground">Disponibles</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums">3</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums">4</p>
         </div>
         <div className="rounded-xl border border-border bg-card p-4">
           <p className="text-xs font-medium text-muted-foreground">Requieren atención</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums">{3 - operationalCount}</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums">{4 - operationalCount}</p>
         </div>
       </div>
 
@@ -1315,11 +1320,12 @@ export function IntegrationsCenter({
             {whatsappOperational && <WhatsappCard data={initialData.whatsapp} canManage={canManage} />}
             {googleOperational && <GoogleCalendarCard data={initialData.googleCalendar} canManage={canManage} />}
             {sheetsOperational && <GoogleSheetsCard data={initialData.googleSheets} canManage={canManage} />}
+            {tiendanubeOperational && <TiendanubeCard data={initialData.tiendanube} canManage={canManage} />}
           </div>
         </section>
       )}
 
-      {operationalCount < 3 && (
+      {operationalCount < 4 && (
         <section className="space-y-3" aria-labelledby="integrations-pending">
           <div>
             <h3 id="integrations-pending" className="text-sm font-semibold">Disponibles y pendientes</h3>
@@ -1329,6 +1335,7 @@ export function IntegrationsCenter({
             {!whatsappOperational && <WhatsappCard data={initialData.whatsapp} canManage={canManage} />}
             {!googleOperational && <GoogleCalendarCard data={initialData.googleCalendar} canManage={canManage} />}
             {!sheetsOperational && <GoogleSheetsCard data={initialData.googleSheets} canManage={canManage} />}
+            {!tiendanubeOperational && <TiendanubeCard data={initialData.tiendanube} canManage={canManage} />}
           </div>
         </section>
       )}
@@ -1343,12 +1350,6 @@ export function IntegrationsCenter({
           </p>
         </div>
         <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <UpcomingIntegrationCard
-            name="Tiendanube"
-            description="Catálogo y operación comercial conectados con tu tienda."
-            icon={Store}
-            status="En desarrollo"
-          />
           <UpcomingIntegrationCard
             name="WooCommerce"
             description="Productos y pedidos conectados con tu operación en VantixApp."

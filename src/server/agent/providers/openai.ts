@@ -11,6 +11,7 @@ import {
   executeAgentTool,
 } from "@/server/agent/tools";
 import type { AgentRunParams, AgentRunResult } from "@/server/agent/types";
+import { TIENDANUBE_AGENT_TOOL_NAMES } from "@/server/integrations/tiendanube/agent-tools";
 
 const MAX_TOOL_ROUNDS = 4;
 const MAX_OUTPUT_TOKENS = 1200;
@@ -23,6 +24,23 @@ export const OPENAI_AGENT_TOOLS: FunctionTool[] = AGENT_TOOLS.map((tool) => ({
   parameters: tool.inputSchema,
 }));
 
+const APPOINTMENT_TOOL_NAMES = new Set([
+  "check_appointment_availability",
+  "create_appointment",
+  "reschedule_appointment",
+  "cancel_appointment",
+]);
+
+export function openAiToolsForCapabilities(capabilities: AgentRunParams["capabilities"]): FunctionTool[] {
+  if (!capabilities) return OPENAI_AGENT_TOOLS;
+  return OPENAI_AGENT_TOOLS.filter((tool) => {
+    if (APPOINTMENT_TOOL_NAMES.has(tool.name)) return capabilities.appointments === true;
+    if (tool.name === "search_knowledge") return capabilities.knowledge === true;
+    if (TIENDANUBE_AGENT_TOOL_NAMES.has(tool.name)) return capabilities.commerce === true;
+    return true;
+  });
+}
+
 export async function runOpenAIProvider(
   params: AgentRunParams
 ): Promise<AgentRunResult> {
@@ -31,7 +49,7 @@ export async function runOpenAIProvider(
   const baseRequest = {
     model,
     instructions: params.instructions,
-    tools: OPENAI_AGENT_TOOLS,
+    tools: openAiToolsForCapabilities(params.capabilities),
     max_output_tokens: MAX_OUTPUT_TOKENS,
     ...(model.startsWith("gpt-5")
       ? { reasoning: { effort: "minimal" as const } }

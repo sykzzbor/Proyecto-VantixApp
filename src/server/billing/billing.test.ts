@@ -21,9 +21,7 @@ import {
   buildMercadoPagoErrorLog,
   getMercadoPagoConfiguration,
   getMercadoPagoConfigurationError,
-  getMercadoPagoLiveTestOffer,
   MercadoPagoBillingProvider,
-  resolveMercadoPagoCheckoutCharge,
   resolveMercadoPagoChargeAmount,
   verifyMercadoPagoWebhookSignature,
 } from "@/server/billing/mercado-pago";
@@ -283,35 +281,35 @@ test("Mercado Pago aprobado activa y un pago rechazado pasa a PAST_DUE", () => {
   );
 });
 
-test("el webhook técnico acepta ARS 100, activa e identifica duplicados", () => {
-  const technicalRemote = remote({
+test("el webhook acepta el snapshot comercial exacto, activa e identifica duplicados", () => {
+  const commercialRemote = remote({
     status: "authorized",
-    amountArs: 100,
+    amountArs: 134_000,
     currency: "ARS",
   });
   assert.equal(
     isMercadoPagoPaymentAmountValid({
-      expectedProviderAmount: 100,
-      remoteStatus: technicalRemote.status,
-      remoteAmountArs: technicalRemote.amountArs,
-      remoteCurrency: technicalRemote.currency,
-      chargedAmountArs: 100,
+      expectedProviderAmount: 134_000,
+      remoteStatus: commercialRemote.status,
+      remoteAmountArs: commercialRemote.amountArs,
+      remoteCurrency: commercialRemote.currency,
+      chargedAmountArs: 134_000,
       chargedCurrency: "ARS",
     }),
     true
   );
   assert.equal(
     isMercadoPagoPaymentAmountValid({
-      expectedProviderAmount: 100,
-      remoteStatus: technicalRemote.status,
-      remoteAmountArs: 134_000,
+      expectedProviderAmount: 134_000,
+      remoteStatus: commercialRemote.status,
+      remoteAmountArs: 100,
       remoteCurrency: "ARS",
     }),
     false
   );
   assert.equal(
     resolveMercadoPagoStatus({
-      remote: technicalRemote,
+      remote: commercialRemote,
       currentStatus: "INCOMPLETE",
       trialEndsAt: NOW,
       now: NOW,
@@ -322,8 +320,8 @@ test("el webhook técnico acepta ARS 100, activa e identifica duplicados", () =>
   const eventInput = {
     provider: "MERCADO_PAGO" as const,
     eventType: "subscription_authorized_payment:approved",
-    externalEventId: "authorized-payment-technical-1",
-    remote: technicalRemote,
+    externalEventId: "authorized-payment-commercial-1",
+    remote: commercialRemote,
   };
   assert.equal(
     buildBillingWebhookIdempotencyKey(eventInput),
@@ -567,126 +565,6 @@ test("las credenciales productivas ignoran el importe de prueba", () => {
   );
 });
 
-test("el cobro real técnico exige Production, token productivo y correo exacto", () => {
-  const env = {
-    NODE_ENV: "production",
-    VERCEL_ENV: "production",
-    MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-production-token",
-    MERCADO_PAGO_WEBHOOK_SECRET: "production-webhook-secret",
-    MERCADO_PAGO_LIVE_TEST_AMOUNT_ARS: "100",
-    MERCADO_PAGO_LIVE_TEST_EMAIL: "Owner@Example.test ",
-    NEXT_PUBLIC_APP_URL: "https://app.example.test",
-  };
-  const configuration = getMercadoPagoConfiguration(env);
-
-  assert.deepEqual(getMercadoPagoLiveTestOffer("owner@example.test", env), {
-    enabled: true,
-    amountArs: 100,
-  });
-  assert.deepEqual(
-    resolveMercadoPagoCheckoutCharge({
-      commercialAmountArs: 134_000,
-      userEmail: "owner@example.test",
-      configuration,
-      env,
-    }),
-    { amountArs: 100, mode: "LIVE_TECHNICAL" }
-  );
-});
-
-test("otro correo conserva el precio real y no recibe datos de autorización", () => {
-  const env = {
-    NODE_ENV: "production",
-    VERCEL_ENV: "production",
-    MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-production-token",
-    MERCADO_PAGO_WEBHOOK_SECRET: "production-webhook-secret",
-    MERCADO_PAGO_LIVE_TEST_AMOUNT_ARS: "100",
-    MERCADO_PAGO_LIVE_TEST_EMAIL: "owner@example.test",
-    NEXT_PUBLIC_APP_URL: "https://app.example.test",
-  };
-  const configuration = getMercadoPagoConfiguration(env);
-  const offer = getMercadoPagoLiveTestOffer("other@example.test", env);
-
-  assert.deepEqual(offer, { enabled: false, amountArs: null });
-  assert.equal(JSON.stringify(offer).includes("owner@example.test"), false);
-  assert.deepEqual(
-    resolveMercadoPagoCheckoutCharge({
-      commercialAmountArs: 134_000,
-      userEmail: "other@example.test",
-      configuration,
-      env,
-    }),
-    { amountArs: 134_000, mode: "COMMERCIAL" }
-  );
-});
-
-test("el cobro real técnico falla cerrado fuera de Production", () => {
-  const baseEnv = {
-    MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-production-token",
-    MERCADO_PAGO_LIVE_TEST_AMOUNT_ARS: "100",
-    MERCADO_PAGO_LIVE_TEST_EMAIL: "owner@example.test",
-  };
-
-  assert.deepEqual(
-    getMercadoPagoLiveTestOffer("owner@example.test", {
-      ...baseEnv,
-      NODE_ENV: "development",
-      VERCEL_ENV: "development",
-    }),
-    { enabled: false, amountArs: null }
-  );
-  assert.deepEqual(
-    getMercadoPagoLiveTestOffer("owner@example.test", {
-      ...baseEnv,
-      NODE_ENV: "production",
-      VERCEL_ENV: "preview",
-    }),
-    { enabled: false, amountArs: null }
-  );
-});
-
-test("una credencial TEST nunca habilita el cobro real técnico", () => {
-  const env = {
-    NODE_ENV: "production",
-    VERCEL_ENV: "production",
-    MERCADO_PAGO_ACCESS_TOKEN: "TEST-private-token",
-    MERCADO_PAGO_WEBHOOK_SECRET: "test-webhook-secret",
-    MERCADO_PAGO_TEST_AMOUNT_ARS: "100",
-    MERCADO_PAGO_LIVE_TEST_AMOUNT_ARS: "100",
-    MERCADO_PAGO_LIVE_TEST_EMAIL: "owner@example.test",
-    NEXT_PUBLIC_APP_URL: "https://app.example.test",
-  };
-
-  assert.deepEqual(getMercadoPagoLiveTestOffer("owner@example.test", env), {
-    enabled: false,
-    amountArs: null,
-  });
-  assert.deepEqual(
-    resolveMercadoPagoCheckoutCharge({
-      commercialAmountArs: 134_000,
-      userEmail: "owner@example.test",
-      configuration: getMercadoPagoConfiguration(env),
-      env,
-    }),
-    { amountArs: 100, mode: "SANDBOX" }
-  );
-});
-
-test("el importe técnico inválido o excesivo nunca reemplaza el comercial", () => {
-  for (const amount of ["0", "10000.01", "texto"]) {
-    assert.deepEqual(
-      getMercadoPagoLiveTestOffer("owner@example.test", {
-        NODE_ENV: "production",
-        VERCEL_ENV: "production",
-        MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-production-token",
-        MERCADO_PAGO_LIVE_TEST_AMOUNT_ARS: amount,
-        MERCADO_PAGO_LIVE_TEST_EMAIL: "owner@example.test",
-      }),
-      { enabled: false, amountArs: null }
-    );
-  }
-});
-
 test("el correo de pago se valida y normaliza sin usar la identidad de acceso", () => {
   assert.equal(
     normalizeBillingPayerEmail(" Cuenta.Pagos@Example.com "),
@@ -703,12 +581,8 @@ test("un checkout fallido o de otro correo nunca reutiliza el preapproval", () =
     checkoutUrl: "https://www.mercadopago.com.ar/subscriptions/checkout",
     storedPayerEmail: "payer@example.test",
     requestedPayerEmail: "payer@example.test",
-    storedAmountArs: 100,
-    requestedAmountArs: 100,
-    isTechnicalTest: true,
-    requestedTechnicalTest: true,
-    createdByUserId: "user-1",
-    currentUserId: "user-1",
+    storedAmountArs: 134_000,
+    requestedAmountArs: 134_000,
   };
 
   assert.equal(canReuseBillingCheckout(candidate), true);
@@ -721,10 +595,6 @@ test("un checkout fallido o de otro correo nunca reutiliza el preapproval", () =
       ...candidate,
       storedPayerEmail: "previous@example.test",
     }),
-    false
-  );
-  assert.equal(
-    canReuseBillingCheckout({ ...candidate, currentUserId: "user-2" }),
     false
   );
 });

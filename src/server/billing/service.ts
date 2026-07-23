@@ -23,7 +23,6 @@ import {
   MercadoPagoBillingProvider,
   getMercadoPagoConfiguration,
   getMercadoPagoConfigurationError,
-  getMercadoPagoLiveTestOffer,
   resolveMercadoPagoCheckoutCharge,
 } from "@/server/billing/mercado-pago";
 import {
@@ -39,8 +38,6 @@ export type BillingOverview = {
   checkoutUnavailableReason: string | null;
   testCheckout: boolean;
   testAmountArs: number | null;
-  technicalTestCheckout: boolean;
-  technicalTestAmountArs: number | null;
   pendingPlan: BillingPlanId | null;
   canSynchronize: boolean;
   canCancel: boolean;
@@ -52,7 +49,6 @@ export type BillingCheckoutResult = {
   amountArs: number;
   chargedAmountArs: number;
   testCheckout: boolean;
-  technicalTestCheckout: boolean;
   exchangeRate: number;
   exchangeSource: string;
   quotedAt: string;
@@ -62,7 +58,6 @@ export type BillingCheckoutResult = {
 type CheckoutContext = {
   organizationId: string;
   userId: string;
-  userEmail: string;
 };
 
 export function normalizeBillingPayerEmail(value: string): string | null {
@@ -84,19 +79,12 @@ export function canReuseBillingCheckout(input: {
   requestedPayerEmail: string;
   storedAmountArs: number;
   requestedAmountArs: number;
-  isTechnicalTest: boolean;
-  requestedTechnicalTest: boolean;
-  createdByUserId: string | null;
-  currentUserId: string;
 }): boolean {
   return Boolean(
     input.checkoutStatus === "PENDING" &&
       input.checkoutUrl &&
       input.storedPayerEmail === input.requestedPayerEmail &&
-      Math.abs(input.storedAmountArs - input.requestedAmountArs) <= 0.01 &&
-      input.isTechnicalTest === input.requestedTechnicalTest &&
-      (!input.isTechnicalTest ||
-        input.createdByUserId === input.currentUserId)
+      Math.abs(input.storedAmountArs - input.requestedAmountArs) <= 0.01
   );
 }
 
@@ -140,8 +128,7 @@ export function isMercadoPagoPaymentAmountValid(input: {
 }
 
 export async function getBillingOverview(
-  organizationId: string,
-  userEmail: string
+  organizationId: string
 ): Promise<BillingOverview> {
   const [entitlement, pending, subscription, configuration] = await Promise.all([
     getOrganizationEntitlement(organizationId),
@@ -151,7 +138,6 @@ export async function getBillingOverview(
       select: {
         plan: true,
         externalSubscriptionId: true,
-        isTechnicalTest: true,
       },
     }),
     prisma.organizationSubscription.findUnique({
@@ -164,7 +150,6 @@ export async function getBillingOverview(
     }),
     Promise.resolve(getMercadoPagoConfiguration()),
   ]);
-  const liveTest = getMercadoPagoLiveTestOffer(userEmail);
   return {
     entitlement,
     billingConfigured: configuration.configured,
@@ -172,14 +157,7 @@ export async function getBillingOverview(
       getMercadoPagoConfigurationError(configuration),
     testCheckout: configuration.testMode,
     testAmountArs: configuration.testAmountArs,
-    technicalTestCheckout: liveTest.enabled,
-    technicalTestAmountArs: liveTest.enabled
-      ? liveTest.amountArs
-      : null,
-    pendingPlan:
-      pending && (!pending.isTechnicalTest || liveTest.enabled)
-        ? (pending.plan as BillingPlanId)
-        : null,
+    pendingPlan: pending ? (pending.plan as BillingPlanId) : null,
     canSynchronize: Boolean(
       configuration.configured &&
         (subscription?.externalSubscriptionId || pending?.externalSubscriptionId)
@@ -200,8 +178,6 @@ function ensureExistingCheckoutBelongsToOrganization(
     checkoutUrl: string | null;
     arsAmount: Prisma.Decimal;
     providerAmountArs: Prisma.Decimal | null;
-    isTechnicalTest: boolean;
-    createdByUserId: string | null;
     payerEmail: string | null;
     exchangeRate: Prisma.Decimal;
     exchangeSource: string;
@@ -212,9 +188,6 @@ function ensureExistingCheckoutBelongsToOrganization(
 ): BillingCheckoutResult {
   if (
     existing.organizationId !== context.organizationId ||
-    (existing.isTechnicalTest &&
-      (existing.createdByUserId !== context.userId ||
-        !getMercadoPagoLiveTestOffer(context.userEmail).enabled)) ||
     existing.payerEmail !== requestedPayerEmail
   ) {
     throw new ActionError("La solicitud de pago no es válida.");
@@ -230,10 +203,8 @@ function ensureExistingCheckoutBelongsToOrganization(
     chargedAmountArs:
       existing.providerAmountArs?.toNumber() ?? existing.arsAmount.toNumber(),
     testCheckout:
-      !existing.isTechnicalTest &&
       existing.providerAmountArs !== null &&
       existing.providerAmountArs.toNumber() !== existing.arsAmount.toNumber(),
-    technicalTestCheckout: existing.isTechnicalTest,
     exchangeRate: existing.exchangeRate.toNumber(),
     exchangeSource: existing.exchangeSource,
     quotedAt: existing.quotedAt.toISOString(),
@@ -276,8 +247,6 @@ export async function createBillingCheckout(
       checkoutUrl: true,
       arsAmount: true,
       providerAmountArs: true,
-      isTechnicalTest: true,
-      createdByUserId: true,
       payerEmail: true,
       exchangeRate: true,
       exchangeSource: true,
@@ -312,8 +281,6 @@ export async function createBillingCheckout(
         checkoutUrl: true,
         arsAmount: true,
         providerAmountArs: true,
-        isTechnicalTest: true,
-        createdByUserId: true,
         payerEmail: true,
         exchangeRate: true,
         exchangeSource: true,
@@ -346,7 +313,6 @@ export async function createBillingCheckout(
   }
   const charge = resolveMercadoPagoCheckoutCharge({
     commercialAmountArs: amountArs,
-    userEmail: context.userEmail,
     configuration,
   });
   const chargedAmountArs = charge.amountArs;
@@ -360,10 +326,6 @@ export async function createBillingCheckout(
       requestedPayerEmail: payerEmail,
       storedAmountArs: resumableAmount,
       requestedAmountArs: chargedAmountArs,
-      isTechnicalTest: resumable.isTechnicalTest,
-      requestedTechnicalTest: charge.mode === "LIVE_TECHNICAL",
-      createdByUserId: resumable.createdByUserId,
-      currentUserId: context.userId,
     });
     if (compatible) {
       return ensureExistingCheckoutBelongsToOrganization(
@@ -385,7 +347,6 @@ export async function createBillingCheckout(
         usdAmount: plan.usdMonthly,
         arsAmount: amountArs,
         providerAmountArs: chargedAmountArs,
-        isTechnicalTest: charge.mode === "LIVE_TECHNICAL",
         payerEmail,
         exchangeRate: exchange.rate,
         exchangeSource: exchange.source,
@@ -405,8 +366,6 @@ export async function createBillingCheckout(
           checkoutUrl: true,
           arsAmount: true,
           providerAmountArs: true,
-          isTechnicalTest: true,
-          createdByUserId: true,
           payerEmail: true,
           exchangeRate: true,
           exchangeSource: true,
@@ -443,7 +402,6 @@ export async function createBillingCheckout(
           checkoutUrl: true,
           arsAmount: true,
           providerAmountArs: true,
-          isTechnicalTest: true,
           exchangeRate: true,
           exchangeSource: true,
           quotedAt: true,
@@ -467,7 +425,6 @@ export async function createBillingCheckout(
         commercialAmount: amountArs,
         chargedAmount: chargedAmountArs,
         testCheckout: charge.mode === "SANDBOX",
-        technicalTestCheckout: charge.mode === "LIVE_TECHNICAL",
       },
     });
     return {
@@ -476,7 +433,6 @@ export async function createBillingCheckout(
       chargedAmountArs:
         updated.providerAmountArs?.toNumber() ?? updated.arsAmount.toNumber(),
       testCheckout: charge.mode === "SANDBOX",
-      technicalTestCheckout: updated.isTechnicalTest,
       exchangeRate: updated.exchangeRate.toNumber(),
       exchangeSource: updated.exchangeSource,
       quotedAt: updated.quotedAt.toISOString(),
@@ -531,7 +487,6 @@ export async function applyMercadoPagoSubscriptionUpdate(input: {
       plan: true,
       arsAmount: true,
       providerAmountArs: true,
-      isTechnicalTest: true,
       payerEmail: true,
       checkoutStatus: true,
       subscription: {
@@ -698,7 +653,6 @@ export async function applyMercadoPagoSubscriptionUpdate(input: {
             status: nextStatus,
             plan: snapshot.plan,
             chargedAmountArs: expectedProviderAmount,
-            technicalTestCheckout: snapshot.isTechnicalTest,
           },
         },
       });

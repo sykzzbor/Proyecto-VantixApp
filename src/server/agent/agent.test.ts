@@ -110,6 +110,8 @@ test("OpenAI existente conserva su selección y herramientas", async () => {
       "create_appointment",
       "reschedule_appointment",
       "cancel_appointment",
+      "search_store_products",
+      "get_store_order_status",
       "request_human_support",
     ]
   );
@@ -509,17 +511,18 @@ test("isSmallTalk solo acepta el saludo puro, no una consulta real", () => {
 });
 
 test("las tools se filtran según lo que la organización tiene activo", () => {
-  const sinNada = toolsForCapabilities({ appointments: false, knowledge: false }).map(
+  const sinNada = toolsForCapabilities({ appointments: false, knowledge: false, commerce: false }).map(
     (tool) => tool.name
   );
   assert.equal(sinNada.includes("check_appointment_availability"), false);
   assert.equal(sinNada.includes("create_appointment"), false);
   assert.equal(sinNada.includes("search_knowledge"), false);
+  assert.equal(sinNada.includes("search_store_products"), false);
   // Las de negocio siempre quedan disponibles.
   assert.equal(sinNada.includes("search_products"), true);
   assert.equal(sinNada.includes("request_human_support"), true);
 
-  const conTodo = toolsForCapabilities({ appointments: true, knowledge: true }).map(
+  const conTodo = toolsForCapabilities({ appointments: true, knowledge: true, commerce: true }).map(
     (tool) => tool.name
   );
   assert.equal(conTodo.length, ANTHROPIC_AGENT_TOOLS.length);

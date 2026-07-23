@@ -11,9 +11,8 @@ export type BillingPlanId = z.infer<typeof billingPlanSchema>;
 
 /**
  * Funciones habilitables por plan. La validación es SIEMPRE en servidor:
- * ocultar botones no alcanza. Tiendanube, WooCommerce y Sheets todavía no
- * tienen integración construida, pero el permiso queda tipado acá para que el
- * guard exista desde el día uno.
+ * ocultar botones no alcanza. Las integraciones usan estos permisos además de
+ * sesión, rol y aislamiento por organización.
  */
 export const PLAN_FEATURES = [
   "whatsapp",
@@ -121,7 +120,7 @@ export const BILLING_PLANS = {
       "3 negocios y 10 usuarios",
       "5.000 conversaciones mensuales",
       "25.000 respuestas de IA por mes",
-      "Tiendanube y WooCommerce",
+      "Tiendanube con catálogo, clientes y pedidos",
       "Automatizaciones y métricas avanzadas",
       "Roles y auditoría",
     ],

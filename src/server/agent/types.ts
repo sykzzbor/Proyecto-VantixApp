@@ -13,6 +13,7 @@ export type AgentHistoryMessage = {
 export type AgentCapabilities = {
   appointments?: boolean;
   knowledge?: boolean;
+  commerce?: boolean;
 };
 
 export type AgentRunParams = {

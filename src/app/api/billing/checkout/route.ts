@@ -75,7 +75,6 @@ export async function POST(request: Request) {
       {
         organizationId: org.id,
         userId: user.id,
-        userEmail: user.email,
       },
       parsed.data
     );

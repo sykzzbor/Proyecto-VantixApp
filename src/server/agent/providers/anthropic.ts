@@ -14,6 +14,7 @@ import {
   executeAgentTool,
   type AgentToolContext,
 } from "@/server/agent/tools";
+import { TIENDANUBE_AGENT_TOOL_NAMES } from "@/server/integrations/tiendanube/agent-tools";
 import {
   AgentProviderError,
   type AgentProviderErrorCode,
@@ -128,6 +129,7 @@ export function toolsForCapabilities(
       return capabilities.appointments === true;
     }
     if (tool.name === "search_knowledge") return capabilities.knowledge === true;
+    if (TIENDANUBE_AGENT_TOOL_NAMES.has(tool.name)) return capabilities.commerce === true;
     return true;
   });
 }

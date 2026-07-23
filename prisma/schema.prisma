@@ -133,6 +133,14 @@ model Organization {
   googleSheetsConnection     GoogleSheetsConnection?
   googleSheetsOAuthStates    GoogleSheetsOAuthState[]
   googleSheetsSyncRuns       GoogleSheetsSyncRun[]
+  tiendanubeConnection       TiendanubeConnection?
+  tiendanubeOAuthStates      TiendanubeOAuthState[]
+  tiendanubeSyncRuns         TiendanubeSyncRun[]
+  tiendanubeProducts         TiendanubeProduct[]
+  tiendanubeVariants         TiendanubeProductVariant[]
+  tiendanubeCustomers        TiendanubeCustomer[]
+  tiendanubeOrders           TiendanubeOrder[]
+  tiendanubeWebhookReceipts  TiendanubeWebhookReceipt[]
   appointmentSettings        AppointmentSettings?
   appointments               Appointment[]
   subscription               OrganizationSubscription?
@@ -1099,6 +1107,204 @@ model GoogleSheetsSyncRun {
   @@index([organizationId, createdAt(sort: Desc)])
   @@index([connectionId, status])
   @@map("google_sheets_sync_runs")
+}
+
+// ============================================================
+// Tiendanube: OAuth, catálogo y pedidos de solo lectura
+// ============================================================
+
+enum TiendanubeConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+enum TiendanubeSyncStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model TiendanubeConnection {
+  id                   String                     @id @default(cuid())
+  organizationId       String                     @unique
+  storeId              String                     @unique @db.VarChar(64)
+  status               TiendanubeConnectionStatus @default(CONNECTED)
+  storeName            String?                    @db.VarChar(160)
+  storeDomain          String?                    @db.VarChar(255)
+  grantedScopes        String[]                   @default([])
+  encryptedAccessToken String?
+  connectedByUserId    String?
+  lastSyncedAt         DateTime?
+  lastWebhookAt        DateTime?
+  lastError            String?                    @db.VarChar(500)
+  disconnectedAt       DateTime?
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  syncRuns     TiendanubeSyncRun[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, status])
+  @@map("tiendanube_connections")
+}
+
+model TiendanubeOAuthState {
+  id             String    @id @default(cuid())
+  organizationId String
+  userId         String
+  stateHash      String    @unique
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, expiresAt])
+  @@map("tiendanube_oauth_states")
+}
+
+model TiendanubeSyncRun {
+  id             String               @id @default(cuid())
+  organizationId String
+  connectionId   String
+  idempotencyKey String
+  status         TiendanubeSyncStatus @default(RUNNING)
+  attempts       Int                  @default(1)
+  productsCount  Int                  @default(0)
+  variantsCount  Int                  @default(0)
+  customersCount Int                  @default(0)
+  ordersCount    Int                  @default(0)
+  lastError      String?              @db.VarChar(500)
+  startedAt      DateTime             @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connection   TiendanubeConnection @relation(fields: [organizationId, connectionId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([connectionId, status])
+  @@map("tiendanube_sync_runs")
+}
+
+model TiendanubeProduct {
+  id              String    @id @default(cuid())
+  organizationId  String
+  externalId      String    @db.VarChar(64)
+  name            String    @db.VarChar(300)
+  description     String?
+  handle          String?   @db.VarChar(300)
+  published       Boolean   @default(true)
+  remoteCreatedAt DateTime?
+  remoteUpdatedAt DateTime?
+  lastSyncedAt    DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  variants     TiendanubeProductVariant[]
+
+  @@unique([organizationId, externalId])
+  @@unique([organizationId, id])
+  @@index([organizationId, published, updatedAt(sort: Desc)])
+  @@map("tiendanube_products")
+}
+
+model TiendanubeProductVariant {
+  id               String   @id @default(cuid())
+  organizationId   String
+  productId        String
+  externalId       String   @db.VarChar(64)
+  sku              String?  @db.VarChar(160)
+  price            Decimal? @db.Decimal(14, 2)
+  promotionalPrice Decimal? @db.Decimal(14, 2)
+  stock            Int?
+  stockManaged     Boolean  @default(false)
+  values           Json?
+  lastSyncedAt     DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      TiendanubeProduct @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId, productId])
+  @@index([organizationId, sku])
+  @@map("tiendanube_product_variants")
+}
+
+model TiendanubeCustomer {
+  id              String    @id @default(cuid())
+  organizationId  String
+  externalId      String    @db.VarChar(64)
+  name            String?   @db.VarChar(200)
+  email           String?   @db.VarChar(254)
+  phone           String?   @db.VarChar(40)
+  totalSpent      Decimal?  @db.Decimal(14, 2)
+  currency        String?   @db.VarChar(8)
+  active          Boolean?
+  remoteCreatedAt DateTime?
+  remoteUpdatedAt DateTime?
+  lastSyncedAt    DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId, email])
+  @@map("tiendanube_customers")
+}
+
+model TiendanubeOrder {
+  id                 String    @id @default(cuid())
+  organizationId     String
+  externalId         String    @db.VarChar(64)
+  orderNumber        String?   @db.VarChar(80)
+  status             String    @db.VarChar(80)
+  paymentStatus      String?   @db.VarChar(80)
+  shippingStatus     String?   @db.VarChar(80)
+  currency           String?   @db.VarChar(8)
+  total              Decimal?  @db.Decimal(14, 2)
+  customerExternalId String?   @db.VarChar(64)
+  customerName       String?   @db.VarChar(200)
+  lineItems          Json?
+  remoteCreatedAt    DateTime?
+  remoteUpdatedAt    DateTime?
+  lastSyncedAt       DateTime  @default(now())
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId, orderNumber])
+  @@index([organizationId, status, updatedAt(sort: Desc)])
+  @@index([organizationId, customerExternalId])
+  @@map("tiendanube_orders")
+}
+
+model TiendanubeWebhookReceipt {
+  id             String    @id @default(cuid())
+  organizationId String
+  storeId        String    @db.VarChar(64)
+  event          String    @db.VarChar(80)
+  resourceId     String?   @db.VarChar(64)
+  dedupeKey      String    @unique @db.VarChar(64)
+  processedAt    DateTime?
+  lastError      String?   @db.VarChar(500)
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([storeId, event, createdAt(sort: Desc)])
+  @@map("tiendanube_webhook_receipts")
 }
 
 // ============================================================

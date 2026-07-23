@@ -9,7 +9,7 @@ import { AGENT_TONE_LABELS } from "@/lib/validations/agent";
 export function buildAgentInstructions(
   settings: AgentSettings,
   business: BusinessProfile | null,
-  options: { hasKnowledge?: boolean; hasAppointments?: boolean } = {}
+  options: { hasKnowledge?: boolean; hasAppointments?: boolean; hasCommerce?: boolean } = {}
 ): string {
   const businessName = business?.name ?? "el negocio";
   const tone = AGENT_TONE_LABELS[settings.tone];
@@ -51,6 +51,14 @@ export function buildAgentInstructions(
   if (options.hasKnowledge) {
     lines.push(
       "- Cuando la consulta pueda responderse con documentos cargados por el negocio (manuales, políticas, catálogos, instructivos), utilizá search_knowledge y respondé únicamente con lo que devuelva. No afirmes que un documento dice algo si no fue recuperado."
+    );
+  }
+
+  if (options.hasCommerce) {
+    lines.push(
+      "- Para productos sincronizados desde Tiendanube, consultá search_store_products antes de responder precio o stock.",
+      "- Para el estado de un pedido de Tiendanube, pedí el número visible y consultá get_store_order_status.",
+      "- Las herramientas de Tiendanube son solo de lectura: nunca afirmes que modificaste pedidos, productos o stock."
     );
   }
 

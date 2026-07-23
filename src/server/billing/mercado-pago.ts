@@ -16,8 +16,6 @@ type MercadoPagoEnv = {
   MERCADO_PAGO_ACCESS_TOKEN?: string;
   MERCADO_PAGO_WEBHOOK_SECRET?: string;
   MERCADO_PAGO_TEST_AMOUNT_ARS?: string;
-  MERCADO_PAGO_LIVE_TEST_AMOUNT_ARS?: string;
-  MERCADO_PAGO_LIVE_TEST_EMAIL?: string;
   NEXT_PUBLIC_APP_URL?: string;
   BETTER_AUTH_URL?: string;
   VERCEL_PROJECT_PRODUCTION_URL?: string;
@@ -76,7 +74,7 @@ export type MercadoPagoConfiguration = {
 
 export type MercadoPagoCheckoutCharge = {
   amountArs: number;
-  mode: "COMMERCIAL" | "SANDBOX" | "LIVE_TECHNICAL";
+  mode: "COMMERCIAL" | "SANDBOX";
 };
 
 function parseTestAmountArs(value: string | undefined): number | null {
@@ -86,18 +84,6 @@ function parseTestAmountArs(value: string | undefined): number | null {
   return Number.isFinite(amount) && amount > 0 && amount <= 1_000_000
     ? amount
     : null;
-}
-
-function normalizeEmail(value: string | undefined): string | null {
-  const normalized = value?.trim().toLowerCase();
-  if (
-    !normalized ||
-    normalized.length > 254 ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)
-  ) {
-    return null;
-  }
-  return normalized;
 }
 
 function validPublicAppUrl(value: string | undefined): string | null {
@@ -166,38 +152,9 @@ export function resolveMercadoPagoChargeAmount(input: {
   return input.commercialAmountArs;
 }
 
-export function getMercadoPagoLiveTestOffer(
-  userEmail: string,
-  env: MercadoPagoEnv = process.env as unknown as MercadoPagoEnv
-): { enabled: boolean; amountArs: number | null } {
-  const accessToken = env.MERCADO_PAGO_ACCESS_TOKEN?.trim();
-  const authorizedEmail = normalizeEmail(env.MERCADO_PAGO_LIVE_TEST_EMAIL);
-  const currentEmail = normalizeEmail(userEmail);
-  const parsedAmountArs = parseTestAmountArs(
-    env.MERCADO_PAGO_LIVE_TEST_AMOUNT_ARS
-  );
-  // Una configuración accidentalmente alta falla cerrada y conserva el
-  // precio comercial. Este modo existe solo para una validación controlada.
-  const amountArs =
-    parsedAmountArs !== null && parsedAmountArs <= 10_000
-      ? parsedAmountArs
-      : null;
-  const enabled = Boolean(
-      env.NODE_ENV === "production" &&
-      env.VERCEL_ENV === "production" &&
-      accessToken?.startsWith("APP_USR-") &&
-      authorizedEmail &&
-      currentEmail === authorizedEmail &&
-      amountArs !== null
-  );
-  return { enabled, amountArs: enabled ? amountArs : null };
-}
-
 export function resolveMercadoPagoCheckoutCharge(input: {
   commercialAmountArs: number;
-  userEmail: string;
   configuration: MercadoPagoConfiguration;
-  env?: MercadoPagoEnv;
 }): MercadoPagoCheckoutCharge {
   if (input.configuration.testMode) {
     return {
@@ -207,10 +164,6 @@ export function resolveMercadoPagoCheckoutCharge(input: {
       }),
       mode: "SANDBOX",
     };
-  }
-  const liveTest = getMercadoPagoLiveTestOffer(input.userEmail, input.env);
-  if (liveTest.enabled && liveTest.amountArs !== null) {
-    return { amountArs: liveTest.amountArs, mode: "LIVE_TECHNICAL" };
   }
   return { amountArs: input.commercialAmountArs, mode: "COMMERCIAL" };
 }

@@ -15,6 +15,10 @@ import {
   getGoogleSheetsView,
   type GoogleSheetsView,
 } from "@/server/integrations/google-sheets/service";
+import {
+  getTiendanubeView,
+  type TiendanubeView,
+} from "@/server/integrations/tiendanube/service";
 
 const REQUIRED_WHATSAPP_SCOPES = [
   "whatsapp_business_management",
@@ -78,6 +82,7 @@ export type IntegrationsCenterView = {
   };
   googleCalendar: GoogleCalendarView;
   googleSheets: GoogleSheetsView;
+  tiendanube: TiendanubeView;
 };
 
 function maskPhoneNumber(value: string): string {
@@ -311,7 +316,7 @@ export async function getIntegrationsCenterView(
   organizationId: string
 ): Promise<IntegrationsCenterView> {
   const metaConfiguration = getMetaEmbeddedSignupPublicConfiguration();
-  const [whatsappResolution, attempt, automation, googleCalendar, googleSheets] =
+  const [whatsappResolution, attempt, automation, googleCalendar, googleSheets, tiendanube] =
     await Promise.all([
       resolveCurrentWhatsappIntegration(organizationId),
       prisma.whatsappEmbeddedSignupAttempt.findUnique({
@@ -321,6 +326,7 @@ export async function getIntegrationsCenterView(
       getAutomationInfrastructureStatus(organizationId),
       getGoogleCalendarView(organizationId),
       getGoogleSheetsView(organizationId),
+      getTiendanubeView(organizationId),
     ]);
   const integration = whatsappResolution.state === "current"
     ? await prisma.whatsappIntegration.findFirst({
@@ -455,5 +461,6 @@ export async function getIntegrationsCenterView(
     },
     googleCalendar,
     googleSheets,
+    tiendanube,
   };
 }

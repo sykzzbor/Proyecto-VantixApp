@@ -26,6 +26,7 @@ export default async function IntegrationsPage() {
           whatsapp: integrations.whatsapp,
           googleCalendar: integrations.googleCalendar,
           googleSheets: integrations.googleSheets,
+          tiendanube: integrations.tiendanube,
         }}
         canManage={can(role, "integrations.manage")}
       />

@@ -15,6 +15,11 @@ import {
   runCreateAppointment,
   runRescheduleAppointment,
 } from "@/server/agent/appointment-tools";
+import {
+  TIENDANUBE_AGENT_TOOL_DEFINITIONS,
+  getTiendanubeOrderForAgent,
+  searchTiendanubeProductsForAgent,
+} from "@/server/integrations/tiendanube/agent-tools";
 
 /**
  * Contexto interno de ejecución de herramientas. El organizationId
@@ -145,6 +150,7 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
     },
   },
   ...APPOINTMENT_TOOL_DEFINITIONS,
+  ...TIENDANUBE_AGENT_TOOL_DEFINITIONS,
   {
     name: "request_human_support",
     description:
@@ -480,6 +486,10 @@ async function dispatchTool(
       return runRescheduleAppointment(ctx, args);
     case "cancel_appointment":
       return runCancelAppointment(ctx, args);
+    case "search_store_products":
+      return searchTiendanubeProductsForAgent(ctx, args);
+    case "get_store_order_status":
+      return getTiendanubeOrderForAgent(ctx, args);
     case "request_human_support":
       return requestHumanSupport(ctx, args);
     default:

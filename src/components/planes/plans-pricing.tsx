@@ -456,20 +456,6 @@ export function PlansPricing({
           El precio comercial del plan no fue modificado.
         </div>
       )}
-      {billing.technicalTestCheckout &&
-        billing.technicalTestAmountArs !== null && (
-          <div
-            className="rounded-xl border border-amber-500/30 bg-amber-500/[0.08] p-4 text-sm text-foreground"
-            role="status"
-          >
-            <strong>
-              Prueba técnica de cobro: ARS{" "}
-              {formatTestArsValue(billing.technicalTestAmountArs)}.
-            </strong>{" "}
-            El precio comercial del plan no fue modificado. Después de validar
-            el pago podés cancelar la renovación desde esta misma página.
-          </div>
-        )}
       {error && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive" role="alert">
           {error}
@@ -593,19 +579,7 @@ export function PlansPricing({
                       )}
                     </div>
                     <p className="text-xs leading-relaxed text-muted-foreground">
-                      {billing.technicalTestCheckout &&
-                      billing.technicalTestAmountArs !== null ? (
-                        <>
-                          <strong className="text-foreground">
-                            Prueba técnica de cobro: ARS{" "}
-                            {formatTestArsValue(
-                              billing.technicalTestAmountArs
-                            )}.
-                          </strong>{" "}
-                          El precio comercial del plan no fue modificado. Precio
-                          comercial de referencia: {formatArsValue(amountArs)}.
-                        </>
-                      ) : billing.testCheckout &&
+                      {billing.testCheckout &&
                         billing.testAmountArs !== null ? (
                         <>
                           <strong className="text-foreground">
