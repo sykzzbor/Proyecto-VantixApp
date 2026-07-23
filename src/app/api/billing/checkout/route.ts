@@ -16,6 +16,7 @@ const checkoutSchema = z
   .object({
     plan: billingPlanSchema,
     idempotencyKey: z.string().uuid(),
+    payerEmail: z.string().trim().toLowerCase().email().max(254),
   })
   .strict();
 
@@ -61,7 +62,14 @@ export async function POST(request: Request) {
     }
     const parsed = checkoutSchema.safeParse(input);
     if (!parsed.success) {
-      return json({ error: "invalid_request", message: "El plan seleccionado no es válido." }, 422);
+      return json(
+        {
+          error: "invalid_request",
+          message:
+            "Ingresá un correo válido de la cuenta de Mercado Pago que realizará el pago.",
+        },
+        422
+      );
     }
     const checkout = await createBillingCheckout(
       {

@@ -65,6 +65,41 @@ type CheckoutContext = {
   userEmail: string;
 };
 
+export function normalizeBillingPayerEmail(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  if (
+    !normalized ||
+    normalized.length > 254 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+export function canReuseBillingCheckout(input: {
+  checkoutStatus: string;
+  checkoutUrl: string | null;
+  storedPayerEmail: string | null;
+  requestedPayerEmail: string;
+  storedAmountArs: number;
+  requestedAmountArs: number;
+  isTechnicalTest: boolean;
+  requestedTechnicalTest: boolean;
+  createdByUserId: string | null;
+  currentUserId: string;
+}): boolean {
+  return Boolean(
+    input.checkoutStatus === "PENDING" &&
+      input.checkoutUrl &&
+      input.storedPayerEmail === input.requestedPayerEmail &&
+      Math.abs(input.storedAmountArs - input.requestedAmountArs) <= 0.01 &&
+      input.isTechnicalTest === input.requestedTechnicalTest &&
+      (!input.isTechnicalTest ||
+        input.createdByUserId === input.currentUserId)
+  );
+}
+
 export function isRemoteSubscriptionForSnapshot(
   remote: BillingProviderSubscription,
   snapshotId: string
@@ -167,17 +202,20 @@ function ensureExistingCheckoutBelongsToOrganization(
     providerAmountArs: Prisma.Decimal | null;
     isTechnicalTest: boolean;
     createdByUserId: string | null;
+    payerEmail: string | null;
     exchangeRate: Prisma.Decimal;
     exchangeSource: string;
     quotedAt: Date;
   },
-  context: CheckoutContext
+  context: CheckoutContext,
+  requestedPayerEmail: string
 ): BillingCheckoutResult {
   if (
     existing.organizationId !== context.organizationId ||
     (existing.isTechnicalTest &&
       (existing.createdByUserId !== context.userId ||
-        !getMercadoPagoLiveTestOffer(context.userEmail).enabled))
+        !getMercadoPagoLiveTestOffer(context.userEmail).enabled)) ||
+    existing.payerEmail !== requestedPayerEmail
   ) {
     throw new ActionError("La solicitud de pago no es válida.");
   }
@@ -205,13 +243,23 @@ function ensureExistingCheckoutBelongsToOrganization(
 
 export async function createBillingCheckout(
   context: CheckoutContext,
-  input: { plan: BillingPlanId; idempotencyKey: string },
+  input: {
+    plan: BillingPlanId;
+    idempotencyKey: string;
+    payerEmail: string;
+  },
   dependencies?: {
     provider?: BillingProvider;
     now?: Date;
   }
 ): Promise<BillingCheckoutResult> {
   const now = dependencies?.now ?? new Date();
+  const payerEmail = normalizeBillingPayerEmail(input.payerEmail);
+  if (!payerEmail) {
+    throw new ActionError(
+      "Ingresá un correo válido de la cuenta de Mercado Pago que realizará el pago."
+    );
+  }
   const configuration = getMercadoPagoConfiguration();
   if (!configuration.configured || !configuration.appUrl) {
     throw new ActionError(
@@ -230,6 +278,7 @@ export async function createBillingCheckout(
       providerAmountArs: true,
       isTechnicalTest: true,
       createdByUserId: true,
+      payerEmail: true,
       exchangeRate: true,
       exchangeSource: true,
       quotedAt: true,
@@ -238,7 +287,8 @@ export async function createBillingCheckout(
   if (existing) {
     return ensureExistingCheckoutBelongsToOrganization(
       existing,
-      context
+      context,
+      payerEmail
     );
   }
 
@@ -264,6 +314,7 @@ export async function createBillingCheckout(
         providerAmountArs: true,
         isTechnicalTest: true,
         createdByUserId: true,
+        payerEmail: true,
         exchangeRate: true,
         exchangeSource: true,
         quotedAt: true,
@@ -295,20 +346,31 @@ export async function createBillingCheckout(
   }
   const charge = resolveMercadoPagoCheckoutCharge({
     commercialAmountArs: amountArs,
-    payerEmail: context.userEmail,
+    userEmail: context.userEmail,
     configuration,
   });
   const chargedAmountArs = charge.amountArs;
   if (resumable) {
     const resumableAmount =
       resumable.providerAmountArs?.toNumber() ?? resumable.arsAmount.toNumber();
-    const compatible =
-      Math.abs(resumableAmount - chargedAmountArs) <= 0.01 &&
-      resumable.isTechnicalTest === (charge.mode === "LIVE_TECHNICAL") &&
-      (!resumable.isTechnicalTest ||
-        resumable.createdByUserId === context.userId);
+    const compatible = canReuseBillingCheckout({
+      checkoutStatus: resumable.checkoutStatus,
+      checkoutUrl: resumable.checkoutUrl,
+      storedPayerEmail: resumable.payerEmail,
+      requestedPayerEmail: payerEmail,
+      storedAmountArs: resumableAmount,
+      requestedAmountArs: chargedAmountArs,
+      isTechnicalTest: resumable.isTechnicalTest,
+      requestedTechnicalTest: charge.mode === "LIVE_TECHNICAL",
+      createdByUserId: resumable.createdByUserId,
+      currentUserId: context.userId,
+    });
     if (compatible) {
-      return ensureExistingCheckoutBelongsToOrganization(resumable, context);
+      return ensureExistingCheckoutBelongsToOrganization(
+        resumable,
+        context,
+        payerEmail
+      );
     }
   }
 
@@ -324,6 +386,7 @@ export async function createBillingCheckout(
         arsAmount: amountArs,
         providerAmountArs: chargedAmountArs,
         isTechnicalTest: charge.mode === "LIVE_TECHNICAL",
+        payerEmail,
         exchangeRate: exchange.rate,
         exchangeSource: exchange.source,
         quotedAt: new Date(exchange.updatedAt),
@@ -344,6 +407,7 @@ export async function createBillingCheckout(
           providerAmountArs: true,
           isTechnicalTest: true,
           createdByUserId: true,
+          payerEmail: true,
           exchangeRate: true,
           exchangeSource: true,
           quotedAt: true,
@@ -351,7 +415,8 @@ export async function createBillingCheckout(
       });
       return ensureExistingCheckoutBelongsToOrganization(
         raced,
-        context
+        context,
+        payerEmail
       );
     }
     throw error;
@@ -361,28 +426,35 @@ export async function createBillingCheckout(
   try {
     const created = await provider.createSubscription({
       plan: input.plan,
-      payerEmail: context.userEmail,
+      payerEmail,
       externalReference: `vantix:${snapshot.id}`,
       amountArs: chargedAmountArs,
       returnUrl: `${configuration.appUrl}/api/billing/return`,
     });
-    const updated = await prisma.planPriceSnapshot.update({
-      where: { id: snapshot.id },
-      data: {
-        checkoutStatus: "PENDING",
-        externalSubscriptionId: created.id,
-        checkoutUrl: created.checkoutUrl,
-      },
-      select: {
-        checkoutUrl: true,
-        arsAmount: true,
-        providerAmountArs: true,
-        isTechnicalTest: true,
-        exchangeRate: true,
-        exchangeSource: true,
-        quotedAt: true,
-      },
-    });
+    const [updated] = await prisma.$transaction([
+      prisma.planPriceSnapshot.update({
+        where: { id: snapshot.id },
+        data: {
+          checkoutStatus: "PENDING",
+          externalSubscriptionId: created.id,
+          checkoutUrl: created.checkoutUrl,
+        },
+        select: {
+          checkoutUrl: true,
+          arsAmount: true,
+          providerAmountArs: true,
+          isTechnicalTest: true,
+          exchangeRate: true,
+          exchangeSource: true,
+          quotedAt: true,
+        },
+      }),
+      prisma.organizationSubscription.update({
+        where: { id: subscription.id },
+        data: { billingPayerEmail: payerEmail },
+        select: { id: true },
+      }),
+    ]);
     await recordAudit({
       organizationId: context.organizationId,
       userId: context.userId,
@@ -460,6 +532,7 @@ export async function applyMercadoPagoSubscriptionUpdate(input: {
       arsAmount: true,
       providerAmountArs: true,
       isTechnicalTest: true,
+      payerEmail: true,
       checkoutStatus: true,
       subscription: {
         select: {
@@ -586,6 +659,7 @@ export async function applyMercadoPagoSubscriptionUpdate(input: {
               : undefined,
           currentPeriodEndsAt,
           nextBillingAt: input.remote.nextPaymentAt,
+          billingPayerEmail: snapshot.payerEmail ?? undefined,
           canceledAt: nextStatus === "CANCELED" ? now : null,
           endedAt:
             nextStatus === "CANCELED" &&

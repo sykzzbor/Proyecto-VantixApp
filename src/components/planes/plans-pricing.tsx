@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -100,6 +101,18 @@ function formatSubscriptionDate(value: string | null) {
   }).format(new Date(value));
 }
 
+function normalizePayerEmail(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  if (
+    !normalized ||
+    normalized.length > 254 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
 function buttonLabel(input: {
   planId: BillingPlanId;
   billing: BillingOverview;
@@ -133,12 +146,15 @@ export function PlansPricing({
   const [confirming, setConfirming] = useState<BillingPlanId | null>(null);
   const [loading, setLoading] = useState<BillingPlanId | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [payerEmail, setPayerEmail] = useState("");
+  const [payerEmailError, setPayerEmailError] = useState<string | null>(null);
   const [managementLoading, setManagementLoading] = useState<
     "sync" | "cancel" | null
   >(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const checkoutAttempt = useRef<{
     plan: BillingPlanId;
+    payerEmail: string;
     idempotencyKey: string;
   } | null>(null);
   const submitting = useRef(false);
@@ -185,12 +201,24 @@ export function PlansPricing({
   }
 
   async function startCheckout(planId: BillingPlanId) {
+    const normalizedPayerEmail = normalizePayerEmail(payerEmail);
+    if (!normalizedPayerEmail) {
+      setPayerEmailError(
+        "Ingresá un correo válido de la cuenta de Mercado Pago."
+      );
+      return;
+    }
     if (submitting.current) return;
     submitting.current = true;
     const attempt =
-      checkoutAttempt.current?.plan === planId
+      checkoutAttempt.current?.plan === planId &&
+      checkoutAttempt.current.payerEmail === normalizedPayerEmail
         ? checkoutAttempt.current
-        : { plan: planId, idempotencyKey: crypto.randomUUID() };
+        : {
+            plan: planId,
+            payerEmail: normalizedPayerEmail,
+            idempotencyKey: crypto.randomUUID(),
+          };
     checkoutAttempt.current = attempt;
     setLoading(planId);
     setError(null);
@@ -200,6 +228,7 @@ export function PlansPricing({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           plan: planId,
+          payerEmail: normalizedPayerEmail,
           idempotencyKey: attempt.idempotencyKey,
         }),
       });
@@ -507,7 +536,62 @@ export function PlansPricing({
               </CardContent>
               <CardFooter className="flex-col gap-2">
                 {confirming === plan.id && !disabled ? (
-                  <div className="w-full space-y-3 rounded-lg border border-primary/25 bg-primary/[0.06] p-3">
+                  <form
+                    className="w-full space-y-3 rounded-lg border border-primary/25 bg-primary/[0.06] p-3"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void startCheckout(plan.id);
+                    }}
+                  >
+                    <div className="space-y-1.5 text-left">
+                      <label
+                        htmlFor={`mercado-pago-email-${plan.id}`}
+                        className="text-xs font-semibold text-foreground"
+                      >
+                        Correo de la cuenta de Mercado Pago que realizará el
+                        pago
+                      </label>
+                      <Input
+                        id={`mercado-pago-email-${plan.id}`}
+                        type="email"
+                        inputMode="email"
+                        autoComplete="email"
+                        required
+                        maxLength={254}
+                        value={payerEmail}
+                        disabled={loading !== null}
+                        aria-invalid={payerEmailError ? true : undefined}
+                        aria-describedby={
+                          payerEmailError
+                            ? `mercado-pago-email-error-${plan.id}`
+                            : undefined
+                        }
+                        placeholder="nombre@correo.com"
+                        onChange={(event) => {
+                          setPayerEmail(event.target.value);
+                          setPayerEmailError(null);
+                          checkoutAttempt.current = null;
+                        }}
+                      />
+                      {payerEmailError ? (
+                        <p
+                          id={`mercado-pago-email-error-${plan.id}`}
+                          className="text-xs text-destructive"
+                          role="alert"
+                        >
+                          {payerEmailError}
+                        </p>
+                      ) : normalizePayerEmail(payerEmail) ? (
+                        <p className="text-xs text-muted-foreground">
+                          Se vinculará: {normalizePayerEmail(payerEmail)}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Puede ser distinto del correo con el que ingresaste a
+                          VantixApp.
+                        </p>
+                      )}
+                    </div>
                     <p className="text-xs leading-relaxed text-muted-foreground">
                       {billing.technicalTestCheckout &&
                       billing.technicalTestAmountArs !== null ? (
@@ -545,15 +629,16 @@ export function PlansPricing({
                     </p>
                     <div className="flex gap-2">
                       <Button
+                        type="submit"
                         size="sm"
                         className="flex-1"
                         disabled={loading !== null}
-                        onClick={() => startCheckout(plan.id)}
                       >
                         {loading === plan.id && <Loader2 className="size-4 animate-spin" aria-hidden />}
                         Confirmar y continuar
                       </Button>
                       <Button
+                        type="button"
                         size="sm"
                         variant="ghost"
                         disabled={loading !== null}
@@ -565,7 +650,7 @@ export function PlansPricing({
                         Cancelar
                       </Button>
                     </div>
-                  </div>
+                  </form>
                 ) : (
                   <Button
                     variant={plan.recommended ? "default" : "outline"}
@@ -591,10 +676,8 @@ export function PlansPricing({
                         );
                         return;
                       }
-                      checkoutAttempt.current = {
-                        plan: plan.id,
-                        idempotencyKey: crypto.randomUUID(),
-                      };
+                      checkoutAttempt.current = null;
+                      setPayerEmailError(null);
                       setConfirming(plan.id);
                     }}
                   >

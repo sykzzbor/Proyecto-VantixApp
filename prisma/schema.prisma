@@ -284,6 +284,7 @@ model OrganizationSubscription {
   provider               PaymentProvider?
   externalSubscriptionId String?            @unique
   externalCustomerId     String?
+  billingPayerEmail      String?            @db.VarChar(254)
   canceledAt             DateTime?
   endedAt                DateTime?
   lastSyncedAt           DateTime?
@@ -337,6 +338,7 @@ model PlanPriceSnapshot {
   arsAmount              Decimal               @db.Decimal(14, 2)
   providerAmountArs      Decimal?              @db.Decimal(14, 2)
   isTechnicalTest        Boolean               @default(false)
+  payerEmail             String?               @db.VarChar(254)
   exchangeRate           Decimal               @db.Decimal(14, 4)
   exchangeSource         String
   quotedAt               DateTime

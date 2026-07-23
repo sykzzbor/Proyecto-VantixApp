@@ -167,12 +167,12 @@ export function resolveMercadoPagoChargeAmount(input: {
 }
 
 export function getMercadoPagoLiveTestOffer(
-  payerEmail: string,
+  userEmail: string,
   env: MercadoPagoEnv = process.env as unknown as MercadoPagoEnv
 ): { enabled: boolean; amountArs: number | null } {
   const accessToken = env.MERCADO_PAGO_ACCESS_TOKEN?.trim();
   const authorizedEmail = normalizeEmail(env.MERCADO_PAGO_LIVE_TEST_EMAIL);
-  const currentEmail = normalizeEmail(payerEmail);
+  const currentEmail = normalizeEmail(userEmail);
   const parsedAmountArs = parseTestAmountArs(
     env.MERCADO_PAGO_LIVE_TEST_AMOUNT_ARS
   );
@@ -195,7 +195,7 @@ export function getMercadoPagoLiveTestOffer(
 
 export function resolveMercadoPagoCheckoutCharge(input: {
   commercialAmountArs: number;
-  payerEmail: string;
+  userEmail: string;
   configuration: MercadoPagoConfiguration;
   env?: MercadoPagoEnv;
 }): MercadoPagoCheckoutCharge {
@@ -208,7 +208,7 @@ export function resolveMercadoPagoCheckoutCharge(input: {
       mode: "SANDBOX",
     };
   }
-  const liveTest = getMercadoPagoLiveTestOffer(input.payerEmail, input.env);
+  const liveTest = getMercadoPagoLiveTestOffer(input.userEmail, input.env);
   if (liveTest.enabled && liveTest.amountArs !== null) {
     return { amountArs: liveTest.amountArs, mode: "LIVE_TECHNICAL" };
   }

@@ -29,8 +29,10 @@ import {
 } from "@/server/billing/mercado-pago";
 import { BillingProviderError, type BillingProviderSubscription } from "@/server/billing/provider";
 import {
+  canReuseBillingCheckout,
   isMercadoPagoPaymentAmountValid,
   isRemoteSubscriptionForSnapshot,
+  normalizeBillingPayerEmail,
   selectExternalSubscriptionToSynchronize,
 } from "@/server/billing/service";
 
@@ -584,7 +586,7 @@ test("el cobro real técnico exige Production, token productivo y correo exacto"
   assert.deepEqual(
     resolveMercadoPagoCheckoutCharge({
       commercialAmountArs: 134_000,
-      payerEmail: "owner@example.test",
+      userEmail: "owner@example.test",
       configuration,
       env,
     }),
@@ -610,7 +612,7 @@ test("otro correo conserva el precio real y no recibe datos de autorización", (
   assert.deepEqual(
     resolveMercadoPagoCheckoutCharge({
       commercialAmountArs: 134_000,
-      payerEmail: "other@example.test",
+      userEmail: "other@example.test",
       configuration,
       env,
     }),
@@ -662,7 +664,7 @@ test("una credencial TEST nunca habilita el cobro real técnico", () => {
   assert.deepEqual(
     resolveMercadoPagoCheckoutCharge({
       commercialAmountArs: 134_000,
-      payerEmail: "owner@example.test",
+      userEmail: "owner@example.test",
       configuration: getMercadoPagoConfiguration(env),
       env,
     }),
@@ -683,6 +685,48 @@ test("el importe técnico inválido o excesivo nunca reemplaza el comercial", ()
       { enabled: false, amountArs: null }
     );
   }
+});
+
+test("el correo de pago se valida y normaliza sin usar la identidad de acceso", () => {
+  assert.equal(
+    normalizeBillingPayerEmail(" Cuenta.Pagos@Example.com "),
+    "cuenta.pagos@example.com"
+  );
+  for (const value of ["", "sin-arroba", "a@", "@example.com", "a b@example.com"]) {
+    assert.equal(normalizeBillingPayerEmail(value), null);
+  }
+});
+
+test("un checkout fallido o de otro correo nunca reutiliza el preapproval", () => {
+  const candidate = {
+    checkoutStatus: "PENDING",
+    checkoutUrl: "https://www.mercadopago.com.ar/subscriptions/checkout",
+    storedPayerEmail: "payer@example.test",
+    requestedPayerEmail: "payer@example.test",
+    storedAmountArs: 100,
+    requestedAmountArs: 100,
+    isTechnicalTest: true,
+    requestedTechnicalTest: true,
+    createdByUserId: "user-1",
+    currentUserId: "user-1",
+  };
+
+  assert.equal(canReuseBillingCheckout(candidate), true);
+  assert.equal(
+    canReuseBillingCheckout({ ...candidate, checkoutStatus: "FAILED" }),
+    false
+  );
+  assert.equal(
+    canReuseBillingCheckout({
+      ...candidate,
+      storedPayerEmail: "previous@example.test",
+    }),
+    false
+  );
+  assert.equal(
+    canReuseBillingCheckout({ ...candidate, currentUserId: "user-2" }),
+    false
+  );
 });
 
 test("una credencial TEST exige un importe reducido válido", () => {
@@ -779,7 +823,7 @@ test("el proveedor crea checkout mensual en ARS sin plan asociado", async () => 
   });
   const result = await provider.createSubscription({
     plan: "STANDARD",
-    payerEmail: "owner@example.test",
+    payerEmail: "payer@mercadopago.test",
     externalReference: "vantix:snapshot-1",
     amountArs: 135_000,
     returnUrl: "https://app.example.test/api/billing/return",
@@ -791,6 +835,7 @@ test("el proveedor crea checkout mensual en ARS sin plan asociado", async () => 
   assert.equal("preapproval_plan_id" in requestedBody, false);
   assert.equal(requestedBody.status, "pending");
   assert.equal(requestedBody.external_reference, "vantix:snapshot-1");
+  assert.equal(requestedBody.payer_email, "payer@mercadopago.test");
   assert.deepEqual(requestedBody.auto_recurring, {
     frequency: 1,
     frequency_type: "months",
