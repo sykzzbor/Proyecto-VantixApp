@@ -31,6 +31,7 @@ import {
   sanitizeBillingErrorCode,
 } from "@/server/billing/state";
 import { isCurrentActivePlan } from "@/lib/billing/checkout";
+import { isInternalPlanTestAuthorized } from "@/server/billing/internal-plan-test";
 
 export type BillingOverview = {
   entitlement: OrganizationEntitlement;
@@ -42,6 +43,7 @@ export type BillingOverview = {
   canSynchronize: boolean;
   canCancel: boolean;
   lastSyncedAt: string | null;
+  internalPlanTestAvailable: boolean;
 };
 
 export type BillingCheckoutResult = {
@@ -128,7 +130,8 @@ export function isMercadoPagoPaymentAmountValid(input: {
 }
 
 export async function getBillingOverview(
-  organizationId: string
+  organizationId: string,
+  userEmail?: string
 ): Promise<BillingOverview> {
   const [entitlement, pending, subscription, configuration] = await Promise.all([
     getOrganizationEntitlement(organizationId),
@@ -168,6 +171,9 @@ export async function getBillingOverview(
         subscription.status !== "CANCELED"
     ),
     lastSyncedAt: subscription?.lastSyncedAt?.toISOString() ?? null,
+    internalPlanTestAvailable: Boolean(
+      userEmail && isInternalPlanTestAuthorized(userEmail)
+    ),
   };
 }
 

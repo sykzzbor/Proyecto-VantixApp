@@ -280,25 +280,29 @@ enum BillingCheckoutStatus {
 }
 
 model OrganizationSubscription {
-  id                     String             @id @default(cuid())
-  organizationId         String             @unique
-  plan                   BillingPlan        @default(STANDARD)
-  status                 SubscriptionStatus @default(TRIALING)
-  trialStartedAt         DateTime           @default(now())
-  trialEndsAt            DateTime
-  subscriptionStartedAt  DateTime?
-  currentPeriodEndsAt    DateTime?
-  nextBillingAt          DateTime?
-  provider               PaymentProvider?
-  externalSubscriptionId String?            @unique
-  externalCustomerId     String?
-  billingPayerEmail      String?            @db.VarChar(254)
-  canceledAt             DateTime?
-  endedAt                DateTime?
-  lastSyncedAt           DateTime?
-  lastError              String?
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
+  id                            String             @id @default(cuid())
+  organizationId                String             @unique
+  plan                          BillingPlan        @default(STANDARD)
+  status                        SubscriptionStatus @default(TRIALING)
+  trialStartedAt                DateTime           @default(now())
+  trialEndsAt                   DateTime
+  subscriptionStartedAt         DateTime?
+  currentPeriodEndsAt           DateTime?
+  nextBillingAt                 DateTime?
+  provider                      PaymentProvider?
+  externalSubscriptionId        String?            @unique
+  externalCustomerId            String?
+  billingPayerEmail             String?            @db.VarChar(254)
+  canceledAt                    DateTime?
+  endedAt                       DateTime?
+  lastSyncedAt                  DateTime?
+  lastError                     String?
+  internalPlanOverride          BillingPlan?
+  internalPlanOverrideStartedAt DateTime?
+  internalPlanOverrideEndsAt    DateTime?
+  internalPlanOverrideByUserId  String?
+  createdAt                     DateTime           @default(now())
+  updatedAt                     DateTime           @updatedAt
 
   organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   events         BillingEvent[]
@@ -307,6 +311,7 @@ model OrganizationSubscription {
   @@unique([organizationId, id])
   @@index([status, trialEndsAt])
   @@index([provider, status])
+  @@index([internalPlanOverrideEndsAt])
   @@map("organization_subscriptions")
 }
 

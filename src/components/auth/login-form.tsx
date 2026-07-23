@@ -115,6 +115,16 @@ export function LoginForm({
           <SubmitButton loading={isSubmitting} className="w-full">
             Iniciar sesión
           </SubmitButton>
+          <p className="text-center text-xs leading-relaxed text-muted-foreground">
+            Al continuar, confirmás que leíste y aceptás nuestra{" "}
+            <Link
+              href="/privacidad"
+              className="font-medium text-foreground underline underline-offset-4 hover:text-primary"
+            >
+              Política de privacidad
+            </Link>
+            .
+          </p>
           <p className="text-sm text-muted-foreground">
             ¿Todavía no tenés cuenta?{" "}
             <Link

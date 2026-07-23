@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { BookOpen, Bot, CalendarClock, CircleHelp, MessageSquareText, Plug, Search, Settings2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { SUPPORT_WHATSAPP_URL } from "@/components/public/public-footer";
 
 const GUIDES = [
   { title: "Conectar un canal de WhatsApp", description: "Revisá los métodos disponibles y el estado del webhook.", href: "/dashboard/integraciones", category: "Integraciones", icon: Plug },
@@ -67,16 +68,26 @@ export function HelpCenter() {
         </div>
       )}
 
-      <section className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center rounded-xl border border-border bg-muted/35 p-5">
+      <section className="grid gap-4 rounded-xl border border-border bg-muted/35 p-5 lg:grid-cols-[1fr_auto] lg:items-center">
         <div>
           <h3 className="text-sm font-semibold">¿Necesitás una revisión más específica?</h3>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             Revisá primero el diagnóstico de Integraciones: muestra qué paso real está pendiente sin exponer credenciales.
           </p>
         </div>
-        <Link href="/dashboard/integraciones" className="text-sm font-semibold text-primary hover:underline">
-          Abrir diagnóstico
-        </Link>
+        <div className="flex flex-wrap items-center gap-4">
+          <Link href="/dashboard/integraciones" className="text-sm font-semibold text-primary hover:underline">
+            Abrir diagnóstico
+          </Link>
+          <a
+            href={SUPPORT_WHATSAPP_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm font-semibold text-primary hover:underline"
+          >
+            Hablar por WhatsApp
+          </a>
+        </div>
       </section>
     </div>
   );

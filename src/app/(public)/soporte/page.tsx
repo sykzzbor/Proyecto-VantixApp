@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { AlertTriangle, CreditCard, LifeBuoy, LockKeyhole, PlugZap, UserRound } from "lucide-react";
-import { SUPPORT_EMAIL } from "@/components/public/public-footer";
+import {
+  SUPPORT_EMAIL,
+  SUPPORT_PHONE,
+  SUPPORT_WHATSAPP_URL,
+} from "@/components/public/public-footer";
 
 export const metadata: Metadata = {
   title: "Soporte",
@@ -22,7 +26,22 @@ export default function SupportPage() {
         <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-semibold text-primary"><LifeBuoy className="size-3.5" aria-hidden /> Centro de soporte</div>
         <h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl lg:text-5xl">Estamos para ayudarte</h1>
         <p className="text-base leading-7 text-muted-foreground sm:text-lg">Contanos qué necesitás y te responderemos con el contexto necesario para resolverlo.</p>
-        <a href={`mailto:${SUPPORT_EMAIL}?subject=Soporte%20VantixApp`} className="inline-flex rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">Escribir a {SUPPORT_EMAIL}</a>
+        <div className="flex flex-wrap items-center gap-3">
+          <a
+            href={SUPPORT_WHATSAPP_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            Escribir por WhatsApp · {SUPPORT_PHONE}
+          </a>
+          <a
+            href={`mailto:${SUPPORT_EMAIL}?subject=Soporte%20VantixApp`}
+            className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            {SUPPORT_EMAIL}
+          </a>
+        </div>
       </header>
 
       <section className="mt-10" aria-labelledby="categorias">

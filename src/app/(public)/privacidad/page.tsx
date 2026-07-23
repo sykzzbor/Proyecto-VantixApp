@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Database, Eye, KeyRound, Scale, ShieldCheck, Trash2 } from "lucide-react";
-import { SUPPORT_EMAIL } from "@/components/public/public-footer";
+import {
+  SUPPORT_PHONE,
+  SUPPORT_WHATSAPP_URL,
+} from "@/components/public/public-footer";
 
 export const metadata: Metadata = {
   title: "Privacidad",
@@ -99,7 +102,14 @@ export default function PrivacyPage() {
           <section aria-labelledby="derechos" className="space-y-4">
             <div className="flex items-center gap-3"><Scale className="size-5 text-primary" aria-hidden /><h2 id="derechos" className="text-xl font-semibold">Solicitudes y contacto</h2></div>
             <p className="leading-7 text-muted-foreground">Para realizar una solicitud de privacidad, escribinos desde el correo asociado a tu cuenta e indicá la organización involucrada y el tipo de solicitud. Nunca incluyas contraseñas, tokens ni claves privadas.</p>
-            <a href={`mailto:${SUPPORT_EMAIL}?subject=Solicitud%20de%20privacidad%20VantixApp`} className="inline-flex font-semibold text-primary underline-offset-4 hover:underline">{SUPPORT_EMAIL}</a>
+            <a
+              href={SUPPORT_WHATSAPP_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex font-semibold text-primary underline-offset-4 hover:underline"
+            >
+              WhatsApp {SUPPORT_PHONE}
+            </a>
           </section>
         </article>
 

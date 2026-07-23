@@ -152,6 +152,7 @@ export function PlansPricing({
     "sync" | "cancel" | null
   >(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [internalTestLoading, setInternalTestLoading] = useState(false);
   const checkoutAttempt = useRef<{
     plan: BillingPlanId;
     payerEmail: string;
@@ -286,6 +287,40 @@ export function PlansPricing({
     }
   }
 
+  async function updateInternalPlanTest() {
+    if (internalTestLoading) return;
+    setInternalTestLoading(true);
+    setError(null);
+    const disabling = billing.entitlement.internalPlanTest;
+    try {
+      const response = await fetch("/api/billing/internal-plan-test", {
+        method: disabling ? "DELETE" : "POST",
+      });
+      const body = (await response.json().catch(() => null)) as
+        | { message?: string }
+        | null;
+      if (!response.ok) {
+        throw new Error(
+          body?.message ?? "No se pudo actualizar el modo interno de prueba."
+        );
+      }
+      toast.success(
+        disabling
+          ? "Se restauró el plan anterior de la organización."
+          : "Plan Profesional habilitado en modo interno de prueba."
+      );
+      router.refresh();
+    } catch (internalTestError) {
+      setError(
+        internalTestError instanceof Error
+          ? internalTestError.message
+          : "No se pudo actualizar el modo interno de prueba."
+      );
+    } finally {
+      setInternalTestLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="grid gap-4 rounded-xl border border-border bg-card p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
@@ -297,6 +332,11 @@ export function PlansPricing({
             <Badge variant="outline">
               {STATUS_LABELS[billing.entitlement.status]}
             </Badge>
+            {billing.entitlement.internalPlanTest && (
+              <Badge className="border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300">
+                Modo interno de prueba
+              </Badge>
+            )}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             {billing.entitlement.status === "TRIALING"
@@ -402,6 +442,45 @@ export function PlansPricing({
           ))}
         </div>
       </div>
+
+      {(billing.internalPlanTestAvailable ||
+        billing.entitlement.internalPlanTest) && (
+        <section
+          className="rounded-xl border border-violet-500/30 bg-violet-500/[0.08] p-4"
+          aria-labelledby="internal-plan-test-title"
+        >
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 id="internal-plan-test-title" className="text-sm font-semibold">
+                {billing.entitlement.internalPlanTest
+                  ? "Plan Profesional activo en modo interno de prueba"
+                  : "Modo interno temporal disponible"}
+              </h2>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {billing.entitlement.internalPlanTest
+                  ? `No interviene Mercado Pago. Finaliza el ${formatSubscriptionDate(billing.entitlement.internalPlanTestEndsAt) ?? "plazo configurado"} y luego vuelve a ${billing.entitlement.basePlanName}.`
+                  : "Habilita Profesional durante 7 días sin crear cobros ni modificar la suscripción real."}
+              </p>
+            </div>
+            {canManage && billing.internalPlanTestAvailable && (
+              <Button
+                type="button"
+                size="sm"
+                variant={billing.entitlement.internalPlanTest ? "outline" : "default"}
+                disabled={internalTestLoading}
+                onClick={() => void updateInternalPlanTest()}
+              >
+                {internalTestLoading && (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                )}
+                {billing.entitlement.internalPlanTest
+                  ? "Volver al plan anterior"
+                  : "Probar plan Profesional"}
+              </Button>
+            )}
+          </div>
+        </section>
+      )}
 
       <div
         className={cn(

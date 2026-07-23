@@ -31,6 +31,9 @@ export type SubscriptionForEntitlement = {
   nextBillingAt: Date | null;
   canceledAt: Date | null;
   endedAt: Date | null;
+  internalPlanOverride?: BillingPlanId | null;
+  internalPlanOverrideStartedAt?: Date | null;
+  internalPlanOverrideEndsAt?: Date | null;
 };
 
 export type OrganizationEntitlement = {
@@ -46,6 +49,7 @@ export type OrganizationEntitlement = {
     | "PAST_DUE"
     | "CANCELED_PERIOD_ENDED"
     | "INCOMPLETE"
+    | "INTERNAL_TEST"
     | "MISSING_SUBSCRIPTION";
   trialStartedAt: string | null;
   trialEndsAt: string | null;
@@ -54,6 +58,11 @@ export type OrganizationEntitlement = {
   remainingMs: number;
   remainingDays: number;
   remainingHours: number;
+  basePlan: BillingPlanId;
+  basePlanName: string;
+  internalPlanTest: boolean;
+  internalPlanTestStartedAt: string | null;
+  internalPlanTestEndsAt: string | null;
 };
 
 export class SubscriptionRequiredError extends ActionError {
@@ -76,6 +85,29 @@ function remaining(until: Date | null, now: Date) {
   };
 }
 
+function applyInternalPlanOverride(
+  entitlement: OrganizationEntitlement,
+  subscription: SubscriptionForEntitlement,
+  now: Date
+): OrganizationEntitlement {
+  const overrideEndsAt = subscription.internalPlanOverrideEndsAt ?? null;
+  const overridePlan = subscription.internalPlanOverride ?? null;
+  if (!overridePlan || !overrideEndsAt || overrideEndsAt <= now) {
+    return entitlement;
+  }
+  return {
+    ...entitlement,
+    plan: overridePlan,
+    planName: BILLING_PLANS[overridePlan].name,
+    accessAllowed: true,
+    reason: "INTERNAL_TEST",
+    internalPlanTest: true,
+    internalPlanTestStartedAt:
+      subscription.internalPlanOverrideStartedAt?.toISOString() ?? null,
+    internalPlanTestEndsAt: overrideEndsAt.toISOString(),
+  };
+}
+
 export function evaluateOrganizationEntitlement(
   _organizationId: string,
   subscription: SubscriptionForEntitlement | null,
@@ -95,6 +127,11 @@ export function evaluateOrganizationEntitlement(
       remainingMs: 0,
       remainingDays: 0,
       remainingHours: 0,
+      basePlan: "STANDARD",
+      basePlanName: BILLING_PLANS.STANDARD.name,
+      internalPlanTest: false,
+      internalPlanTestStartedAt: null,
+      internalPlanTestEndsAt: null,
     };
   }
 
@@ -105,35 +142,40 @@ export function evaluateOrganizationEntitlement(
     trialEndsAt: subscription.trialEndsAt.toISOString(),
     currentPeriodEndsAt: subscription.currentPeriodEndsAt?.toISOString() ?? null,
     nextBillingAt: subscription.nextBillingAt?.toISOString() ?? null,
+    basePlan: subscription.plan,
+    basePlanName: BILLING_PLANS[subscription.plan].name,
+    internalPlanTest: false,
+    internalPlanTestStartedAt: null,
+    internalPlanTestEndsAt: null,
   };
 
   if (subscription.status === "TRIALING") {
     const trial = remaining(subscription.trialEndsAt, now);
     const accessAllowed = trial.remainingMs > 0;
-    return {
+    return applyInternalPlanOverride({
       ...base,
       status: accessAllowed ? "TRIALING" : "EXPIRED",
       accessAllowed,
       reason: accessAllowed ? "TRIAL_ACTIVE" : "TRIAL_EXPIRED",
       ...trial,
-    };
+    }, subscription, now);
   }
 
   if (subscription.status === "ACTIVE") {
-    return {
+    return applyInternalPlanOverride({
       ...base,
       status: "ACTIVE",
       accessAllowed: true,
       reason: "SUBSCRIPTION_ACTIVE",
       ...remaining(subscription.currentPeriodEndsAt, now),
-    };
+    }, subscription, now);
   }
 
   if (subscription.status === "CANCELED") {
     const paidUntil = subscription.currentPeriodEndsAt ?? subscription.endedAt;
     const paid = remaining(paidUntil, now);
     const accessAllowed = paid.remainingMs > 0;
-    return {
+    return applyInternalPlanOverride({
       ...base,
       status: "CANCELED",
       accessAllowed,
@@ -141,7 +183,7 @@ export function evaluateOrganizationEntitlement(
         ? "CANCELED_PERIOD_ACTIVE"
         : "CANCELED_PERIOD_ENDED",
       ...paid,
-    };
+    }, subscription, now);
   }
 
   const reason =
@@ -150,13 +192,13 @@ export function evaluateOrganizationEntitlement(
       : subscription.status === "INCOMPLETE"
         ? "INCOMPLETE"
         : "TRIAL_EXPIRED";
-  return {
+  return applyInternalPlanOverride({
     ...base,
     status: subscription.status,
     accessAllowed: false,
     reason,
     ...remaining(null, now),
-  };
+  }, subscription, now);
 }
 
 export async function getOrganizationEntitlement(
@@ -175,6 +217,9 @@ export async function getOrganizationEntitlement(
     nextBillingAt: true,
     canceledAt: true,
     endedAt: true,
+    internalPlanOverride: true,
+    internalPlanOverrideStartedAt: true,
+    internalPlanOverrideEndsAt: true,
   } as const;
   const subscription = await prisma.$transaction(async (tx) => {
     const current = await tx.organizationSubscription.findUnique({

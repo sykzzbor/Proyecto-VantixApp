@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Check, CreditCard, LockKeyhole } from "lucide-react";
+import { SUPPORT_WHATSAPP_URL } from "@/components/public/public-footer";
 import type { OrganizationEntitlement } from "@/server/billing/entitlement";
 import { isSubscriptionSafeDashboardPath } from "@/lib/billing/entitlement";
 import { BILLING_PLAN_LIST } from "@/lib/billing/plans";
@@ -33,6 +34,30 @@ export function TrialBanner({
 }: {
   entitlement: OrganizationEntitlement;
 }) {
+  if (entitlement.internalPlanTest) {
+    return (
+      <aside
+        className="shrink-0 border-b border-violet-400/25 bg-violet-700 px-3 py-2 text-white"
+        aria-label={`Modo interno de prueba del plan ${entitlement.planName}.`}
+      >
+        <div className="mx-auto flex min-h-5 max-w-[1440px] items-center justify-center gap-1.5 text-center text-[11px] leading-4 sm:text-xs">
+          <p>
+            <span className="font-semibold">Modo interno de prueba:</span>{" "}
+            {entitlement.planName} habilitado sin Mercado Pago
+            {entitlement.internalPlanTestEndsAt
+              ? ` hasta el ${formatDeadline(entitlement.internalPlanTestEndsAt)}.`
+              : "."}
+          </p>
+          <Link
+            href="/dashboard/planes"
+            className="shrink-0 font-medium underline underline-offset-2 transition-opacity hover:opacity-80 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+          >
+            Administrar
+          </Link>
+        </div>
+      </aside>
+    );
+  }
   if (
     !entitlement.accessAllowed ||
     entitlement.status !== "TRIALING" ||
@@ -140,7 +165,9 @@ export function SubscriptionAccessGate({
             </Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/dashboard/ayuda">Contactar soporte</Link>
+            <a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer">
+              Contactar soporte por WhatsApp
+            </a>
           </Button>
         </div>
       </section>

@@ -170,6 +170,16 @@ export function RegisterForm({
           <SubmitButton loading={isSubmitting} className="w-full">
             Crear cuenta
           </SubmitButton>
+          <p className="text-center text-xs leading-relaxed text-muted-foreground">
+            Al continuar, confirmás que leíste y aceptás nuestra{" "}
+            <Link
+              href="/privacidad"
+              className="font-medium text-foreground underline underline-offset-4 hover:text-primary"
+            >
+              Política de privacidad
+            </Link>
+            .
+          </p>
           <p className="text-sm text-muted-foreground">
             ¿Ya tenés cuenta?{" "}
             <Link

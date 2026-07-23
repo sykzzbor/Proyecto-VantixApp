@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import {
+  BILLING_PLANS,
   resolvePlanRules,
   type PlanFeature,
   type PlanLimits,
@@ -71,6 +72,10 @@ const FEATURE_MESSAGES: Record<PlanFeature, string> = {
 
 /** Reglas efectivas (límites + funciones) para un entitlement ya evaluado. */
 export function getPlanRules(entitlement: OrganizationEntitlement): PlanRules {
+  if (entitlement.internalPlanTest) {
+    const plan = BILLING_PLANS[entitlement.plan];
+    return { limits: plan.limits, features: plan.featureSet };
+  }
   return resolvePlanRules(entitlement.plan, entitlement.status);
 }
 

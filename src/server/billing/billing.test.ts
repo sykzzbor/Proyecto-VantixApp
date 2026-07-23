@@ -33,6 +33,8 @@ import {
   normalizeBillingPayerEmail,
   selectExternalSubscriptionToSynchronize,
 } from "@/server/billing/service";
+import { isInternalPlanTestAuthorized } from "@/server/billing/internal-plan-test";
+import { hasPlanFeature } from "@/server/billing/rules";
 
 const NOW = new Date("2026-07-19T12:00:00.000Z");
 
@@ -86,6 +88,64 @@ test("los planes definitivos usan IDs estables, nombres y precios únicos", () =
     ]
   );
   assert.equal(BILLING_PLANS.PROFESSIONAL.recommended, true);
+});
+
+test("el modo interno solo autoriza el correo configurado en servidor", () => {
+  assert.equal(
+    isInternalPlanTestAuthorized(
+      "authorized@example.com",
+      "AUTHORIZED@EXAMPLE.COM"
+    ),
+    true
+  );
+  assert.equal(
+    isInternalPlanTestAuthorized(
+      "otro@example.com",
+      "authorized@example.com"
+    ),
+    false
+  );
+  assert.equal(
+    isInternalPlanTestAuthorized("authorized@example.com", ""),
+    false
+  );
+});
+
+test("el override temporal habilita Profesional sin alterar el estado real", () => {
+  const entitlement = evaluateOrganizationEntitlement(
+    "org-1",
+    subscription({
+      status: "EXPIRED",
+      internalPlanOverride: "PROFESSIONAL",
+      internalPlanOverrideStartedAt: new Date("2026-07-19T11:00:00.000Z"),
+      internalPlanOverrideEndsAt: new Date("2026-07-26T11:00:00.000Z"),
+    }),
+    NOW
+  );
+  assert.equal(entitlement.plan, "PROFESSIONAL");
+  assert.equal(entitlement.basePlan, "STANDARD");
+  assert.equal(entitlement.status, "EXPIRED");
+  assert.equal(entitlement.accessAllowed, true);
+  assert.equal(entitlement.internalPlanTest, true);
+  assert.equal(entitlement.reason, "INTERNAL_TEST");
+  assert.equal(hasPlanFeature(entitlement, "tiendanube"), true);
+});
+
+test("el override vencido se ignora y restaura el entitlement anterior", () => {
+  const entitlement = evaluateOrganizationEntitlement(
+    "org-1",
+    subscription({
+      status: "EXPIRED",
+      internalPlanOverride: "PROFESSIONAL",
+      internalPlanOverrideStartedAt: new Date("2026-07-10T12:00:00.000Z"),
+      internalPlanOverrideEndsAt: new Date("2026-07-18T12:00:00.000Z"),
+    }),
+    NOW
+  );
+  assert.equal(entitlement.plan, "STANDARD");
+  assert.equal(entitlement.accessAllowed, false);
+  assert.equal(entitlement.internalPlanTest, false);
+  assert.equal(entitlement.reason, "TRIAL_EXPIRED");
 });
 
 test("durante TRIALING y EXPIRED se pueden contratar los tres planes", () => {
