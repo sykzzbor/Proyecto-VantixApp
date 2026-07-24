@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
@@ -39,6 +39,16 @@ export const metadata: Metadata = {
     description:
       "Gestión comercial, atención al cliente y automatización para negocios.",
   },
+};
+
+// Los iconos los resuelve Next por convención de archivo:
+// app/favicon.ico, app/icon.svg y app/apple-icon.png. Definir metadata.icons
+// acá sobrescribiría esa detección, así que no se declara.
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f7fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f1115" },
+  ],
 };
 
 export default function RootLayout({
