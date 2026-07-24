@@ -1,6 +1,9 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { BILLING_PLANS } from "@/lib/billing/plans";
 import { getAnthropicModel } from "@/server/agent/config";
+import { getOrganizationEntitlement } from "@/server/billing/entitlement";
+import { getPlanRules, getUsageSnapshot } from "@/server/billing/rules";
 import { METRICS_TIMEZONE, type MetricsRange } from "@/server/metrics/range";
 
 /**
@@ -55,9 +58,36 @@ export const METRIC_DEFINITIONS: { term: string; definition: string }[] = [
     definition:
       "Eventos reales de uso del proveedor (tokens de entrada/salida, latencia, éxitos y errores) registrados por cada respuesta del agente. Sin costos monetarios.",
   },
+  {
+    term: "% de derivación",
+    definition:
+      "Derivaciones a humano sobre el total de conversaciones recibidas en el período.",
+  },
+  {
+    term: "Consumo del plan",
+    definition:
+      "Contadores del mes en curso (conversaciones y respuestas de IA) frente al límite del plan. Se reinician el día 1 y no dependen del período elegido arriba.",
+  },
+  {
+    term: "Pedidos sincronizados",
+    definition:
+      "Pedidos de Tiendanube o WooCommerce cuya fecha de creación en la tienda cae dentro del período. Solo lectura: VantixApp no crea pedidos.",
+  },
+  {
+    term: "Errores de integraciones",
+    definition:
+      "Sincronizaciones fallidas dentro del período, más las conexiones que hoy están en estado de error.",
+  },
 ];
 
 export type MetricsChannel = "test" | "whatsapp";
+
+export type PlanUsageMeter = {
+  used: number;
+  limit: number;
+  remaining: number;
+  percent: number;
+};
 
 export type TeamMemberMetric = {
   userId: string;
@@ -82,8 +112,23 @@ export type MetricsData = {
     unanswered: number;
     aiSharePct: number;
     humanSharePct: number;
+    handoffRatePct: number;
     avgFirstResponseSeconds: number | null;
     avgResolutionSeconds: number | null;
+  };
+  planUsage: {
+    planName: string;
+    resetsAt: string;
+    conversations: PlanUsageMeter;
+    aiResponses: PlanUsageMeter;
+  };
+  orders: {
+    total: number;
+    bySource: { source: string; count: number }[];
+  };
+  integrationErrors: {
+    total: number;
+    items: { source: string; failedRuns: number; connectionInError: boolean }[];
   };
   conversationsByDay: { day: string; count: number }[];
   messagesByChannel: { channel: string; count: number }[];
@@ -138,6 +183,9 @@ export async function getMetrics(
     topProductsRows,
     topServicesRows,
     teamData,
+    planUsage,
+    orders,
+    integrationErrors,
   ] = await Promise.all([
     prisma.conversation.groupBy({
       by: ["status"],
@@ -257,6 +305,9 @@ export async function getMetrics(
       GROUP BY item ORDER BY count DESC LIMIT 8
     `),
     getTeamMetrics(organizationId, range, channel),
+    getPlanUsage(organizationId),
+    getSyncedOrders(organizationId, range),
+    getIntegrationErrors(organizationId, range),
   ]);
 
   const statusCount = (status: string) =>
@@ -292,7 +343,8 @@ export async function getMetrics(
     conversationsReceived > 0 ||
     customerMessages + aiReplies + humanReplies > 0 ||
     requests > 0 ||
-    newCustomers > 0;
+    newCustomers > 0 ||
+    orders.total > 0;
 
   return {
     totals: {
@@ -308,9 +360,16 @@ export async function getMetrics(
       unanswered: timingRow?.unanswered ?? 0,
       aiSharePct,
       humanSharePct,
+      handoffRatePct:
+        conversationsReceived > 0
+          ? Math.round((handoffs / conversationsReceived) * 100)
+          : 0,
       avgFirstResponseSeconds: timingRow?.avg_first_response ?? null,
       avgResolutionSeconds: timingRow?.avg_resolution ?? null,
     },
+    planUsage,
+    orders,
+    integrationErrors,
     conversationsByDay: conversationsByDayRows,
     messagesByChannel: messagesByChannelRows,
     byHour: fillHours(byHourRows),
@@ -330,6 +389,146 @@ export async function getMetrics(
     topServices: topServicesRows,
     team: teamData,
     hasData,
+  };
+}
+
+function planMeter(used: number, limit: number): PlanUsageMeter {
+  const safeLimit = limit > 0 ? limit : 0;
+  const safeUsed = Math.max(0, used);
+  return {
+    used: safeUsed,
+    limit: safeLimit,
+    remaining: Math.max(0, safeLimit - safeUsed),
+    percent:
+      safeLimit > 0 ? Math.min(100, Math.round((safeUsed / safeLimit) * 100)) : 0,
+  };
+}
+
+/**
+ * Consumo del plan del MES en curso. No usa el rango del filtro a propósito:
+ * los cupos se reinician por mes calendario, mostrarlos por otro período daría
+ * un número que no se corresponde con el límite.
+ */
+async function getPlanUsage(
+  organizationId: string,
+  now = new Date()
+): Promise<MetricsData["planUsage"]> {
+  const [entitlement, usage] = await Promise.all([
+    getOrganizationEntitlement(organizationId, now),
+    getUsageSnapshot(organizationId, now),
+  ]);
+  const limits = getPlanRules(entitlement).limits;
+  const resetsAt = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)
+  );
+
+  return {
+    planName: BILLING_PLANS[entitlement.plan].name,
+    resetsAt: new Intl.DateTimeFormat("es-AR", {
+      timeZone: METRICS_TIMEZONE,
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    }).format(resetsAt),
+    conversations: planMeter(usage.conversations, limits.conversationsPerMonth),
+    aiResponses: planMeter(usage.aiResponses, limits.aiResponsesPerMonth),
+  };
+}
+
+/** Pedidos de las tiendas conectadas con fecha de creación dentro del período. */
+async function getSyncedOrders(
+  organizationId: string,
+  range: MetricsRange
+): Promise<MetricsData["orders"]> {
+  const period = { gte: range.from, lt: range.to };
+  const [tiendanube, woocommerce] = await Promise.all([
+    prisma.tiendanubeOrder.count({
+      where: { organizationId, remoteCreatedAt: period },
+    }),
+    prisma.wooCommerceOrder.count({
+      where: { organizationId, remoteCreatedAt: period },
+    }),
+  ]);
+
+  const bySource = [
+    { source: "Tiendanube", count: tiendanube },
+    { source: "WooCommerce", count: woocommerce },
+  ].filter((entry) => entry.count > 0);
+
+  return { total: tiendanube + woocommerce, bySource };
+}
+
+/** Sincronizaciones fallidas del período y conexiones hoy en error. */
+async function getIntegrationErrors(
+  organizationId: string,
+  range: MetricsRange
+): Promise<MetricsData["integrationErrors"]> {
+  const period = { gte: range.from, lt: range.to };
+  const [
+    sheetsFailed,
+    tiendanubeFailed,
+    wooFailed,
+    sheetsConnection,
+    tiendanubeConnection,
+    wooConnection,
+    calendarConnection,
+  ] = await Promise.all([
+    prisma.googleSheetsSyncRun.count({
+      where: { organizationId, status: "FAILED", createdAt: period },
+    }),
+    prisma.tiendanubeSyncRun.count({
+      where: { organizationId, status: "FAILED", createdAt: period },
+    }),
+    prisma.wooCommerceSyncRun.count({
+      where: { organizationId, status: "FAILED", createdAt: period },
+    }),
+    prisma.googleSheetsConnection.findUnique({
+      where: { organizationId },
+      select: { status: true },
+    }),
+    prisma.tiendanubeConnection.findUnique({
+      where: { organizationId },
+      select: { status: true },
+    }),
+    prisma.wooCommerceConnection.findUnique({
+      where: { organizationId },
+      select: { status: true },
+    }),
+    prisma.googleCalendarConnection.findUnique({
+      where: { organizationId },
+      select: { status: true },
+    }),
+  ]);
+
+  const items = [
+    {
+      source: "Google Sheets",
+      failedRuns: sheetsFailed,
+      connectionInError: sheetsConnection?.status === "ERROR",
+    },
+    {
+      source: "Google Calendar",
+      failedRuns: 0,
+      connectionInError: calendarConnection?.status === "ERROR",
+    },
+    {
+      source: "Tiendanube",
+      failedRuns: tiendanubeFailed,
+      connectionInError: tiendanubeConnection?.status === "ERROR",
+    },
+    {
+      source: "WooCommerce",
+      failedRuns: wooFailed,
+      connectionInError: wooConnection?.status === "ERROR",
+    },
+  ].filter((entry) => entry.failedRuns > 0 || entry.connectionInError);
+
+  return {
+    total: items.reduce(
+      (acc, entry) => acc + entry.failedRuns + (entry.connectionInError ? 1 : 0),
+      0
+    ),
+    items,
   };
 }
 

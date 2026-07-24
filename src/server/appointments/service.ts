@@ -26,7 +26,12 @@ import {
 } from "@/server/integrations/google-calendar/oauth";
 import { getValidAccessToken } from "@/server/integrations/google-calendar/service";
 
-const ACTIVE_STATUSES: AppointmentStatus[] = ["PENDING", "CONFIRMED", "RESCHEDULED"];
+/** Turnos que siguen en pie: los consume también el resumen del panel. */
+export const ACTIVE_STATUSES: AppointmentStatus[] = [
+  "PENDING",
+  "CONFIRMED",
+  "RESCHEDULED",
+];
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type AppointmentRecord = {

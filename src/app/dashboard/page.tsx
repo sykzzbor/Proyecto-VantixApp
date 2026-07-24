@@ -2,21 +2,24 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowRight,
+  ArrowUpRight,
   BookOpen,
   Bot,
   Briefcase,
   CircleAlert,
   Inbox,
   MessageCircleQuestion,
-  MessagesSquare,
   Package,
+  ShoppingBag,
+  Timer,
+  UserPlus,
   UserRound,
   Users,
 } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { StatCard } from "@/components/dashboard/stat-card";
-import { ActiveBadge } from "@/components/dashboard/active-badge";
-import { WhatsappIcon } from "@/components/whatsapp/whatsapp-icon";
+import { PeriodFilter, PERIOD_OPTIONS } from "@/components/dashboard/period-filter";
+import { UsageMeterBar } from "@/components/dashboard/usage-meter";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -25,9 +28,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { AGENT_TONE_LABELS } from "@/lib/validations/agent";
+import { cn } from "@/lib/utils";
+import { formatNumber } from "@/lib/format";
 import { requireOrgContext } from "@/server/context";
 import { getDashboardSummary, type DashboardSummary } from "@/server/queries";
+import {
+  getDashboardOverview,
+  type DashboardOverview,
+  type IntegrationHealth,
+} from "@/server/dashboard/overview";
+import { resolveMetricsRange } from "@/server/metrics/range";
 
 export const metadata: Metadata = {
   title: "Resumen",
@@ -81,17 +91,23 @@ const ACTION_LABELS: Record<string, string> = {
   "automation.test_emitted": "generó un evento de prueba de automatización",
 };
 
-type SetupNotice = {
-  key: string;
-  title: string;
-  description: string;
-  href: string;
-  cta: string;
-};
+function formatSeconds(seconds: number | null): string {
+  if (seconds === null || Number.isNaN(seconds)) return "—";
+  if (seconds < 60) return `${Math.round(seconds)} s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60);
+  if (minutes < 60) return rest > 0 ? `${minutes} min ${rest} s` : `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const restMin = minutes % 60;
+  return restMin > 0 ? `${hours} h ${restMin} min` : `${hours} h`;
+}
 
-/** Avisos de configuración pendiente, calculados solo con datos reales. */
-function buildSetupNotices(summary: DashboardSummary): SetupNotice[] {
-  const notices: SetupNotice[] = [];
+/**
+ * Avisos de configuración pendiente, calculados solo con datos reales. Los
+ * fallos en caliente (plan, integraciones caídas) los aporta el overview.
+ */
+function buildSetupNotices(summary: DashboardSummary): DashboardOverview["alerts"] {
+  const notices: DashboardOverview["alerts"] = [];
   if (!summary.agent || !summary.agent.enabled) {
     notices.push({
       key: "agente",
@@ -102,6 +118,7 @@ function buildSetupNotices(summary: DashboardSummary): SetupNotice[] {
         "Mientras esté apagado, nadie responde automáticamente las consultas.",
       href: "/dashboard/agente",
       cta: "Activar agente",
+      severity: "warning",
     });
   }
   if (!summary.whatsapp) {
@@ -112,14 +129,7 @@ function buildSetupNotices(summary: DashboardSummary): SetupNotice[] {
         "Conectá tu número para recibir y responder consultas reales.",
       href: "/dashboard/integraciones",
       cta: "Conectar WhatsApp",
-    });
-  } else if (summary.whatsapp.status === "ERROR") {
-    notices.push({
-      key: "whatsapp-error",
-      title: "La conexión de WhatsApp requiere atención",
-      description: "Revisá la integración para restablecer el canal.",
-      href: "/dashboard/integraciones",
-      cta: "Revisar integración",
+      severity: "warning",
     });
   }
   if (!summary.businessComplete) {
@@ -130,6 +140,7 @@ function buildSetupNotices(summary: DashboardSummary): SetupNotice[] {
         "La descripción, el teléfono y la dirección ayudan al agente a responder mejor.",
       href: "/dashboard/negocio",
       cta: "Completar datos",
+      severity: "warning",
     });
   }
   if (
@@ -144,10 +155,17 @@ function buildSetupNotices(summary: DashboardSummary): SetupNotice[] {
         "Cargá productos, servicios, preguntas frecuentes o documentos.",
       href: "/dashboard/productos",
       cta: "Cargar catálogo",
+      severity: "warning",
     });
   }
   return notices;
 }
+
+const HEALTH_DOT: Record<IntegrationHealth, string> = {
+  connected: "bg-emerald-500",
+  error: "bg-destructive",
+  disconnected: "bg-muted-foreground/40",
+};
 
 function CatalogLink({
   href,
@@ -177,27 +195,55 @@ function CatalogLink({
   );
 }
 
-export default async function DashboardPage() {
+function MiniStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="truncate text-xs text-muted-foreground">{label}</p>
+      <p className="text-xl font-semibold tabular-nums">{value}</p>
+      {hint && <p className="truncate text-[11px] text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
+export default async function DashboardPage(
+  props: PageProps<"/dashboard">
+) {
   const { user, org } = await requireOrgContext();
-  const summary = await getDashboardSummary(org.id);
-  // Keep the redesigned dashboard compatible with the deployed summary contract.
-  const upcomingAppointments = (
-    summary as DashboardSummary & {
-      upcomingAppointments?: {
-        whenLabel: string;
-        customerName: string;
-        rescheduled: boolean;
-      }[];
-    }
-  ).upcomingAppointments ?? [];
-  const notices = buildSetupNotices(summary);
+  const searchParams = await props.searchParams;
+  const periodParam =
+    typeof searchParams.periodo === "string" ? searchParams.periodo : undefined;
+  const fromParam =
+    typeof searchParams.desde === "string" ? searchParams.desde : undefined;
+  const toParam =
+    typeof searchParams.hasta === "string" ? searchParams.hasta : undefined;
+
+  const range = resolveMetricsRange({
+    period: periodParam,
+    from: fromParam,
+    to: toParam,
+  });
+  // El selector conserva lo que pidió el usuario: al elegir "custom" todavía no
+  // hay fechas, y `resolveMetricsRange` cae a 7d. Si mostráramos `range.period`
+  // los campos de fecha nunca aparecerían y el rango sería imposible de cargar.
+  const uiPeriod =
+    periodParam && PERIOD_OPTIONS.some((option) => option.value === periodParam)
+      ? periodParam
+      : "7d";
+
+  const [summary, overview] = await Promise.all([
+    getDashboardSummary(org.id),
+    getDashboardOverview(org.id, range),
+  ]);
+
+  const alerts = [...overview.alerts, ...buildSetupNotices(summary)];
   const firstName = user.name.trim().split(/\s+/)[0] || user.name;
+  const { conversations, plan } = overview;
 
   return (
     <div className="space-y-7">
       <PageHeader
         title={`Hola, ${firstName}`}
-        description={`Este es el estado actual de ${org.name}.`}
+        description={`Estado de ${org.name} · ${overview.rangeLabel.toLowerCase()}.`}
       >
         <Button asChild size="sm">
           <Link href="/dashboard/conversaciones">
@@ -207,26 +253,53 @@ export default async function DashboardPage() {
         </Button>
       </PageHeader>
 
-      {/* Avisos reales de configuración pendiente */}
-      {notices.length > 0 && (
-        <div className="space-y-2" aria-label="Configuración pendiente">
-          {notices.map((notice) => (
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">Vista del período</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Los indicadores de abajo se recalculan con el rango elegido.
+          </p>
+        </div>
+        <PeriodFilter
+          period={uiPeriod}
+          from={fromParam ?? ""}
+          to={toParam ?? ""}
+          idPrefix="dashboard"
+        />
+      </div>
+
+      {alerts.length > 0 && (
+        <div className="space-y-2" aria-label="Alertas">
+          {alerts.map((alert) => (
             <div
-              key={notice.key}
-              className="flex flex-col gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              key={alert.key}
+              className={cn(
+                "flex flex-col gap-2 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
+                alert.severity === "danger"
+                  ? "border-destructive/25 bg-destructive/[0.06]"
+                  : "border-amber-500/20 bg-amber-500/[0.06]"
+              )}
             >
               <div className="flex min-w-0 items-start gap-3">
-                <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />
+                <CircleAlert
+                  className={cn(
+                    "mt-0.5 size-4 shrink-0",
+                    alert.severity === "danger"
+                      ? "text-destructive"
+                      : "text-amber-700 dark:text-amber-300"
+                  )}
+                  aria-hidden
+                />
                 <div className="min-w-0">
-                  <p className="text-sm font-medium">{notice.title}</p>
+                  <p className="text-sm font-medium">{alert.title}</p>
                   <p className="text-sm text-muted-foreground">
-                    {notice.description}
+                    {alert.description}
                   </p>
                 </div>
               </div>
               <Button asChild variant="outline" size="sm" className="shrink-0 sm:ml-4">
-                <Link href={notice.href}>
-                  {notice.cta}
+                <Link href={alert.href}>
+                  {alert.cta}
                   <ArrowRight className="size-4" />
                 </Link>
               </Button>
@@ -235,122 +308,132 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Indicadores operativos principales */}
-      <section aria-label="Estado de la operación" className="space-y-3">
-        <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          Operación
-        </h3>
+      {/* Indicadores del período */}
+      <section aria-label="Indicadores del período" className="space-y-3">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
             icon={Inbox}
-            label="Conversaciones abiertas"
-            value={String(summary.conversationsOpen)}
+            label="Conversaciones"
+            value={formatNumber(conversations.total)}
             hint={
               summary.unreadTotal > 0
-                ? `${summary.unreadTotal} sin leer`
+                ? `${formatNumber(summary.unreadTotal)} sin leer`
                 : "Al día"
             }
           />
           <StatCard
-            icon={MessagesSquare}
-            label="Pendientes"
-            value={String(summary.conversationsPending)}
-            hint="Esperan una respuesta"
-          />
-          <StatCard
-            icon={UserRound}
-            label="En atención humana"
-            value={String(summary.conversationsHuman)}
-            hint="Derivadas del agente"
-          />
-          <StatCard
             icon={Bot}
-            label="Agente"
-            value={summary.agent?.enabled ? "Activo" : "Apagado"}
-            hint={summary.agent?.assistantName ?? "Sin configurar"}
+            label="Respuestas de la IA"
+            value={formatNumber(overview.aiReplies)}
+            hint={`${formatNumber(overview.humanReplies)} respuestas humanas`}
+          />
+          <StatCard
+            icon={Timer}
+            label="Respuesta media"
+            value={formatSeconds(overview.avgFirstResponseSeconds)}
+            hint="Hasta la primera respuesta"
+          />
+          <StatCard
+            icon={UserPlus}
+            label="Clientes nuevos"
+            value={formatNumber(overview.newCustomers)}
+            hint="Altas en el período"
           />
         </div>
+
+        <Card>
+          <CardContent className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+            <MiniStat label="Abiertas" value={formatNumber(conversations.open)} />
+            <MiniStat label="Pendientes" value={formatNumber(conversations.pending)} />
+            <MiniStat label="Cerradas" value={formatNumber(conversations.closed)} />
+            <MiniStat
+              label="Derivadas a humano"
+              value={formatNumber(overview.handoffs)}
+              hint={
+                conversations.total > 0
+                  ? `${overview.handoffRatePct}% del total`
+                  : undefined
+              }
+            />
+          </CardContent>
+        </Card>
       </section>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        {/* Canales, agente y agenda */}
-        <div className="space-y-5 lg:col-span-1">
+        {/* Uso del plan */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Canales</CardTitle>
-            <CardDescription>Cómo entran las consultas hoy.</CardDescription>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Uso del plan</CardTitle>
+            <CardDescription>
+              Plan {plan.name} · se reinicia el {plan.resetsAt}.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/40 px-3 py-2.5">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <WhatsappIcon className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">WhatsApp</p>
-                  {summary.whatsapp ? (
-                    <p className="truncate text-xs text-muted-foreground">
-                      {summary.whatsapp.displayPhoneNumber} ·{" "}
-                      {summary.whatsapp.providerLabel}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Sin conectar
-                    </p>
-                  )}
-                </div>
-              </div>
-              <ActiveBadge
-                active={summary.whatsapp?.status === "CONNECTED"}
-                activeLabel="Conectado"
-                inactiveLabel={
-                  summary.whatsapp?.status === "ERROR" ? "Con error" : "Inactivo"
-                }
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/40 px-3 py-2.5">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <Bot className="size-4 shrink-0 text-primary" />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">
-                    {summary.agent?.assistantName ?? "Agente IA"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {summary.agent
-                      ? `Tono ${AGENT_TONE_LABELS[summary.agent.tone].toLowerCase()}`
-                      : "Sin configurar"}
-                  </p>
-                </div>
-              </div>
-              <ActiveBadge
-                active={Boolean(summary.agent?.enabled)}
-                activeLabel="Activado"
-                inactiveLabel="Desactivado"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <Button asChild variant="outline" size="sm">
-                <Link href="/dashboard/agente">Probar agente</Link>
-              </Button>
-              <Button asChild variant="outline" size="sm">
-                <Link href="/dashboard/integraciones">Integraciones</Link>
-              </Button>
-            </div>
+            <UsageMeterBar
+              label="Conversaciones"
+              used={plan.conversations.used}
+              limit={plan.conversations.limit}
+              remaining={plan.conversations.remaining}
+              percent={plan.conversations.percent}
+            />
+            <UsageMeterBar
+              label="Respuestas de IA"
+              used={plan.aiResponses.used}
+              limit={plan.aiResponses.limit}
+              remaining={plan.aiResponses.remaining}
+              percent={plan.aiResponses.percent}
+            />
+            <Button asChild variant="outline" size="sm" className="w-full">
+              <Link href="/dashboard/planes">Ver planes</Link>
+            </Button>
           </CardContent>
         </Card>
 
-        {/* Próximos turnos (datos reales de la agenda) */}
+        {/* Integraciones */}
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Integraciones</CardTitle>
+            <CardDescription>Estado real de cada conexión.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            {overview.integrations.map((integration) => (
+              <Link
+                key={integration.key}
+                href={integration.href}
+                className="flex items-center gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-secondary/40 focus-visible:ring-2 focus-visible:ring-ring/40"
+              >
+                <span
+                  className={cn(
+                    "size-2 shrink-0 rounded-full",
+                    HEALTH_DOT[integration.health]
+                  )}
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">
+                    {integration.label}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {integration.detail}
+                  </span>
+                </span>
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
+
+        {/* Próximos turnos */}
+        <Card>
+          <CardHeader className="pb-3">
             <CardTitle className="text-base">Próximos turnos</CardTitle>
             <CardDescription>Los siguientes de la agenda.</CardDescription>
           </CardHeader>
           <CardContent>
-            {upcomingAppointments.length === 0 ? (
+            {overview.upcomingAppointments.length === 0 ? (
               <p className="py-2 text-sm text-muted-foreground">
                 No hay turnos próximos.{" "}
                 <Link
-                  href="/dashboard/integraciones/google-calendar#reservas"
+                  href="/dashboard/turnos"
                   className="text-primary underline-offset-2 hover:underline"
                 >
                   Ver agenda
@@ -358,23 +441,25 @@ export default async function DashboardPage() {
               </p>
             ) : (
               <ul className="space-y-2.5">
-                {upcomingAppointments.map((appointment, index) => (
-                  <li
-                    key={`${appointment.whenLabel}-${index}`}
-                    className="flex items-center justify-between gap-2 text-sm"
-                  >
-                    <span className="min-w-0 truncate">
-                      {appointment.customerName}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {appointment.whenLabel}
+                {overview.upcomingAppointments.map((appointment) => (
+                  <li key={appointment.id} className="min-w-0 text-sm">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="min-w-0 truncate font-medium">
+                        {appointment.customerName}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {appointment.whenLabel}
+                      </span>
+                    </div>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {appointment.title}
                       {appointment.rescheduled && " · reprogramado"}
-                    </span>
+                    </p>
                   </li>
                 ))}
                 <li className="pt-1">
                   <Link
-                    href="/dashboard/integraciones/google-calendar#reservas"
+                    href="/dashboard/turnos"
                     className="text-xs text-primary underline-offset-2 hover:underline"
                   >
                     Ver toda la agenda →
@@ -384,11 +469,63 @@ export default async function DashboardPage() {
             )}
           </CardContent>
         </Card>
-        </div>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        {/* Pedidos recientes */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Pedidos recientes</CardTitle>
+            <CardDescription>
+              Sincronizados desde tu tienda conectada.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {overview.recentOrders.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-6 text-center">
+                <ShoppingBag className="size-5 text-muted-foreground/60" aria-hidden />
+                <p className="text-sm text-muted-foreground">
+                  Todavía no hay pedidos sincronizados.
+                </p>
+                <Link
+                  href="/dashboard/integraciones"
+                  className="text-xs text-primary underline-offset-2 hover:underline"
+                >
+                  Conectar una tienda
+                </Link>
+              </div>
+            ) : (
+              <ul className="space-y-2.5">
+                {overview.recentOrders.map((order) => (
+                  <li
+                    key={order.id}
+                    className="flex items-baseline justify-between gap-3 text-sm"
+                  >
+                    <span className="min-w-0">
+                      <span className="font-medium">{order.reference}</span>
+                      {order.customerName && (
+                        <span className="text-muted-foreground">
+                          {" · "}
+                          {order.customerName}
+                        </span>
+                      )}
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {order.source} · {order.status} · {order.whenLabel}
+                      </span>
+                    </span>
+                    {order.total && (
+                      <span className="shrink-0 tabular-nums">{order.total}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Actividad reciente */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
+        <Card>
+          <CardHeader className="pb-3">
             <CardTitle className="text-base">Actividad reciente</CardTitle>
             <CardDescription>
               Últimas acciones registradas en la organización.
@@ -401,7 +538,7 @@ export default async function DashboardPage() {
               </p>
             ) : (
               <ul className="space-y-3">
-                {summary.recentActivity.map((entry) => (
+                {summary.recentActivity.slice(0, 6).map((entry) => (
                   <li
                     key={entry.id}
                     className="flex flex-col gap-1 border-b border-border/70 pb-3 text-sm last:border-b-0 last:pb-0 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3"
@@ -431,7 +568,24 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      {/* Resumen del negocio (secundario, compacto) */}
+      {/* Accesos rápidos */}
+      <section aria-label="Accesos rápidos" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          { href: "/dashboard/conversaciones", label: "Conversaciones", icon: Inbox },
+          { href: "/dashboard/agente", label: "Probar el agente", icon: Bot },
+          { href: "/dashboard/clientes", label: "Clientes", icon: UserRound },
+          { href: "/dashboard/metricas", label: "Métricas", icon: ArrowUpRight },
+        ].map(({ href, label, icon: Icon }) => (
+          <Button key={href} asChild variant="outline" className="justify-start">
+            <Link href={href}>
+              <Icon className="size-4" aria-hidden />
+              {label}
+            </Link>
+          </Button>
+        ))}
+      </section>
+
+      {/* Resumen del negocio */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Tu negocio</CardTitle>

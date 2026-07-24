@@ -15,6 +15,8 @@ import {
 import type { MetricsData } from "@/server/metrics/queries";
 import { useTableFilters } from "@/components/dashboard/use-table-filters";
 import { StatCard } from "@/components/dashboard/stat-card";
+import { PeriodFilter } from "@/components/dashboard/period-filter";
+import { UsageMeterBar } from "@/components/dashboard/usage-meter";
 import {
   ByHourChart,
   ChannelBarChart,
@@ -22,8 +24,6 @@ import {
   SharePieChart,
 } from "@/components/metricas/metrics-charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -39,14 +39,6 @@ type MetricsViewProps = {
   canViewAdvanced: boolean;
   filters: { period: string; channel: string; from: string; to: string };
 };
-
-const PERIOD_OPTIONS = [
-  { value: "hoy", label: "Hoy" },
-  { value: "7d", label: "Últimos 7 días" },
-  { value: "30d", label: "Últimos 30 días" },
-  { value: "mes", label: "Este mes" },
-  { value: "custom", label: "Rango personalizado" },
-];
 
 function formatSeconds(seconds: number | null): string {
   if (seconds === null || Number.isNaN(seconds)) return "—";
@@ -142,23 +134,12 @@ export function MetricsView({
           <p className="mt-1 text-xs text-muted-foreground">Ajustá el rango y el canal sin perder el contexto del informe.</p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
-        <Select
-          value={filters.period || "7d"}
-          onValueChange={(value) =>
-            setParam("periodo", value === "7d" ? null : value)
-          }
-        >
-          <SelectTrigger className="w-full sm:w-52" aria-label="Período">
-            <SelectValue placeholder="Período" />
-          </SelectTrigger>
-          <SelectContent>
-            {PERIOD_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <PeriodFilter
+          period={filters.period}
+          from={filters.from}
+          to={filters.to}
+          idPrefix="metrics"
+        />
 
         <Select
           value={filters.channel || "todos"}
@@ -175,35 +156,6 @@ export function MetricsView({
             <SelectItem value="test">Chat de prueba</SelectItem>
           </SelectContent>
         </Select>
-
-        {filters.period === "custom" && (
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="space-y-1">
-              <Label htmlFor="metrics-from" className="text-xs">
-                Desde
-              </Label>
-              <Input
-                id="metrics-from"
-                type="date"
-                className="w-40"
-                value={filters.from}
-                onChange={(event) => setParam("desde", event.target.value || null)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="metrics-to" className="text-xs">
-                Hasta
-              </Label>
-              <Input
-                id="metrics-to"
-                type="date"
-                className="w-40"
-                value={filters.to}
-                onChange={(event) => setParam("hasta", event.target.value || null)}
-              />
-            </div>
-          </div>
-        )}
         </div>
       </div>
 
@@ -232,7 +184,11 @@ export function MetricsView({
             icon={ArrowUpRight}
             label="Derivaciones a humano"
             value={formatNumber(totals.handoffs)}
-            hint={`${formatNumber(totals.humanReplies)} respuestas humanas`}
+            hint={
+              totals.conversationsReceived > 0
+                ? `${totals.handoffRatePct}% de las conversaciones`
+                : `${formatNumber(totals.humanReplies)} respuestas humanas`
+            }
           />
         </div>
       </section>
@@ -385,6 +341,114 @@ export function MetricsView({
           </CardContent>
         </Card>
         </div>
+      </section>
+
+      {/* Plan, pedidos e integraciones */}
+      <section className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold">
+              Consumo del plan
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Plan {data.planUsage.planName} · mes en curso, se reinicia el{" "}
+              {data.planUsage.resetsAt}.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <UsageMeterBar
+              label="Conversaciones"
+              used={data.planUsage.conversations.used}
+              limit={data.planUsage.conversations.limit}
+              remaining={data.planUsage.conversations.remaining}
+              percent={data.planUsage.conversations.percent}
+            />
+            <UsageMeterBar
+              label="Respuestas de IA"
+              used={data.planUsage.aiResponses.used}
+              limit={data.planUsage.aiResponses.limit}
+              remaining={data.planUsage.aiResponses.remaining}
+              percent={data.planUsage.aiResponses.percent}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold">
+              Pedidos sincronizados
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Creados en la tienda dentro del período.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {data.orders.total === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                Sin pedidos en el período.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-3xl font-semibold tabular-nums">
+                  {formatNumber(data.orders.total)}
+                </p>
+                <ul className="space-y-1.5">
+                  {data.orders.bySource.map((entry) => (
+                    <li
+                      key={entry.source}
+                      className="flex items-center justify-between gap-2 text-sm"
+                    >
+                      <span className="truncate text-muted-foreground">
+                        {entry.source}
+                      </span>
+                      <span className="shrink-0 font-medium tabular-nums">
+                        {formatNumber(entry.count)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold">
+              Errores de integraciones
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Sincronizaciones fallidas y conexiones en error.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {data.integrationErrors.items.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                Sin errores registrados en el período.
+              </p>
+            ) : (
+              <ul className="space-y-2.5">
+                {data.integrationErrors.items.map((entry) => (
+                  <li key={entry.source} className="text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate font-medium">{entry.source}</span>
+                      {entry.failedRuns > 0 && (
+                        <span className="shrink-0 tabular-nums text-destructive">
+                          {formatNumber(entry.failedRuns)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {entry.connectionInError
+                        ? "La conexión está en estado de error"
+                        : `${entry.failedRuns} sincronización${entry.failedRuns === 1 ? "" : "es"} fallida${entry.failedRuns === 1 ? "" : "s"}`}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
       </section>
 
       {/* Uso de herramientas */}
