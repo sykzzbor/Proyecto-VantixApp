@@ -8,7 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { authClient } from "@/lib/auth-client";
 import { translateAuthError } from "@/lib/auth-errors";
 import { registerSchema, type RegisterInput } from "@/lib/validations/auth";
-import { createOrganization } from "@/server/actions/organization";
+import { PASSWORD_HINT } from "@/server/auth/password-policy";
 import {
   Card,
   CardContent,
@@ -64,22 +64,17 @@ export function RegisterForm({
         return;
       }
 
+      // El alta ya NO crea la organización ni arranca el trial: sin correo
+      // verificado no hay sesión, y los 5 días empiezan recién cuando la
+      // persona crea el negocio en el onboarding. El nombre del negocio se
+      // lleva en la URL para no volver a pedirlo.
+      const params = new URLSearchParams({ email: values.email });
       if (invited && invitationToken) {
-        router.push(`/invitacion/${encodeURIComponent(invitationToken)}`);
-        router.refresh();
-        return;
+        params.set("invitacion", invitationToken);
+      } else if (values.businessName) {
+        params.set("negocio", values.businessName);
       }
-
-      const result = await createOrganization({ name: values.businessName });
-      if (!result || typeof result.ok !== "boolean") {
-        setFormError("El servidor devolvió una respuesta inesperada. Intentá de nuevo.");
-        return;
-      }
-      if (!result.ok) {
-        setFormError(result.error);
-        return;
-      }
-      router.push("/dashboard");
+      router.push(`/verificar-email/pendiente?${params.toString()}`);
       router.refresh();
     } catch {
       setFormError(
@@ -156,14 +151,12 @@ export function RegisterForm({
             <PasswordInput
               id="password"
               autoComplete="new-password"
-              placeholder="Mínimo 8 caracteres"
+              placeholder="Mínimo 10 caracteres"
               aria-invalid={Boolean(errors.password)}
               {...register("password")}
             />
             <FieldError message={errors.password?.message} />
-            <p className="text-xs text-muted-foreground">
-              Mínimo 8 caracteres.
-            </p>
+            <p className="text-xs text-muted-foreground">{PASSWORD_HINT}</p>
           </div>
         </CardContent>
         <CardFooter className="flex-col gap-4 pt-6">

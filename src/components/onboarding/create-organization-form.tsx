@@ -22,7 +22,14 @@ import { FieldError } from "@/components/forms/field-error";
 import { FormAlert } from "@/components/forms/form-alert";
 import { SubmitButton } from "@/components/forms/submit-button";
 
-export function CreateOrganizationForm({ userName }: { userName: string }) {
+export function CreateOrganizationForm({
+  userName,
+  suggestedName = "",
+}: {
+  userName: string;
+  /** Nombre propuesto en el registro. Solo un valor inicial, siempre editable. */
+  suggestedName?: string;
+}) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const formErrorRef = useRef<HTMLDivElement>(null);
@@ -107,7 +114,7 @@ export function CreateOrganizationForm({ userName }: { userName: string }) {
               placeholder="Estética Aurora"
               autoComplete="organization"
               autoFocus
-              defaultValue={state.submittedName}
+              defaultValue={state.submittedName || suggestedName}
               ref={inputRef}
               minLength={2}
               maxLength={120}

@@ -10,10 +10,17 @@ import { getSessionCookie } from "better-auth/cookies";
  * propias páginas con la sesión validada: hacerla acá solo con la cookie
  * provoca loops cuando la cookie quedó inválida.
  */
+/** Rutas que exigen sesión. El onboarding también: crea recursos y arranca el trial. */
+const PROTECTED_PREFIXES = ["/dashboard", "/onboarding"] as const;
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (pathname.startsWith("/dashboard") && !getSessionCookie(request)) {
+  const needsSession = PROTECTED_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+
+  if (needsSession && !getSessionCookie(request)) {
     const url = new URL("/login", request.url);
     url.searchParams.set("callbackURL", pathname);
     return NextResponse.redirect(url);
@@ -23,5 +30,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: ["/dashboard/:path*", "/onboarding", "/onboarding/:path*"],
 };

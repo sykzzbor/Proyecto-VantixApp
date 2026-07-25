@@ -6,6 +6,7 @@ import { MailCheck } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { authClient } from "@/lib/auth-client";
+import { checkPasswordResetQuota } from "@/server/actions/password-reset";
 import {
   forgotPasswordSchema,
   type ForgotPasswordInput,
@@ -33,10 +34,16 @@ export function ForgotPasswordForm() {
   });
 
   async function onSubmit(values: ForgotPasswordInput) {
-    await authClient.requestPasswordReset({
-      email: values.email,
-      redirectTo: "/restablecer-password",
-    });
+    // Cupo por IP y por correo antes de pedir el envío. Si se agotó, se corta
+    // acá y no se manda nada; el mensaje final es el mismo igual, así que
+    // tampoco revela si la dirección existe.
+    const quota = await checkPasswordResetQuota(values.email);
+    if (quota.allowed) {
+      await authClient.requestPasswordReset({
+        email: values.email,
+        redirectTo: "/restablecer-password",
+      });
+    }
     // Siempre se muestra el mismo mensaje para no revelar qué emails existen.
     setSent(true);
   }
@@ -47,7 +54,7 @@ export function ForgotPasswordForm() {
         <AuthCardHeader
           eyebrow="Recuperación de acceso"
           title="Revisá tu correo"
-          description="Si existe una cuenta con ese email, te enviamos un enlace para restablecer la contraseña. El enlace vence en 1 hora."
+          description="Si existe una cuenta con ese email, te enviamos un enlace para restablecer la contraseña. El enlace vence en 30 minutos y se puede usar una sola vez."
           icon={
             <div className="mb-3 flex size-10 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
             <MailCheck className="size-5 text-muted-foreground" aria-hidden />
@@ -56,8 +63,9 @@ export function ForgotPasswordForm() {
         />
         <CardContent>
           <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
-            Nota de esta etapa: el envío de emails todavía no está integrado.
-            En desarrollo, el enlace aparece en la consola del servidor.
+            Si no lo ves en unos minutos, revisá la carpeta de spam. Si no
+            solicitaste el cambio, ignorá el correo: tu contraseña actual sigue
+            siendo válida.
           </p>
         </CardContent>
         <CardFooter>

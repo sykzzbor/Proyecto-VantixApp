@@ -65,7 +65,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
               id="password"
               type="password"
               autoComplete="new-password"
-              placeholder="Mínimo 8 caracteres"
+              placeholder="Mínimo 10 caracteres"
               aria-invalid={Boolean(errors.password)}
               {...register("password")}
             />

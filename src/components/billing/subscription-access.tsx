@@ -65,29 +65,57 @@ export function TrialBanner({
   ) {
     return null;
   }
+
   const expiresToday = entitlement.remainingMs < 24 * 60 * 60 * 1_000;
   const remainingLabel = expiresToday
     ? `Te quedan ${entitlement.remainingHours} horas gratis.`
     : `Te quedan ${entitlement.remainingDays} días gratis.`;
 
+  /**
+   * El aviso se vuelve más urgente en los últimos días (3, 2, 1 y el mismo día
+   * del vencimiento). Antes el banner se veía igual el primer día que el
+   * último, y la gente llegaba al corte sin haberlo registrado.
+   */
+  const urgent = expiresToday || entitlement.remainingDays <= 1;
+  const warning = !urgent && entitlement.remainingDays <= 3;
+
+  const tone = urgent
+    ? "border-destructive/20 bg-destructive text-destructive-foreground"
+    : warning
+      ? "border-amber-500/20 bg-amber-500 text-amber-950"
+      : "border-primary-foreground/10 bg-primary text-primary-foreground";
+
+  const focusRing = urgent
+    ? "focus-visible:ring-destructive-foreground/70"
+    : warning
+      ? "focus-visible:ring-amber-950/70"
+      : "focus-visible:ring-primary-foreground/70";
+
+  const heading = expiresToday
+    ? "Tu prueba termina hoy:"
+    : urgent
+      ? "Último día de prueba:"
+      : warning
+        ? "Tu prueba está por terminar:"
+        : "Período de prueba:";
+
   return (
     <aside
-      className="shrink-0 border-b border-primary-foreground/10 bg-primary px-3 py-2 text-primary-foreground"
+      className={`shrink-0 border-b px-3 py-2 ${tone}`}
       aria-label={`Período de prueba del plan ${entitlement.planName}. ${remainingLabel} Finaliza el ${formatDate(entitlement.trialEndsAt)}.`}
     >
       <div className="mx-auto flex min-h-5 max-w-[1440px] items-center justify-center gap-1.5 text-center text-[11px] leading-4 sm:text-xs">
         <p>
-          <span className="font-semibold">Período de prueba:</span>{" "}
-          {remainingLabel}{" "}
+          <span className="font-semibold">{heading}</span> {remainingLabel}{" "}
           <span className="opacity-90">
             Vence el {formatDeadline(entitlement.trialEndsAt)}.
           </span>
         </p>
         <Link
           href="/dashboard/planes"
-          className="shrink-0 font-medium underline underline-offset-2 transition-opacity hover:opacity-80 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-foreground/70"
+          className={`shrink-0 font-medium underline underline-offset-2 transition-opacity hover:opacity-80 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 ${focusRing}`}
         >
-          Ver planes
+          {urgent || warning ? "Elegir plan" : "Ver planes"}
         </Link>
       </div>
     </aside>

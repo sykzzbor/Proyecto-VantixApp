@@ -20,20 +20,21 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  sessions               Session[]
-  accounts               Account[]
-  memberships            OrganizationMember[]
-  auditLogs              AuditLog[]
-  invitations            Invitation[]                    @relation("InvitedBy")
-  assignedConversations  Conversation[]                  @relation("AssignedConversations")
-  sentMessages           Message[]                       @relation("SentMessages")
-  knowledgeUploads       KnowledgeDocument[]             @relation("KnowledgeUploads")
-  createdAutomationRules OrganizationAutomationRule[]    @relation("AutomationRuleCreatedBy")
-  updatedAutomationRules OrganizationAutomationRule[]    @relation("AutomationRuleUpdatedBy")
-  whatsappSignupAttempts WhatsappEmbeddedSignupAttempt[]
-  createdAppointments    Appointment[]                   @relation("AppointmentCreatedBy")
-  billingPriceSnapshots  PlanPriceSnapshot[]             @relation("PlanPriceSnapshotCreatedBy")
-  trial                  UserTrial?
+  sessions                Session[]
+  accounts                Account[]
+  memberships             OrganizationMember[]
+  auditLogs               AuditLog[]
+  invitations             Invitation[]                    @relation("InvitedBy")
+  assignedConversations   Conversation[]                  @relation("AssignedConversations")
+  sentMessages            Message[]                       @relation("SentMessages")
+  knowledgeUploads        KnowledgeDocument[]             @relation("KnowledgeUploads")
+  createdAutomationRules  OrganizationAutomationRule[]    @relation("AutomationRuleCreatedBy")
+  updatedAutomationRules  OrganizationAutomationRule[]    @relation("AutomationRuleUpdatedBy")
+  whatsappSignupAttempts  WhatsappEmbeddedSignupAttempt[]
+  createdAppointments     Appointment[]                   @relation("AppointmentCreatedBy")
+  billingPriceSnapshots   PlanPriceSnapshot[]             @relation("PlanPriceSnapshotCreatedBy")
+  trial                   UserTrial?
+  emailVerificationTokens EmailVerificationToken[]
 
   @@map("users")
 }
@@ -85,6 +86,61 @@ model Verification {
 
   @@index([identifier])
   @@map("verifications")
+}
+
+/**
+ * Almacenamiento compartido del rate limiting de Better Auth
+ * (`rateLimit.storage = "database"`). En Vercel cada invocación serverless
+ * tiene su propia memoria, así que un contador en memoria no limita nada:
+ * la tabla es la única forma de que el límite valga para todas las instancias.
+ * Better Auth es dueño exclusivo de este modelo.
+ */
+model RateLimit {
+  id          String @id
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+
+  @@map("rate_limits")
+}
+
+/**
+ * Contadores de la aplicación (reenvío de verificación, recuperación de
+ * contraseña, etc.). Separado de `RateLimit` para no compartir tabla con
+ * Better Auth: cada dueño limpia y migra la suya sin pisarse.
+ * La clave ya viene hasheada; nunca se guarda el correo ni la IP en claro.
+ */
+model AuthThrottle {
+  key       String   @id
+  count     Int      @default(0)
+  windowEnd DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([windowEnd])
+  @@map("auth_throttles")
+}
+
+/**
+ * Token de verificación de correo emitido por VantixApp.
+ * Better Auth firma un JWT sin estado para verificar correos: sirve varias
+ * veces hasta que vence y emitir uno nuevo no invalida el anterior. Este
+ * modelo agrega lo que falta: token aleatorio guardado solo como hash,
+ * un único uso (`consumedAt`) y borrado de los anteriores al emitir uno nuevo.
+ */
+model EmailVerificationToken {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  email      String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("email_verification_tokens")
 }
 
 // ============================================================
@@ -154,8 +210,41 @@ model Organization {
   billingEvents              BillingEvent[]
   planPriceSnapshots         PlanPriceSnapshot[]
   usagePeriods               OrganizationUsagePeriod[]
+  onboarding                 OrganizationOnboarding?
 
   @@map("organizations")
+}
+
+/**
+ * Estado del onboarding guiado de una organización.
+ * El avance NO se guarda acá: cada paso se considera hecho porque existen los
+ * datos que produce (perfil cargado, catálogo con filas, etc.), y eso se
+ * calcula al vuelo en `src/server/organizations/onboarding-progress.ts`.
+ * Esta tabla guarda solo lo que no se puede deducir de los datos:
+ * cuándo empezó, cuándo se finalizó, qué paso opcional se omitió a propósito
+ * y en qué paso quedó la persona para poder retomar donde dejó.
+ */
+model OrganizationOnboarding {
+  organizationId String    @id
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+  /**
+   * Slug del último paso abierto; permite salir y volver al mismo lugar.
+   */
+  lastStep       String    @default("negocio")
+  /**
+   * Pasos opcionales que la persona omitió con el botón "Omitir".
+   */
+  skippedSteps   String[]  @default([])
+  /**
+   * Marca de la prueba real del agente (no de haber visitado la pantalla).
+   */
+  agentTestedAt  DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("organization_onboardings")
 }
 
 /**
@@ -396,6 +485,11 @@ model BusinessProfile {
   city           String?
   country        String?
   openingHours   String?
+  /**
+   * Zona horaria IANA del negocio, cargada en el onboarding. Es independiente
+   * de `AppointmentSettings.timeZone`, que pertenece a la agenda de turnos.
+   */
+  timeZone       String?
   paymentMethods String?
   shippingInfo   String?
   createdAt      DateTime @default(now())

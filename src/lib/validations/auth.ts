@@ -1,4 +1,26 @@
 import { z } from "zod";
+import {
+  MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  PASSWORD_ISSUE_MESSAGES,
+  findPasswordIssue,
+} from "@/server/auth/password-policy";
+
+/**
+ * Misma política que aplica el servidor, para que el formulario avise antes de
+ * enviar. El chequeo del navegador es comodidad: el que decide es el hook de
+ * Better Auth, que corre igual aunque alguien llame a la API directamente.
+ */
+const strongPassword = z
+  .string()
+  .min(MIN_PASSWORD_LENGTH, PASSWORD_ISSUE_MESSAGES.too_short)
+  .max(MAX_PASSWORD_LENGTH, PASSWORD_ISSUE_MESSAGES.too_long)
+  .superRefine((value, ctx) => {
+    const issue = findPasswordIssue(value);
+    if (issue) {
+      ctx.addIssue({ code: "custom", message: PASSWORD_ISSUE_MESSAGES[issue] });
+    }
+  });
 
 export const loginSchema = z.object({
   email: z.email("Ingresá un email válido."),
@@ -17,10 +39,7 @@ export const registerSchema = z.object({
     .min(2, "Ingresá el nombre de tu negocio.")
     .max(120, "El nombre del negocio es demasiado largo."),
   email: z.email("Ingresá un email válido."),
-  password: z
-    .string()
-    .min(8, "La contraseña debe tener al menos 8 caracteres.")
-    .max(128, "La contraseña es demasiado larga."),
+  password: strongPassword,
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;
@@ -33,10 +52,7 @@ export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 
 export const resetPasswordSchema = z
   .object({
-    password: z
-      .string()
-      .min(8, "La contraseña debe tener al menos 8 caracteres.")
-      .max(128, "La contraseña es demasiado larga."),
+    password: strongPassword,
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -49,10 +65,7 @@ export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, "Ingresá tu contraseña actual."),
-    newPassword: z
-      .string()
-      .min(8, "La nueva contraseña debe tener al menos 8 caracteres.")
-      .max(128, "La contraseña es demasiado larga."),
+    newPassword: strongPassword,
     confirmPassword: z.string(),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {

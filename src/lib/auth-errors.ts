@@ -7,7 +7,9 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   USER_ALREADY_EXISTS: "Ya existe una cuenta con ese email.",
   USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: "Ya existe una cuenta con ese email.",
   INVALID_TOKEN: "El enlace expiró o no es válido. Pedí uno nuevo.",
-  PASSWORD_TOO_SHORT: "La contraseña debe tener al menos 8 caracteres.",
+  PASSWORD_TOO_SHORT: "La contraseña debe tener al menos 10 caracteres.",
+  PASSWORD_TOO_WEAK:
+    "Esa contraseña es fácil de adivinar. Combiná letras y al menos un número o símbolo.",
   PASSWORD_TOO_LONG: "La contraseña es demasiado larga.",
   INVALID_PASSWORD: "La contraseña actual no es correcta.",
   USER_NOT_FOUND: "No encontramos una cuenta con esos datos.",

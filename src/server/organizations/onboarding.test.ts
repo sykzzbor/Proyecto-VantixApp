@@ -28,6 +28,7 @@ function memoryDependencies(options?: {
   const memberships: Array<{ userId: string; organizationId: string; role: string }> = [];
   const businessProfiles: Array<{ organizationId: string; name: string }> = [];
   const agentSettings: string[] = [];
+  const onboardings: Array<{ organizationId: string; startedAt: Date }> = [];
   const subscriptions: Array<{
     organizationId: string;
     startedAt: Date;
@@ -76,6 +77,9 @@ function memoryDependencies(options?: {
     async createAgentSettings(organizationId) {
       agentSettings.push(organizationId);
     },
+    async startOnboarding(input) {
+      onboardings.push(input);
+    },
     async createTrialSubscription(input) {
       subscriptions.push(input);
     },
@@ -113,6 +117,7 @@ function memoryDependencies(options?: {
     memberships,
     businessProfiles,
     agentSettings,
+    onboardings,
     subscriptions,
     activeOrganizations,
     userTrials,
@@ -291,6 +296,40 @@ test("un error del servidor se convierte en un mensaje público sin detalles int
   assert.equal(publicError.includes("postgresql"), false);
 });
 
-test("el siguiente paso del onboarding es Integraciones", () => {
-  assert.equal(ONBOARDING_NEXT_PATH, "/dashboard/integraciones");
+test("después de crear el negocio sigue el segundo paso del asistente", () => {
+  // Antes saltaba a /dashboard/integraciones y el resto de la configuración
+  // quedaba sin hacer.
+  assert.equal(ONBOARDING_NEXT_PATH, "/onboarding/informacion");
+});
+
+test("crear el negocio arranca el onboarding en la misma transacción", async () => {
+  const memory = memoryDependencies();
+  const result = await createInitialOrganization(
+    "email-user",
+    { name: "Negocio Nuevo" },
+    memory.dependencies
+  );
+
+  assert.equal(memory.onboardings.length, 1);
+  assert.equal(memory.onboardings[0]?.organizationId, result.organization.id);
+});
+
+test("si falla la creación no queda ningún recurso a medias", async () => {
+  const memory = memoryDependencies({ failCreate: true });
+
+  await assert.rejects(() =>
+    createInitialOrganization(
+      "email-user",
+      { name: "Negocio Fallido" },
+      memory.dependencies
+    )
+  );
+
+  // Nada posterior a createOrganization debe haberse ejecutado.
+  assert.equal(memory.memberships.length, 0);
+  assert.equal(memory.businessProfiles.length, 0);
+  assert.equal(memory.agentSettings.length, 0);
+  assert.equal(memory.onboardings.length, 0);
+  assert.equal(memory.subscriptions.length, 0);
+  assert.equal(memory.userTrials.length, 0);
 });

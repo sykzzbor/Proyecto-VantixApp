@@ -5,7 +5,12 @@ import { ActionError } from "@/server/errors";
 import { ZodError } from "zod";
 import { TRIAL_DURATION_MS } from "@/server/billing/entitlement";
 
-export const ONBOARDING_NEXT_PATH = "/dashboard/integraciones";
+/**
+ * Adónde sigue el asistente después de crear el negocio: al segundo paso, no
+ * al dashboard. Antes saltaba directo a integraciones y el resto de la
+ * configuración quedaba sin hacer.
+ */
+export const ONBOARDING_NEXT_PATH = "/onboarding/informacion";
 
 export type InitialOrganization = {
   id: string;
@@ -30,6 +35,11 @@ export type InitialOrganizationTransaction = {
     name: string;
   }): Promise<void>;
   createAgentSettings(organizationId: string): Promise<void>;
+  /** Marca el arranque del onboarding guiado dentro de la misma transacción. */
+  startOnboarding(input: {
+    organizationId: string;
+    startedAt: Date;
+  }): Promise<void>;
   createTrialSubscription(input: {
     organizationId: string;
     startedAt: Date;
@@ -107,6 +117,13 @@ export async function createInitialOrganization(
     // a entrar), la nueva suscripción hereda la misma ventana; si ya venció,
     // el entitlement la marca vencida en la primera evaluación.
     const now = dependencies.now?.() ?? new Date();
+
+    // El onboarding arranca acá, en la misma transacción que la organización:
+    // no puede quedar un negocio creado sin su registro de progreso.
+    await transaction.startOnboarding({
+      organizationId: organization.id,
+      startedAt: now,
+    });
     let trial = await transaction.findUserTrial(userId);
     if (!trial) {
       trial = {
