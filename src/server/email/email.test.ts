@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_EMAIL_FROM,
   getEmailProvider,
   isEmailDeliveryConfigured,
   maskEmail,
+  normalizeEmailFrom,
   redactEmails,
 } from "./send";
 import {
@@ -74,6 +76,45 @@ test("EMAIL_PROVIDER=resend sin API key no se considera configurado", () => {
   withEnv({ EMAIL_PROVIDER: "resend", RESEND_API_KEY: undefined }, () => {
     assert.equal(isEmailDeliveryConfigured(), false);
   });
+});
+
+test("el remitente acepta los dos formatos que admite Resend", () => {
+  assert.equal(
+    normalizeEmailFrom("no-reply@vantixapp.com.ar"),
+    "no-reply@vantixapp.com.ar"
+  );
+  assert.equal(
+    normalizeEmailFrom("Vantix <no-reply@vantixapp.com.ar>"),
+    "Vantix <no-reply@vantixapp.com.ar>"
+  );
+  assert.equal(
+    normalizeEmailFrom("  Vantix <no-reply@vantixapp.com.ar>  "),
+    "Vantix <no-reply@vantixapp.com.ar>"
+  );
+});
+
+test("pegar el valor con las comillas del .env.example no rompe el envío", () => {
+  // Este fue el fallo real en producción: Resend devolvía 422 y no salía
+  // ningún correo, así que nadie podía terminar de registrarse.
+  assert.equal(
+    normalizeEmailFrom('"Vantix <no-reply@vantixapp.com.ar>"'),
+    "Vantix <no-reply@vantixapp.com.ar>"
+  );
+  assert.equal(
+    normalizeEmailFrom("'no-reply@vantixapp.com.ar'"),
+    "no-reply@vantixapp.com.ar"
+  );
+});
+
+test("un remitente inservible cae al valor por defecto en vez de dejar sin correo", () => {
+  for (const invalido of ["", "   ", "no-reply", "Vantix <no-reply>", "sin arroba"]) {
+    assert.equal(
+      normalizeEmailFrom(invalido),
+      DEFAULT_EMAIL_FROM,
+      `deberia caer al valor por defecto: ${JSON.stringify(invalido)}`
+    );
+  }
+  assert.equal(normalizeEmailFrom(undefined), DEFAULT_EMAIL_FROM);
 });
 
 test("el motivo de rechazo del proveedor va sin direcciones", () => {

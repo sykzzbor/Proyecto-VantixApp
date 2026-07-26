@@ -32,8 +32,40 @@ export function getEmailProvider(): EmailProvider {
   return process.env.NODE_ENV === "production" ? "none" : "console";
 }
 
+export const DEFAULT_EMAIL_FROM = "Vantix <no-reply@vantixapp.com.ar>";
+
+const PLAIN_ADDRESS = /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/;
+const NAMED_ADDRESS = /^[^<>]+<[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+>$/;
+
+/**
+ * Normaliza el remitente configurado.
+ *
+ * Resend rechaza con 422 cualquier `from` que no sea `correo@dominio` o
+ * `Nombre <correo@dominio>`, y el fallo es silencioso para el usuario: la
+ * pantalla dice "revisá tu correo" mientras no sale ni un mensaje. El error
+ * más fácil de cometer es pegar el valor en el panel de Vercel con las
+ * comillas que lleva en el `.env.example`, así que se quitan y, si aun así el
+ * formato no sirve, se cae al remitente por defecto en vez de dejar la app sin
+ * poder registrar a nadie.
+ */
+export function normalizeEmailFrom(raw: string | undefined): string {
+  const trimmed = raw?.trim() ?? "";
+  if (!trimmed) return DEFAULT_EMAIL_FROM;
+
+  const unquoted = trimmed.replace(/^(["'])([\s\S]*)\1$/, "$2").trim();
+  if (PLAIN_ADDRESS.test(unquoted) || NAMED_ADDRESS.test(unquoted)) {
+    return unquoted;
+  }
+
+  console.error(
+    "[VantixApp][email] EMAIL_FROM no tiene un formato válido " +
+      '("correo@dominio" o "Nombre <correo@dominio>"); se usa el remitente por defecto.'
+  );
+  return DEFAULT_EMAIL_FROM;
+}
+
 export function getEmailFrom(): string {
-  return readEnv("EMAIL_FROM") ?? "Vantix <no-reply@vantixapp.com.ar>";
+  return normalizeEmailFrom(process.env.EMAIL_FROM);
 }
 
 /** `true` cuando la app puede efectivamente entregar correo. */
