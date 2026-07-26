@@ -56,6 +56,35 @@ export function maskEmail(email: string): string {
   return `${head}${"*".repeat(3)}@${domain}`;
 }
 
+/** Reemplaza cualquier dirección de correo por `<correo>`. */
+export function redactEmails(value: string): string {
+  return value.replace(/[^\s<>"'(]+@[^\s<>"',;)]+/g, "<correo>");
+}
+
+/**
+ * Resume el error de Resend para el log: nombre del error y mensaje, sin
+ * direcciones y acotado para que un cuerpo enorme no inunde los logs.
+ */
+async function describeResendError(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as {
+      name?: unknown;
+      message?: unknown;
+      error?: { message?: unknown };
+    };
+    const name = typeof body.name === "string" ? body.name : "sin_nombre";
+    const raw =
+      typeof body.message === "string"
+        ? body.message
+        : typeof body.error?.message === "string"
+          ? body.error.message
+          : "";
+    return `${name} — ${redactEmails(raw).slice(0, 300) || "sin detalle"}`;
+  } catch {
+    return "respuesta ilegible del proveedor";
+  }
+}
+
 async function sendWithResend(
   apiKey: string,
   to: string,
@@ -83,9 +112,13 @@ async function sendWithResend(
     });
 
     if (!response.ok) {
-      // Solo el status: el cuerpo del error puede repetir el destinatario.
+      // Se registra el motivo que devuelve Resend porque sin él un rechazo es
+      // imposible de diagnosticar: "422" no dice si falta verificar el dominio,
+      // si el remitente es inválido o si la cuenta está en modo de prueba.
+      // Las direcciones se redactan: el mensaje suele citar destinatario o
+      // remitente y no tienen por qué quedar en los logs de la plataforma.
       console.error(
-        `[VantixApp][email] Resend rechazó el envío (status ${response.status}).`
+        `[VantixApp][email] Resend rechazó el envío (status ${response.status}): ${await describeResendError(response)}`
       );
       return { ok: false, reason: "provider_error" };
     }

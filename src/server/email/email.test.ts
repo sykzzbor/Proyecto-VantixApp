@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getEmailProvider, isEmailDeliveryConfigured, maskEmail } from "./send";
+import {
+  getEmailProvider,
+  isEmailDeliveryConfigured,
+  maskEmail,
+  redactEmails,
+} from "./send";
 import {
   emailChangedTemplate,
   escapeHtml,
@@ -69,6 +74,23 @@ test("EMAIL_PROVIDER=resend sin API key no se considera configurado", () => {
   withEnv({ EMAIL_PROVIDER: "resend", RESEND_API_KEY: undefined }, () => {
     assert.equal(isEmailDeliveryConfigured(), false);
   });
+});
+
+test("el motivo de rechazo del proveedor va sin direcciones", () => {
+  assert.equal(
+    redactEmails(
+      "You can only send testing emails to your own address (dueno@gmail.com)"
+    ),
+    "You can only send testing emails to your own address (<correo>)"
+  );
+  assert.equal(
+    redactEmails("The vantixapp.com.ar domain is not verified"),
+    "The vantixapp.com.ar domain is not verified"
+  );
+  assert.equal(
+    redactEmails("from no-reply@vantixapp.com.ar to ana@empresa.com"),
+    "from <correo> to <correo>"
+  );
 });
 
 test("el correo se enmascara en los logs", () => {
