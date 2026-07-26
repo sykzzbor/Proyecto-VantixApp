@@ -17,7 +17,8 @@ export type ThrottleScope =
   | "password-reset-ip"
   | "password-reset-email"
   | "verification-consume-ip"
-  | "onboarding-write";
+  | "onboarding-write"
+  | "account-delete";
 
 export type ThrottleRule = { limit: number; windowMs: number };
 
@@ -34,6 +35,9 @@ export const THROTTLE_RULES: Record<ThrottleScope, ThrottleRule> = {
   // Generoso a propósito: el onboarding autoguarda y no queremos frenar a
   // alguien que realmente está completando su configuración.
   "onboarding-write": { limit: 120, windowMs: 5 * 60 * 1000 },
+  // Estricto: cada intento fallido pide la contraseña, así que sirve para
+  // adivinarla. Nadie necesita borrar su cuenta más de unas pocas veces.
+  "account-delete": { limit: 5, windowMs: 15 * 60 * 1000 },
 };
 
 export type ThrottleDecision =

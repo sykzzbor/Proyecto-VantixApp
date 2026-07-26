@@ -324,3 +324,167 @@ export function existingAccountSignUpTemplate(input: {
     "Intento de registro con tu correo en Vantix"
   );
 }
+
+// ============================================================
+// Facturación y ciclo de vida de la cuenta
+// ============================================================
+
+/** Importe en pesos, o `null` cuando el proveedor no informó monto. */
+function pesos(amountArs: number | null): string | null {
+  if (amountArs === null) return null;
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    maximumFractionDigits: 0,
+  }).format(amountArs);
+}
+
+export function paymentApprovedTemplate(input: {
+  name?: string | null;
+  planName: string;
+  amountArs: number | null;
+  nextBillingAt: Date | null;
+}): EmailMessage {
+  const importe = pesos(input.amountArs);
+  const body = [
+    `Plan ${input.planName}${importe ? ` · ${importe} ARS` : ""}.`,
+  ];
+  if (input.nextBillingAt) {
+    body.push(`El próximo cobro está previsto para el ${formatEventTimestamp(input.nextBillingAt)}.`);
+  }
+  body.push("Ya tenés el acceso completo habilitado.");
+
+  return build(
+    {
+      title: "Recibimos tu pago",
+      preheader: "Tu suscripción de Vantix quedó activa.",
+      intro: withGreeting(input.name, "confirmamos el pago de tu suscripción."),
+      body,
+      action: { label: "Ir a mi panel", url: canonicalPublicUrl("/dashboard") },
+    },
+    "Pago confirmado · Vantix"
+  );
+}
+
+export function paymentRejectedTemplate(input: {
+  name?: string | null;
+  planName: string;
+}): EmailMessage {
+  return build(
+    {
+      title: "No pudimos procesar tu pago",
+      preheader: "El cobro de tu suscripción fue rechazado.",
+      intro: withGreeting(
+        input.name,
+        `el cobro del plan ${input.planName} fue rechazado.`
+      ),
+      body: [
+        "Suele ser por fondos insuficientes o por un límite de la tarjeta. No se hizo ningún cargo.",
+        "Podés reintentar el pago desde la sección de facturación; si el problema sigue, probá con otro medio de pago.",
+      ],
+      action: {
+        label: "Reintentar el pago",
+        url: canonicalPublicUrl("/dashboard/planes"),
+      },
+    },
+    "No pudimos procesar tu pago · Vantix"
+  );
+}
+
+export function subscriptionCanceledTemplate(input: {
+  name?: string | null;
+  planName: string;
+  accessUntil: Date | null;
+}): EmailMessage {
+  const body = input.accessUntil
+    ? [`Conservás el acceso hasta el ${formatEventTimestamp(input.accessUntil)}.`]
+    : ["El acceso se limita al terminar el período ya pago."];
+  body.push("No se van a hacer más cobros. Podés volver a contratar cuando quieras.");
+
+  return build(
+    {
+      title: "Cancelamos tu suscripción",
+      preheader: "No vamos a hacer más cobros.",
+      intro: withGreeting(
+        input.name,
+        `cancelamos tu suscripción al plan ${input.planName}.`
+      ),
+      body,
+      action: {
+        label: "Ver planes",
+        url: canonicalPublicUrl("/dashboard/planes"),
+      },
+    },
+    "Tu suscripción quedó cancelada · Vantix"
+  );
+}
+
+/**
+ * Aviso de prueba por vencer. `daysLeft` 0 significa que ya venció.
+ */
+export function trialReminderTemplate(input: {
+  name?: string | null;
+  daysLeft: 3 | 1 | 0;
+  endsAt: Date;
+}): EmailMessage {
+  if (input.daysLeft === 0) {
+    return build(
+      {
+        title: "Tu prueba gratuita terminó",
+        preheader: "Elegí un plan para seguir operando.",
+        intro: withGreeting(input.name, "se terminó tu prueba gratuita de Vantix."),
+        body: [
+          "Tus datos siguen intactos: conversaciones, catálogo y configuración quedan tal como estaban.",
+          "Para volver a operar, elegí un plan. El acceso se reactiva apenas se acredita el pago.",
+        ],
+        action: {
+          label: "Elegir un plan",
+          url: canonicalPublicUrl("/dashboard/planes"),
+        },
+      },
+      "Tu prueba de Vantix terminó"
+    );
+  }
+
+  const cuando = input.daysLeft === 1 ? "mañana" : `en ${input.daysLeft} días`;
+  return build(
+    {
+      title: `Tu prueba termina ${cuando}`,
+      preheader: `Te quedan ${input.daysLeft} día(s) de prueba.`,
+      intro: withGreeting(
+        input.name,
+        `tu prueba gratuita termina ${cuando}, el ${formatEventTimestamp(input.endsAt)}.`
+      ),
+      body: [
+        "Si elegís un plan antes de esa fecha, seguís trabajando sin interrupciones.",
+        "Si no, tus datos se conservan igual y podés contratar cuando quieras.",
+      ],
+      action: {
+        label: "Ver planes",
+        url: canonicalPublicUrl("/dashboard/planes"),
+      },
+    },
+    `Tu prueba de Vantix termina ${cuando}`
+  );
+}
+
+export function accountDeletedTemplate(input: {
+  name?: string | null;
+  deletedAt: Date;
+}): EmailMessage {
+  return build(
+    {
+      title: "Tu cuenta fue eliminada",
+      preheader: "Confirmamos la eliminación de tu cuenta de Vantix.",
+      intro: withGreeting(
+        input.name,
+        `eliminamos tu cuenta de Vantix el ${formatEventTimestamp(input.deletedAt)}.`
+      ),
+      body: [
+        "Se borraron tus datos personales y los espacios de trabajo en los que eras la única persona.",
+        "La acción es definitiva: no podemos recuperar la cuenta. Si querés volver a usar Vantix, vas a tener que crear una nueva.",
+      ],
+    },
+    "Tu cuenta de Vantix fue eliminada"
+  );
+}

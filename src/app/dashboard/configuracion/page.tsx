@@ -4,6 +4,8 @@ import { ArrowUpRight, KeyRound, Palette, Plug, ScrollText, Store, Users } from 
 import { PageHeader } from "@/components/dashboard/page-header";
 import { ChangePasswordForm } from "@/components/configuracion/account-forms";
 import { OrganizationSettings } from "@/components/configuracion/organization-settings";
+import { DangerZone } from "@/components/configuracion/danger-zone";
+import { prisma } from "@/lib/prisma";
 import {
   Card,
   CardContent,
@@ -30,12 +32,20 @@ export const metadata: Metadata = {
 };
 
 export default async function ConfiguracionPage() {
-  const { org, role } = await requireOrgContext();
+  const { org, role, user } = await requireOrgContext();
   const canUpdateOrg = can(role, "org.update");
   const canDeleteOrg = can(role, "org.delete");
   const canReadAudit = can(role, "audit.read");
 
-  const auditLogs = canReadAudit ? await getAuditLogs(org.id, 25) : [];
+  const [auditLogs, credentialAccount] = await Promise.all([
+    canReadAudit ? getAuditLogs(org.id, 25) : Promise.resolve([]),
+    // Define qué se le pide para confirmar el borrado: quien no tiene
+    // contraseña (solo Google) no puede escribir una.
+    prisma.account.findFirst({
+      where: { userId: user.id, providerId: "credential" },
+      select: { id: true },
+    }),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -71,14 +81,18 @@ export default async function ConfiguracionPage() {
               <ChangePasswordForm />
             </CardContent>
           </Card>
+
+          <div className="mt-4">
+            <DangerZone
+              canDeleteOrganization={canDeleteOrg}
+              organizationName={org.name}
+              requiresPassword={credentialAccount !== null}
+            />
+          </div>
         </TabsContent>
 
         <TabsContent value="organizacion" className="space-y-4">
-          <OrganizationSettings
-            orgName={org.name}
-            canUpdate={canUpdateOrg}
-            canDelete={canDeleteOrg}
-          />
+          <OrganizationSettings orgName={org.name} canUpdate={canUpdateOrg} />
           <Link
             href="/dashboard/negocio"
             className="group flex max-w-3xl items-center gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/30 hover:bg-accent/25 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-primary/20"

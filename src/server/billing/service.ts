@@ -32,6 +32,11 @@ import {
 } from "@/server/billing/state";
 import { isCurrentActivePlan } from "@/lib/billing/checkout";
 import { isInternalPlanTestAuthorized } from "@/server/billing/internal-plan-test";
+import {
+  buildBillingHistory,
+  type BillingHistoryEntry,
+} from "@/server/billing/history";
+import { notifyBillingOutcome } from "@/server/billing/notifications";
 
 export type BillingOverview = {
   entitlement: OrganizationEntitlement;
@@ -693,6 +698,23 @@ export async function applyMercadoPagoSubscriptionUpdate(input: {
       );
     }
   }
+
+  // Solo se avisa cuando el evento se aplicó: un reintento de Mercado Pago
+  // sale antes por la clave de idempotencia y no llega hasta acá.
+  await notifyBillingOutcome({
+    organizationId: snapshot.organizationId,
+    plan: snapshot.plan as BillingPlanId,
+    eventType: input.eventType,
+    nextStatus,
+    amountArs: expectedProviderAmount,
+    nextBillingAt: input.remote.nextPaymentAt ?? null,
+    currentPeriodEndsAt: periodEndForRemote(
+      input.remote,
+      nextStatus,
+      snapshot.subscription.currentPeriodEndsAt
+    ),
+  });
+
   return { duplicate: false, status: nextStatus };
 }
 
@@ -755,5 +777,56 @@ export async function cancelMercadoPagoSubscription(input: {
     remote,
     eventType: "manual.cancel",
     payloadHash: createHash("sha256").update("manual.cancel").digest("hex"),
+  });
+}
+
+/**
+ * Historial de facturación de una organización.
+ *
+ * El `organizationId` sale siempre de la sesión (`getOrgContext`), nunca del
+ * cliente, y filtra las dos tablas: una organización no puede leer los
+ * movimientos de otra ni pasando un id ajeno.
+ */
+export async function getBillingHistory(
+  organizationId: string,
+  limit = 50
+): Promise<BillingHistoryEntry[]> {
+  const [events, snapshots] = await Promise.all([
+    prisma.billingEvent.findMany({
+      where: { organizationId },
+      orderBy: { createdAt: "desc" },
+      take: Math.min(Math.max(limit, 1), 100),
+      select: {
+        id: true,
+        eventType: true,
+        nextStatus: true,
+        status: true,
+        occurredAt: true,
+        createdAt: true,
+      },
+    }),
+    prisma.planPriceSnapshot.findMany({
+      where: { organizationId },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: {
+        plan: true,
+        arsAmount: true,
+        providerAmountArs: true,
+        externalSubscriptionId: true,
+        createdAt: true,
+      },
+    }),
+  ]);
+
+  return buildBillingHistory({
+    events,
+    snapshots: snapshots.map((snapshot) => ({
+      plan: snapshot.plan,
+      arsAmount: snapshot.arsAmount.toNumber(),
+      providerAmountArs: snapshot.providerAmountArs?.toNumber() ?? null,
+      externalSubscriptionId: snapshot.externalSubscriptionId,
+      createdAt: snapshot.createdAt,
+    })),
   });
 }
