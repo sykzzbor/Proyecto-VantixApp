@@ -6,27 +6,17 @@ import { SUPPORT_WHATSAPP_URL } from "@/components/public/public-footer";
 import type { OrganizationEntitlement } from "@/server/billing/entitlement";
 import { isSubscriptionSafeDashboardPath } from "@/lib/billing/entitlement";
 import { BILLING_PLAN_LIST } from "@/lib/billing/plans";
+import {
+  formatBillingDate,
+  formatBillingDeadline,
+} from "@/lib/billing/display-date";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
 function formatDate(value: string | null) {
   if (!value) return "Sin fecha informada";
-  return new Intl.DateTimeFormat("es-AR", {
-    dateStyle: "long",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
-
-/** Fecha de vencimiento compacta para el aviso global. */
-function formatDeadline(value: string) {
-  return new Intl.DateTimeFormat("es-AR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(value));
+  return formatBillingDate(value);
 }
 
 export function TrialBanner({
@@ -45,7 +35,7 @@ export function TrialBanner({
             <span className="font-semibold">Modo interno de prueba:</span>{" "}
             {entitlement.planName} habilitado sin Mercado Pago
             {entitlement.internalPlanTestEndsAt
-              ? ` hasta el ${formatDeadline(entitlement.internalPlanTestEndsAt)}.`
+              ? ` hasta el ${formatBillingDeadline(entitlement.internalPlanTestEndsAt)}.`
               : "."}
           </p>
           <Link
@@ -108,7 +98,7 @@ export function TrialBanner({
         <p>
           <span className="font-semibold">{heading}</span> {remainingLabel}{" "}
           <span className="opacity-90">
-            Vence el {formatDeadline(entitlement.trialEndsAt)}.
+            Vence el {formatBillingDeadline(entitlement.trialEndsAt)}.
           </span>
         </p>
         <Link
