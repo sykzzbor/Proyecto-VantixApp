@@ -55,6 +55,26 @@ export type InboxFilters = {
   q?: string;
   status?: InboxStatus;
   mode?: InboxMode;
+  /**
+   * Id del responsable. `"unassigned"` filtra las que no tienen a nadie.
+   * El id se valida contra la organización antes de usarse.
+   */
+  assignedTo?: string;
+  /**
+   * Ids de etiquetas. Se muestran las conversaciones que tengan **alguna**
+   * de las elegidas, no todas: elegir dos etiquetas amplía el resultado, que
+   * es lo que espera quien filtra desde una bandeja.
+   */
+  tagIds?: string[];
+  /** `true` deja solo las conversaciones sin ninguna etiqueta. */
+  untagged?: boolean;
+};
+
+export type InboxPage = {
+  items: ConversationListItem[];
+  /** Cursor para la página siguiente; `null` cuando no hay más. */
+  nextCursor: string | null;
+  hasMore: boolean;
 };
 
 // ============================================================
@@ -74,13 +94,42 @@ export type ConversationListItem = {
   unreadCount: number;
 };
 
-export async function getInboxConversations(
+/**
+ * Página de conversaciones.
+ *
+ * Pagina por cursor sobre el id, no por `skip`: con muchos registros un
+ * `OFFSET` grande obliga a PostgreSQL a recorrer y descartar todas las filas
+ * anteriores, y además puede saltear o repetir conversaciones si entra un
+ * mensaje nuevo entre página y página.
+ *
+ * `organizationId` viene siempre de la sesión y encabeza el `where`: ninguna
+ * combinación de filtros puede alcanzar la bandeja de otra organización.
+ */
+export async function getInboxPage(
   organizationId: string,
-  filters: InboxFilters
-): Promise<ConversationListItem[]> {
+  filters: InboxFilters,
+  options?: { cursor?: string; pageSize?: number }
+): Promise<InboxPage> {
+  const pageSize = Math.min(Math.max(options?.pageSize ?? LIST_LIMIT, 1), 100);
   const where: Prisma.ConversationWhereInput = { organizationId };
   if (filters.status) where.status = STATUS_TO_DB[filters.status];
   if (filters.mode) where.handlingMode = filters.mode === "ai" ? "AI" : "HUMAN";
+  if (filters.assignedTo) {
+    where.assignedUserId =
+      filters.assignedTo === "unassigned" ? null : filters.assignedTo;
+  }
+
+  // "Sin etiquetas" y una selección concreta son excluyentes: si llegan las
+  // dos, manda "sin etiquetas", que es la opción más específica.
+  if (filters.untagged) {
+    where.tags = { none: {} };
+  } else if (filters.tagIds && filters.tagIds.length > 0) {
+    // `organizationId` también en la relación: aunque llegara el id de una
+    // etiqueta de otra organización, no puede traer conversaciones ajenas.
+    where.tags = {
+      some: { tagId: { in: filters.tagIds }, organizationId },
+    };
+  }
   if (filters.q) {
     where.OR = [
       { customer: { name: { contains: filters.q, mode: "insensitive" } } },
@@ -93,13 +142,18 @@ export async function getInboxConversations(
     ];
   }
 
+  // Se pide uno de más para saber si hay página siguiente sin contar el total.
   const rows = await prisma.conversation.findMany({
     where,
     orderBy: [
       { lastMessageAt: { sort: "desc", nulls: "last" } },
       { createdAt: "desc" },
+      { id: "desc" },
     ],
-    take: LIST_LIMIT,
+    take: pageSize + 1,
+    ...(options?.cursor
+      ? { cursor: { id: options.cursor }, skip: 1 }
+      : {}),
     include: {
       customer: { select: { name: true, phone: true } },
       assignedUser: { select: { name: true } },
@@ -112,7 +166,10 @@ export async function getInboxConversations(
     },
   });
 
-  return rows.map((conversation) => {
+  const hasMore = rows.length > pageSize;
+  const page = hasMore ? rows.slice(0, pageSize) : rows;
+
+  const items: ConversationListItem[] = page.map((conversation) => {
     const lastMessage = conversation.messages[0] ?? null;
     return {
       id: conversation.id,
@@ -129,6 +186,24 @@ export async function getInboxConversations(
       unreadCount: conversation.unreadCount,
     };
   });
+
+  return {
+    items,
+    hasMore,
+    nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null,
+  };
+}
+
+/**
+ * Primera página de conversaciones. Se conserva para las pantallas que no
+ * paginan; internamente usa `getInboxPage`.
+ */
+export async function getInboxConversations(
+  organizationId: string,
+  filters: InboxFilters
+): Promise<ConversationListItem[]> {
+  const page = await getInboxPage(organizationId, filters);
+  return page.items;
 }
 
 /**

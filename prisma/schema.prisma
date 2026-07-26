@@ -35,6 +35,9 @@ model User {
   billingPriceSnapshots   PlanPriceSnapshot[]             @relation("PlanPriceSnapshotCreatedBy")
   trial                   UserTrial?
   emailVerificationTokens EmailVerificationToken[]
+  conversationTagsCreated ConversationTag[]               @relation("ConversationTagCreatedBy")
+  customerTagsCreated     CustomerTag[]                   @relation("CustomerTagCreatedBy")
+  conversationNotes       ConversationNote[]              @relation("ConversationNoteAuthor")
 
   @@map("users")
 }
@@ -210,6 +213,10 @@ model Organization {
   billingEvents              BillingEvent[]
   planPriceSnapshots         PlanPriceSnapshot[]
   usagePeriods               OrganizationUsagePeriod[]
+  crmTags                    CrmTag[]
+  conversationTags           ConversationTag[]
+  customerTags               CustomerTag[]
+  conversationNotes          ConversationNote[]
   onboarding                 OrganizationOnboarding?
 
   @@map("organizations")
@@ -316,6 +323,10 @@ enum InvitationStatus {
   PENDING
   ACCEPTED
   REVOKED
+  /**
+   * La persona invitada la rechazó explícitamente.
+   */
+  REJECTED
 }
 
 model Invitation {
@@ -726,6 +737,7 @@ model Customer {
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   conversations Conversation[]
   appointments  Appointment[]
+  tags          CustomerTag[]
 
   @@index([organizationId])
   @@index([organizationId, phone])
@@ -755,12 +767,107 @@ model Conversation {
   messages            Message[]
   automationEvents    AutomationEvent[]
   appointments        Appointment[]
+  tags                ConversationTag[]
+  notes               ConversationNote[]
 
   @@index([organizationId, channel, status])
   @@index([organizationId, lastMessageAt(sort: Desc)])
   @@index([whatsappIntegrationId])
   @@index([organizationId, customerId, channel, status])
   @@map("conversations")
+}
+
+/**
+ * Etiqueta del CRM. Vive dentro de una organización: dos organizaciones
+ * pueden tener etiquetas con el mismo nombre sin verse entre sí.
+ */
+model CrmTag {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String   @db.VarChar(40)
+  /**
+   * Color en formato #rrggbb, validado en el servidor.
+   */
+  color          String   @db.VarChar(7)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization  Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversations ConversationTag[]
+  customers     CustomerTag[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("crm_tags")
+}
+
+/**
+ * Etiquetas aplicadas a una conversación.
+ * `organizationId` se repite acá a propósito: permite filtrar y verificar el
+ * aislamiento sin tener que unir contra `conversations` en cada consulta.
+ */
+model ConversationTag {
+  conversationId String
+  tagId          String
+  organizationId String
+  createdAt      DateTime @default(now())
+  createdById    String?
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tag          CrmTag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("ConversationTagCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@id([conversationId, tagId])
+  @@index([organizationId, tagId])
+  @@index([tagId])
+  @@map("conversation_tags")
+}
+
+/**
+ * Etiquetas aplicadas a un cliente.
+ */
+model CustomerTag {
+  customerId     String
+  tagId          String
+  organizationId String
+  createdAt      DateTime @default(now())
+  createdById    String?
+
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tag          CrmTag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("CustomerTagCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@id([customerId, tagId])
+  @@index([organizationId, tagId])
+  @@index([tagId])
+  @@map("customer_tags")
+}
+
+/**
+ * Nota interna de una conversación. Nunca se le muestra al cliente ni se
+ * envía por ningún canal: es una anotación del equipo.
+ */
+model ConversationNote {
+  id             String    @id @default(cuid())
+  organizationId String
+  conversationId String
+  authorId       String?
+  body           String    @db.VarChar(2000)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  /**
+   * Se completa al editarla; sirve para mostrar "editada".
+   */
+  editedAt       DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User?        @relation("ConversationNoteAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, conversationId, createdAt(sort: Desc)])
+  @@map("conversation_notes")
 }
 
 model Message {

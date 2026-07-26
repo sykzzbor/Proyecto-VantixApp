@@ -2,6 +2,12 @@ import type { Metadata } from "next";
 import { ConversationList } from "@/components/conversaciones/conversation-list";
 import { ConversationThread } from "@/components/conversaciones/conversation-thread";
 import { EmptyThread } from "@/components/conversaciones/empty-thread";
+import { NotesAndTags } from "@/components/conversaciones/notes-and-tags";
+import {
+  getConversationNotes,
+  getConversationTags,
+  getOrganizationTags,
+} from "@/server/crm";
 import { can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { isAgentConfigured } from "@/server/agent/config";
@@ -31,6 +37,21 @@ export default async function ConversacionesPage(
   const q = typeof searchParams.q === "string" ? searchParams.q : undefined;
   const status = STATUS_VALUES.find((value) => value === searchParams.estado);
   const mode = MODE_VALUES.find((value) => value === searchParams.modo);
+  const assignedTo =
+    typeof searchParams.responsable === "string"
+      ? searchParams.responsable
+      : undefined;
+  // Varias etiquetas viajan separadas por coma. Se recortan a 12 para que
+  // una URL manipulada no arme un IN gigante.
+  const tagIds =
+    typeof searchParams.etiquetas === "string"
+      ? searchParams.etiquetas
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean)
+          .slice(0, 12)
+      : [];
+  const untagged = searchParams.etiquetas === "sin";
   const selectedId =
     typeof searchParams.conversacion === "string"
       ? searchParams.conversacion
@@ -50,10 +71,21 @@ export default async function ConversacionesPage(
     await markThreadRead(org.id, detail.id);
   }
 
-  const [conversations, members] = await Promise.all([
-    getInboxConversations(org.id, { q, status, mode }),
-    canManage ? getTeamMembers(org.id) : Promise.resolve([]),
-  ]);
+  const [conversations, members, availableTags, appliedTags, notes] =
+    await Promise.all([
+      getInboxConversations(org.id, {
+        q,
+        status,
+        mode,
+        assignedTo,
+        tagIds: untagged ? [] : tagIds,
+        untagged,
+      }),
+      canManage ? getTeamMembers(org.id) : Promise.resolve([]),
+      getOrganizationTags(org.id),
+      detail ? getConversationTags(org.id, detail.id) : Promise.resolve([]),
+      detail ? getConversationNotes(org.id, detail.id) : Promise.resolve([]),
+    ]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -67,7 +99,19 @@ export default async function ConversacionesPage(
           <ConversationList
             items={conversations}
             selectedId={detail?.id ?? null}
-            filters={{ q: q ?? "", status: status ?? "", mode: mode ?? "" }}
+            filters={{
+              q: q ?? "",
+              status: status ?? "",
+              mode: mode ?? "",
+              assignedTo: assignedTo ?? "",
+              tagIds: untagged ? [] : tagIds,
+              untagged,
+            }}
+            availableTags={availableTags}
+            members={members.map((member) => ({
+              userId: member.userId,
+              name: member.name,
+            }))}
           />
         </div>
 
@@ -91,6 +135,17 @@ export default async function ConversacionesPage(
                 userId: member.userId,
                 name: member.name,
               }))}
+              crmSlot={
+                <NotesAndTags
+                  conversationId={detail.id}
+                  notes={notes}
+                  appliedTags={appliedTags}
+                  availableTags={availableTags}
+                  currentUserId={user.id}
+                  canWrite={canRespond}
+                  canModerate={canManage}
+                />
+              }
             />
           ) : (
             <EmptyThread hasConversations={conversations.length > 0} />

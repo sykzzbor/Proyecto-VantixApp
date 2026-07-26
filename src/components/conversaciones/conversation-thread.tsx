@@ -68,6 +68,8 @@ type ConversationThreadProps = {
   canEditCustomer: boolean;
   autoReplyEnabled: boolean;
   members: ThreadMember[];
+  /** Notas internas y etiquetas, renderizadas en el servidor. */
+  crmSlot?: React.ReactNode;
 };
 
 type MessageActionResult = {
@@ -181,6 +183,7 @@ export function ConversationThread({
   canEditCustomer,
   autoReplyEnabled,
   members,
+  crmSlot,
 }: ConversationThreadProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -312,6 +315,7 @@ export function ConversationThread({
   const groups = groupByDay(messages);
   const customerPanelProps = {
     detail,
+    crmSlot,
     canEdit: canEditCustomer,
     canRespond,
     canManage,

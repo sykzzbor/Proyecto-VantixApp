@@ -18,7 +18,8 @@ export type ThrottleScope =
   | "password-reset-email"
   | "verification-consume-ip"
   | "onboarding-write"
-  | "account-delete";
+  | "account-delete"
+  | "crm-write";
 
 export type ThrottleRule = { limit: number; windowMs: number };
 
@@ -38,6 +39,9 @@ export const THROTTLE_RULES: Record<ThrottleScope, ThrottleRule> = {
   // Estricto: cada intento fallido pide la contraseña, así que sirve para
   // adivinarla. Nadie necesita borrar su cuenta más de unas pocas veces.
   "account-delete": { limit: 5, windowMs: 15 * 60 * 1000 },
+  // Etiquetar y anotar es de uso frecuente: el límite frena un script, no a
+  // alguien atendiendo conversaciones.
+  "crm-write": { limit: 200, windowMs: 5 * 60 * 1000 },
 };
 
 export type ThrottleDecision =

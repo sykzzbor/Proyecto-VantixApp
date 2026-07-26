@@ -20,6 +20,7 @@ import {
   validatePassword,
 } from "@/server/auth/password-policy";
 import { notifyNewSignIn } from "@/server/auth/notifications";
+import { RECENT_SESSION_MAX_AGE_MS } from "@/server/auth/account-deletion";
 import { sendTransactionalEmail } from "@/server/email/send";
 import {
   existingAccountSignUpTemplate,
@@ -88,6 +89,47 @@ const enforcePasswordPolicy = createAuthMiddleware(async (ctx) => {
     throw new APIError("BAD_REQUEST", {
       code: "PASSWORD_TOO_WEAK",
       message: result.message,
+    });
+  }
+});
+
+/**
+ * Rutas que exigen una sesión reciente además de una sesión válida.
+ *
+ * Better Auth ya pide sesión para estas operaciones, pero una sesión válida
+ * puede tener días: alcanza con una laptop desbloqueada o una cookie robada
+ * para cambiar la contraseña o el correo y quedarse con la cuenta. Exigir que
+ * el inicio de sesión sea reciente obliga a volver a autenticarse.
+ */
+const FRESH_SESSION_PATHS = new Set([
+  "/change-password",
+  "/change-email",
+  "/delete-user",
+]);
+
+const requireFreshSession = createAuthMiddleware(async (ctx) => {
+  if (!FRESH_SESSION_PATHS.has(ctx.path)) return;
+
+  const token = await ctx.getSignedCookie(
+    ctx.context.authCookies.sessionToken.name,
+    ctx.context.secret
+  );
+  if (!token) return; // Sin sesión responde el endpoint, no este hook.
+
+  const session = await prisma.session.findUnique({
+    where: { token },
+    select: { createdAt: true },
+  });
+  if (!session) return;
+
+  if (
+    Date.now() - session.createdAt.getTime() >
+    RECENT_SESSION_MAX_AGE_MS
+  ) {
+    throw new APIError("FORBIDDEN", {
+      code: "SESSION_NOT_FRESH",
+      message:
+        "Por seguridad, volvé a iniciar sesión antes de hacer este cambio.",
     });
   }
 });
@@ -250,7 +292,10 @@ export const auth = betterAuth({
     },
   },
   hooks: {
-    before: enforcePasswordPolicy,
+    before: createAuthMiddleware(async (ctx) => {
+      await requireFreshSession(ctx);
+      await enforcePasswordPolicy(ctx);
+    }),
   },
   plugins: [nextCookies()],
 });

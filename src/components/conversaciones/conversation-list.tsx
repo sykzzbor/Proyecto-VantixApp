@@ -2,13 +2,30 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Bot, Inbox, Search, SearchX, UserRound } from "lucide-react";
+import {
+  Bot,
+  Check,
+  ChevronDown,
+  Inbox,
+  Search,
+  SearchX,
+  Tag as TagIcon,
+  UserRound,
+} from "lucide-react";
 import type { ConversationListItem } from "@/server/inbox";
 import { InboxAutoRefresh } from "@/components/conversaciones/inbox-auto-refresh";
 import { useTableFilters } from "@/components/dashboard/use-table-filters";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { WhatsappIcon } from "@/components/whatsapp/whatsapp-icon";
 import {
   Select,
@@ -22,7 +39,16 @@ import { cn } from "@/lib/utils";
 type ConversationListProps = {
   items: ConversationListItem[];
   selectedId: string | null;
-  filters: { q: string; status: string; mode: string };
+  filters: {
+    q: string;
+    status: string;
+    mode: string;
+    assignedTo: string;
+    tagIds: string[];
+    untagged: boolean;
+  };
+  availableTags: { id: string; name: string; color: string }[];
+  members: { userId: string; name: string }[];
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -51,12 +77,89 @@ export function ConversationList({
   items,
   selectedId,
   filters,
+  availableTags,
+  members,
 }: ConversationListProps) {
-  const { setParam, setSearch } = useTableFilters();
+  const { setParam, setSearch, clearAll } = useTableFilters();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const hasFilters = Boolean(filters.q || filters.status || filters.mode);
+  const selectedTags = new Set(filters.tagIds);
+  const hasFilters = Boolean(
+    filters.q ||
+      filters.status ||
+      filters.mode ||
+      filters.assignedTo ||
+      filters.untagged ||
+      filters.tagIds.length > 0
+  );
+
+  /**
+   * Las etiquetas viajan en un solo parámetro separado por coma; el valor
+   * especial `sin` filtra las conversaciones sin ninguna.
+   */
+  function toggleTag(tagId: string) {
+    const next = new Set(selectedTags);
+    if (next.has(tagId)) next.delete(tagId);
+    else next.add(tagId);
+    setParam("etiquetas", next.size > 0 ? [...next].join(",") : null);
+  }
+
+  function toggleUntagged() {
+    setParam("etiquetas", filters.untagged ? null : "sin");
+  }
+
+  /** Chips de lo que está filtrando ahora mismo. */
+  const activeChips: { key: string; label: string; onRemove: () => void }[] = [];
+  if (filters.q) {
+    activeChips.push({
+      key: "q",
+      label: `"${filters.q}"`,
+      onRemove: () => setParam("q", null),
+    });
+  }
+  if (filters.status) {
+    activeChips.push({
+      key: "estado",
+      label: STATUS_LABEL[filters.status] ?? filters.status,
+      onRemove: () => setParam("estado", null),
+    });
+  }
+  if (filters.mode) {
+    activeChips.push({
+      key: "modo",
+      label: filters.mode === "ai" ? "Atendidas por IA" : "Atención humana",
+      onRemove: () => setParam("modo", null),
+    });
+  }
+  if (filters.assignedTo) {
+    const nombre =
+      filters.assignedTo === "unassigned"
+        ? "Sin responsable"
+        : (members.find((m) => m.userId === filters.assignedTo)?.name ??
+          "Responsable");
+    activeChips.push({
+      key: "responsable",
+      label: nombre,
+      onRemove: () => setParam("responsable", null),
+    });
+  }
+  if (filters.untagged) {
+    activeChips.push({
+      key: "sin-etiquetas",
+      label: "Sin etiquetas",
+      onRemove: () => setParam("etiquetas", null),
+    });
+  }
+  for (const tagId of filters.tagIds) {
+    const tag = availableTags.find((t) => t.id === tagId);
+    if (!tag) continue;
+    activeChips.push({
+      key: `tag-${tagId}`,
+      label: tag.name,
+      onRemove: () => toggleTag(tagId),
+    });
+  }
 
   function hrefFor(conversationId: string): string {
     const params = new URLSearchParams(searchParams.toString());
@@ -132,6 +235,116 @@ export function ConversationList({
             </SelectContent>
           </Select>
         </div>
+
+        <div className="flex gap-2">
+          <Select
+            value={filters.assignedTo || "todos"}
+            onValueChange={(value) =>
+              setParam("responsable", value === "todos" ? null : value)
+            }
+          >
+            <SelectTrigger
+              size="sm"
+              className="flex-1"
+              aria-label="Filtrar por responsable"
+            >
+              <SelectValue placeholder="Responsable" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Cualquier responsable</SelectItem>
+              <SelectItem value="unassigned">Sin responsable</SelectItem>
+              {members.map((member) => (
+                <SelectItem key={member.userId} value={member.userId}>
+                  {member.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 justify-between font-normal"
+                aria-label="Filtrar por etiquetas"
+              >
+                <span className="flex items-center gap-1.5 truncate">
+                  <TagIcon className="size-3.5 shrink-0" aria-hidden />
+                  {filters.untagged
+                    ? "Sin etiquetas"
+                    : filters.tagIds.length > 0
+                      ? `${filters.tagIds.length} etiqueta${filters.tagIds.length === 1 ? "" : "s"}`
+                      : "Etiquetas"}
+                </span>
+                <ChevronDown className="size-3.5 shrink-0 opacity-60" aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto">
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  toggleUntagged();
+                }}
+              >
+                <span className="flex-1">Sin etiquetas</span>
+                {filters.untagged && <Check className="size-3.5" aria-hidden />}
+              </DropdownMenuItem>
+
+              {availableTags.length > 0 && <DropdownMenuSeparator />}
+
+              {availableTags.length === 0 ? (
+                <p className="px-2 py-3 text-xs text-muted-foreground">
+                  Todavía no hay etiquetas. Se crean desde Configuración.
+                </p>
+              ) : (
+                availableTags.map((tag) => (
+                  <DropdownMenuItem
+                    key={tag.id}
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      toggleTag(tag.id);
+                    }}
+                  >
+                    <span
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: tag.color }}
+                      aria-hidden
+                    />
+                    <span className="flex-1 truncate">{tag.name}</span>
+                    {selectedTags.has(tag.id) && (
+                      <Check className="size-3.5" aria-hidden />
+                    )}
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {activeChips.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            {activeChips.map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                onClick={chip.onRemove}
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-destructive/40 hover:text-foreground"
+              >
+                <span className="truncate">{chip.label}</span>
+                <span aria-hidden>×</span>
+                <span className="sr-only">Quitar filtro</span>
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={clearAll}
+              className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              Limpiar todo
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Lista */}
@@ -153,6 +366,16 @@ export function ConversationList({
                 ? "Probá con otra búsqueda u otros filtros."
                 : "Los mensajes del chat de prueba y WhatsApp van a aparecer acá."}
             </p>
+            {hasFilters && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-1"
+                onClick={clearAll}
+              >
+                Limpiar filtros
+              </Button>
+            )}
           </div>
         ) : (
           <ul className="divide-y divide-border/65">

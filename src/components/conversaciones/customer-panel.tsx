@@ -11,6 +11,7 @@ import {
   NotebookText,
   Pencil,
   UserRound,
+  NotebookPen,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -85,6 +86,7 @@ export function CustomerPanel({
   onStatusChange,
   onAssign,
   instanceId = "panel",
+  crmSlot,
 }: {
   detail: ConversationDetail;
   canEdit: boolean;
@@ -97,6 +99,8 @@ export function CustomerPanel({
   onStatusChange?: (status: "OPEN" | "PENDING" | "CLOSED") => void;
   onAssign?: (membershipId: string | null) => void;
   instanceId?: string;
+  /** Notas internas y etiquetas. Se inyecta desde el servidor. */
+  crmSlot?: React.ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const {
@@ -302,6 +306,12 @@ export function CustomerPanel({
           )}
         </dl>
       </PanelSection>
+
+      {crmSlot ? (
+        <PanelSection title="Notas y etiquetas" icon={NotebookPen} open>
+          {crmSlot}
+        </PanelSection>
+      ) : null}
     </div>
   );
 }

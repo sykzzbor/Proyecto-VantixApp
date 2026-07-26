@@ -488,3 +488,34 @@ export function accountDeletedTemplate(input: {
     "Tu cuenta de Vantix fue eliminada"
   );
 }
+
+// ============================================================
+// Equipo
+// ============================================================
+
+export function teamInvitationTemplate(input: {
+  organizationName: string;
+  inviterName?: string | null;
+  roleName: string;
+  url: string;
+  expiresInDays: number;
+}): EmailMessage {
+  const quien = input.inviterName?.trim()
+    ? `${input.inviterName.trim()} te invitó`
+    : "Te invitaron";
+
+  return build(
+    {
+      title: `Te sumaron a ${input.organizationName}`,
+      preheader: `Tenés una invitación para trabajar en ${input.organizationName}.`,
+      intro: `${quien} a trabajar en ${input.organizationName} dentro de Vantix.`,
+      body: [
+        `Vas a entrar con el rol de ${input.roleName}.`,
+        "Si todavía no tenés cuenta, vas a poder crearla en el mismo paso.",
+      ],
+      action: { label: "Aceptar la invitación", url: input.url },
+      actionNote: `La invitación vence en ${input.expiresInDays} días.`,
+    },
+    `Invitación para sumarte a ${input.organizationName} · Vantix`
+  );
+}

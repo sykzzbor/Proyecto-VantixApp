@@ -5,6 +5,10 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { ChangePasswordForm } from "@/components/configuracion/account-forms";
 import { OrganizationSettings } from "@/components/configuracion/organization-settings";
 import { DangerZone } from "@/components/configuracion/danger-zone";
+import { ActiveSessions } from "@/components/configuracion/active-sessions";
+import { TagManager } from "@/components/configuracion/tag-manager";
+import { getOrganizationTags } from "@/server/crm";
+import { listActiveSessions } from "@/server/actions/sessions";
 import { prisma } from "@/lib/prisma";
 import {
   Card,
@@ -37,7 +41,8 @@ export default async function ConfiguracionPage() {
   const canDeleteOrg = can(role, "org.delete");
   const canReadAudit = can(role, "audit.read");
 
-  const [auditLogs, credentialAccount] = await Promise.all([
+  const canManageTags = can(role, "inbox.manage");
+  const [auditLogs, credentialAccount, sessions, crmTags] = await Promise.all([
     canReadAudit ? getAuditLogs(org.id, 25) : Promise.resolve([]),
     // Define qué se le pide para confirmar el borrado: quien no tiene
     // contraseña (solo Google) no puede escribir una.
@@ -45,6 +50,10 @@ export default async function ConfiguracionPage() {
       where: { userId: user.id, providerId: "credential" },
       select: { id: true },
     }),
+    listActiveSessions(),
+    can(role, "inbox.manage")
+      ? getOrganizationTags(org.id)
+      : Promise.resolve([]),
   ]);
 
   return (
@@ -83,6 +92,10 @@ export default async function ConfiguracionPage() {
           </Card>
 
           <div className="mt-4">
+            <ActiveSessions sessions={sessions} />
+          </div>
+
+          <div className="mt-4">
             <DangerZone
               canDeleteOrganization={canDeleteOrg}
               organizationName={org.name}
@@ -93,6 +106,7 @@ export default async function ConfiguracionPage() {
 
         <TabsContent value="organizacion" className="space-y-4">
           <OrganizationSettings orgName={org.name} canUpdate={canUpdateOrg} />
+          {canManageTags && <TagManager tags={crmTags} />}
           <Link
             href="/dashboard/negocio"
             className="group flex max-w-3xl items-center gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/30 hover:bg-accent/25 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-primary/20"
